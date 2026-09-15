@@ -1,5 +1,4 @@
 import matplotlib.pyplot as plt
-import jax.numpy as jnp
 
 
 def plot_results(time_array, y_hom, y_gr, y_label, title):
