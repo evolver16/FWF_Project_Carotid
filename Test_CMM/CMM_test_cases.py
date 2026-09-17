@@ -1,428 +1,313 @@
-# from CMM_plotter import *
-# from CMM import *
-# import jax
-# import jax.numpy as jnp
-# from jax import jit
+import jax
+import jax.numpy as jnp
 
-# @jit
-# def F_calc_uniax(lam, e=(1.0, 0.0, 0.0)):
-#     """F = lam*(e⊗e) + lam**(-1/2)*(I - e⊗e)"""
-#     e = jnp.array(e)
-#     e = e / jnp.linalg.norm(e)
-#     I = jnp.eye(3)
-#     e_dyad_e = jnp.outer(e, e)
-#     return lam * e_dyad_e + lam ** (-0.5) * (I - e_dyad_e)
+jax.config.update("jax_enable_x64", True)
 
+from CMM import *
 
-# def test_case1():
-#     T = 101.0
-#     rho_0 = 1.0
-#     sigma_0 = 0.0
-#     k1, k2 = 10.0, 5.0
-#     direction = (0.0, 0.0, 1.0)
-#     G = jnp.eye(3) * 1.0
-#     lam_step = 1.05
-#     ds = 1.0
-#     n_steps = 50
-
-#     W = fung_strain_energy(k1, k2, direction)
-
-#     fiber = constituent(rho_0, sigma_0, T, G, W, k_minus=0.0, k_plus=0.0)
-
-#     F0 = F_calc_uniax(1.0, direction)
-#     F_s = F_calc_uniax(lam_step, direction)
-
-#     F_history = [F0]
-#     tau_history = [0.0]
-#     s = 0.0
-#     for step in range(n_steps):
-#         s += ds
-#         F_history.append(F_s)
-#         tau_history.append(s)
-#         fiber.m_history.append(rho_0 / T)
-#         fiber.append_converged_step(0.0, ds)
-
-#     F_history_arr = jnp.stack(F_history)
-#     tau_history_arr = jnp.array(tau_history)
-
-#     # --- baseline: homeostatic-specific Q/q ---
-#     psi_homstat = Psi_calc(
-#         fiber, s, F_s, F_history_arr, tau_history_arr, Q_homstat_calc, q_homstat_calc
-#     )
-#     rho_homstat = rho_calc(s, fiber, tau_history_arr, Q_homstat_calc, q_homstat_calc)
-
-#     # --- general K-based Q/q, with k_sigma_minus=0 ---
-#     psi_general = Psi_calc(
-#         fiber, s, F_s, F_history_arr, tau_history_arr, Q_calc, q_calc
-#     )
-#     rho_general = rho_calc(s, fiber, tau_history_arr, Q_calc, q_calc)
-
-#     C = C_calc(F_s)
-#     I4 = I4_calc(C, direction)
-#     W0_val = (k1 / (2 * k2)) * (jnp.exp(k2 * (I4 - 1) ** 2) - 1)
-#     psi_closed_form = rho_0 * jnp.exp(-s / T) * W0_val
-
-#     print(f"Psi (homeostatic Q/q):      {float(psi_homstat):.6f}")
-#     print(f"Psi (general Q/q, k=0):     {float(psi_general):.6f}")
-#     print(f"Psi (closed form):          {float(psi_closed_form):.6f}")
-#     print(f"  homstat vs general diff:  {float(abs(psi_homstat - psi_general)):.6e}")
-#     print(
-#         f"  homstat vs closed diff:   {float(abs(psi_homstat - psi_closed_form)):.6e}"
-#     )
-#     print()
-#     print(f"rho (homeostatic Q/q):      {float(rho_homstat):.6f}  (should be ~1.0)")
-#     print(f"rho (general Q/q, k=0):     {float(rho_general):.6f}  (should be ~1.0)")
+# ==========================================
+# Shared setup
+#   Single isotropic NeoHookean matrix constituent, uniaxial strain:
+#   F = diag(lambda, 1, 1). J != 1 in general (compressible material), which
+#   matters: trace(sigma) is identically zero at J=1 for this compressible
+#   NeoHookean model (deviatoric part is trace-free, volumetric part vanishes
+#   at J=1), so an incompressible reduction would make sigma_f trivially zero
+#   everywhere and silently break every stress-dependent remodeling law.
+# ==========================================
 
 
-# def test_case2():
-#     pass
+def build_F(lam):
+    return jnp.diag(jnp.array([lam, 1.0, 1.0]))
+
+def build_elastin_matrix(g=1.1, T=101.0, k_minus=0.0, k_plus=0.1, C10=0.305, K=6.1, rho_0=1.0, phi_0=1.0, growth=True):
+    material = NeoHookean(C10=C10, K=K)
+    G = jnp.diag(jnp.array([g, 1.0, 1.0]))
+    par = params(material=material, T=T, G=G, k_minus=k_minus, k_plus=k_plus, phi_0=phi_0)
+    sigma_f_0 = (rho_0 / phi_0) * material.sigma_f(material.sigma(G))
+    return constituent(par, rho_0=rho_0, sigma_f_0=sigma_f_0, growth=growth)
 
 
-# import matplotlib.pyplot as plt
-# from scipy.optimize import root_scalar
-# from jax import grad
-# import jax.numpy as jnp
+def build_fiber(M, k1=0.0289, k2=1.23, g=1.1, T=101.0, k_minus=0.0, k_plus=0.1, rho_0=1.0, phi_0=1.0, growth=True):
+    M = jnp.asarray(M, dtype=jnp.float64)
+    M = M / jnp.linalg.norm(M)
+    material = Fung(k1, k2, M)
+
+    P = jnp.outer(M, M)
+    G = g * P + (1.0 / jnp.sqrt(g)) * (jnp.eye(3) - P)
+
+    par = params(material=material, T=T, G=G, k_minus=k_minus, k_plus=k_plus, phi_0=phi_0)
+    sigma_f_0 = (rho_0 / phi_0) * material.sigma_f(material.sigma(G))
+    return constituent(par, rho_0=rho_0, sigma_f_0=sigma_f_0, growth=growth)
 
 
-# def total_energy(
-#     lam, s, fiber, F_history, tau_history, F_g_s, F_g_history, C10, K, direction
-# ):
-#     F_s = F_calc_uniax(lam, direction)
-#     C = C_calc(F_s)
-#     I1 = jnp.trace(C)
-#     J = jnp.linalg.det(F_s)
-#     I1_inc = I1 * J ** (-2 / 3)
-#     psi_e = C10 * (I1_inc - 3) + (K / 2) * (J - 1) ** 2
-#     psi_c = Psi_calc(
-#         fiber, s, F_s, F_history, tau_history, Q_calc, q_calc, F_g_s, F_g_history
-#     )
-#     return psi_e + psi_c
+def test_A_mixture(F0=jnp.eye(3),ds=1.0):
+    incomp_elastin_matrix = build_elastin_matrix(K=6e10,growth=False)
+    return mixture([incomp_elastin_matrix],F0,ds=ds)
+
+def test_B_mixture(F0=jnp.eye(3),ds=1.0):
+    incomp_elastin_matrix = build_elastin_matrix(growth=False)
+    return mixture([incomp_elastin_matrix],F0,ds=ds)
+
+def test_C_mixture(F0=jnp.eye(3),ds=1.0):
+    incomp_elastin_matrix = build_elastin_matrix()
+    return mixture([incomp_elastin_matrix],F0,ds=ds)
+
+def test_D_mixture(F0=jnp.eye(3),ds=1.0):
+    incomp_elastin_matrix = build_elastin_matrix(K=6e10, rho_0=0.8, phi_0=0.8, growth=False)
+    alpha = jnp.pi/8
+    fiber_x = build_fiber(M=[1,0,0], rho_0=0.05, phi_0=0.05, growth=False)
+    fiber_y = build_fiber(M=[0,1,0], rho_0=0.05, phi_0=0.05, growth=False)
+    fiber_alpha1 = build_fiber(M=[jnp.sin(alpha),jnp.cos(alpha),0], rho_0=0.05, phi_0=0.05, growth=False)
+    fiber_alpha2 = build_fiber(M=[-jnp.sin(alpha),jnp.cos(alpha),0], rho_0=0.05, phi_0=0.05, growth=False)
+    return mixture([incomp_elastin_matrix,fiber_x,fiber_y,fiber_alpha1,fiber_alpha2],F0,ds=ds)
+
+def test_E_mixture(F0=jnp.eye(3),ds=1.0):
+    incomp_elastin_matrix = build_elastin_matrix(K=6e10, rho_0=0.8, phi_0=0.8, growth=False)
+    alpha = jnp.pi/8
+    fiber_x = build_fiber(M=[1,0,0], rho_0=0.05, phi_0=0.05, growth=True)
+    fiber_y = build_fiber(M=[0,1,0], rho_0=0.05, phi_0=0.05, growth=True)
+    fiber_alpha1 = build_fiber(M=[jnp.sin(alpha),jnp.cos(alpha),0], rho_0=0.05, phi_0=0.05, growth=True)
+    fiber_alpha2 = build_fiber(M=[-jnp.sin(alpha),jnp.cos(alpha),0], rho_0=0.05, phi_0=0.05, growth=True)
+    return mixture([incomp_elastin_matrix,fiber_x,fiber_y,fiber_alpha1,fiber_alpha2],F0,ds=ds)
+
+def sigma11_of_lambda(lam, mix, J_g):
+    Fg_s = F_g_calc(mix)
+    F_s = build_F(lam)
+    sigma_total, results, mix_hist_trial = evaluate_trial(F_s, Fg_s, mix, J_g)
+    return sigma_total[0, 0], (F_s, Fg_s, sigma_total, results, mix_hist_trial)
 
 
-# energy_grad = jit(grad(total_energy, argnums=0))
+def bisect_lambda_for_stress(target_sigma11, mix, J_g, lo=0.2, hi=20.0, iters=60):
+    """sigma_11(lambda) is monotonically increasing, but as the material remodels
+    its own residual (lambda=1) stress can drift above the target -- holding a
+    fixed target may then require lambda < 1 (compression), so the bracket must
+    allow that, and a bracket failure must be surfaced, not silently returned as
+    the edge of the search range."""
+    f_lo, _ = sigma11_of_lambda(jnp.asarray(lo), mix, J_g)
+    f_hi, _ = sigma11_of_lambda(jnp.asarray(hi), mix, J_g)
+    if (f_lo - target_sigma11) * (f_hi - target_sigma11) > 0:
+        raise RuntimeError(
+            f"target sigma_11={target_sigma11:.6f} not bracketed: "
+            f"sigma_11({lo})={float(f_lo):.6f}, sigma_11({hi})={float(f_hi):.6f}"
+        )
+    for _ in range(iters):
+        mid = 0.5 * (lo + hi)
+        f_mid, aux = sigma11_of_lambda(jnp.asarray(mid), mix, J_g)
+        if (f_mid - target_sigma11) * (f_lo - target_sigma11) <= 0:
+            hi = mid
+        else:
+            lo, f_lo = mid, f_mid
+    return mid, aux
 
 
-# def get_stress_yy(
-#     lam, s, fiber, F_history, tau_history, F_g_s, F_g_history, C10, K, direction
-# ):
-#     return (
-#         energy_grad(
-#             lam, s, fiber, F_history, tau_history, F_g_s, F_g_history, C10, K, direction
-#         )
-#         * lam
-#     )
+# ==========================================
+# Test 1: constant elongation (displacement-controlled, case U)
+#   Stretch is applied once and held fixed; remodeling relaxes the stress.
+# ==========================================
 
 
-# def solve_lam(
-#     target_stress,
-#     lam_guess,
-#     s,
-#     fiber,
-#     F_hist,
-#     tau_hist_full,
-#     F_g_s,
-#     F_g_hist,
-#     C10,
-#     K,
-#     direction,
-# ):
-#     def objective(lam):
-#         F_s_temp = F_calc_uniax(lam, direction)
-#         F_hist_temp = jnp.concatenate([F_hist, F_s_temp[None, ...]])
-#         F_g_hist_temp = jnp.concatenate([F_g_hist, F_g_s[None, ...]])
-#         return (
-#             float(
-#                 get_stress_yy(
-#                     lam,
-#                     s,
-#                     fiber,
-#                     F_hist_temp,
-#                     tau_hist_full,
-#                     F_g_s,
-#                     F_g_hist_temp,
-#                     C10,
-#                     K,
-#                     direction,
-#                 )
-#             )
-#             - target_stress
-#         )
+def test_constant_elongation(n_steps=60, lam_target=1.2):
+    """Stress remodeling is governed by sigma_f = trace(sigma), not any single
+    tensor component, so relaxation is checked on sigma_f (equivalently
+    c.history.sigma_f), toward the homeostatic reference sigma_f_0."""
+    mix, c, par = build_mixture()
+    J_g = J_g_calc(mix)
+    sigma_f_0 = float(c.history.sigma_f[0])
 
-#     res = root_scalar(objective, x0=lam_guess, x1=lam_guess + 0.01)
-#     return res.root
+    F_s = build_F(jnp.asarray(lam_target))
+    Fg_s = F_g_calc(mix)
+    sigma_total, results, mix_hist_trial = evaluate_trial(F_s, Fg_s, mix, J_g)
+    commit_step(mix, mix_hist_trial, results)
 
+    s_vals = [0.0, float(mix.history.s[-1])]
+    sigma11_vals = [sigma_f_0, float(sigma_total[0, 0])]
+    sigma_f_vals = [sigma_f_0, float(c.history.sigma_f[-1])]
 
-# def simulate(
-#     case_type,
-#     lam_val,
-#     stress_val,
-#     n_steps,
-#     ds,
-#     T_val,
-#     rho_0,
-#     sigma_0,
-#     W,
-#     C10,
-#     K,
-#     direction,
-# ):
-#     fiber_hom = constituent(rho_0, sigma_0, T_val, jnp.eye(3), W, 0.0, 0.0)
-#     fiber_gr = constituent(rho_0, sigma_0, T_val, jnp.eye(3), W, 0.1, 0.1)
+    for _ in range(n_steps):
+        J_g = J_g_calc(mix)
+        Fg_s = F_g_calc(mix)
+        sigma_total, results, mix_hist_trial = evaluate_trial(F_s, Fg_s, mix, J_g)
+        commit_step(mix, mix_hist_trial, results)
+        s_vals.append(float(mix.history.s[-1]))
+        sigma11_vals.append(float(sigma_total[0, 0]))
+        sigma_f_vals.append(float(c.history.sigma_f[-1]))
 
-#     tau_history = [0.0]
-#     F_history_hom = [F_calc_uniax(1.0, direction)]
-#     F_history_gr = [F_calc_uniax(1.0, direction)]
-#     F_g_hom = [jnp.eye(3)]
-#     F_g_gr = [jnp.eye(3)]
+    deviation = [abs(sf - sigma_f_0) for sf in sigma_f_vals]
+    relaxing = deviation[-1] < deviation[1]
+    all_finite = all(jnp.isfinite(jnp.asarray(sigma_f_vals)))
 
-#     res_lam_hom, res_lam_gr = [1.0], [1.0]
-#     res_sig_hom, res_sig_gr = [sigma_0], [sigma_0]
-
-#     s = 0.0
-#     lam_h, lam_g = 1.0, 1.0
-#     sig_h, sig_g = sigma_0, sigma_0
-
-#     for step in range(1, n_steps + 1):
-#         s += ds
-#         tau_history.append(s)
-
-#         fiber_hom.append_converged_step(float(sig_h), ds)
-#         fiber_hom.m_history.append(fiber_hom.m_history[-1])
-#         fiber_hom.rho_history.append(fiber_hom.rho_history[-1])
-
-#         fiber_gr.append_converged_step(float(sig_g), ds)
-#         fiber_gr.m_history.append(fiber_gr.m_history[-1])
-#         fiber_gr.rho_history.append(fiber_gr.rho_history[-1])
-
-#         F_hist_h_arr = jnp.stack(F_history_hom)
-#         F_hist_g_arr = jnp.stack(F_history_gr)
-#         tau_hist_arr = jnp.array(tau_history)
-#         Fg_hist_h_arr = jnp.stack(F_g_hom)
-#         Fg_hist_g_arr = jnp.stack(F_g_gr)
-
-#         if case_type == "disp":
-#             lam_h, lam_g = lam_val, lam_val
-#             F_s_h, F_s_g = F_calc_uniax(lam_h, direction), F_calc_uniax(
-#                 lam_g, direction
-#             )
-#             Fg_s_h, Fg_s_g = Fg_hist_h_arr[-1], Fg_hist_g_arr[-1]
-#             F_hist_h_temp = jnp.concatenate([F_hist_h_arr, F_s_h[None, ...]])
-#             F_hist_g_temp = jnp.concatenate([F_hist_g_arr, F_s_g[None, ...]])
-#             Fg_hist_h_temp = jnp.concatenate([Fg_hist_h_arr, Fg_s_h[None, ...]])
-#             Fg_hist_g_temp = jnp.concatenate([Fg_hist_g_arr, Fg_s_g[None, ...]])
-#             sig_h = get_stress_yy(
-#                 lam_h,
-#                 s,
-#                 fiber_hom,
-#                 F_hist_h_temp,
-#                 tau_hist_arr,
-#                 Fg_s_h,
-#                 Fg_hist_h_temp,
-#                 C10,
-#                 K,
-#                 direction,
-#             )
-#             sig_g = get_stress_yy(
-#                 lam_g,
-#                 s,
-#                 fiber_gr,
-#                 F_hist_g_temp,
-#                 tau_hist_arr,
-#                 Fg_s_g,
-#                 Fg_hist_g_temp,
-#                 C10,
-#                 K,
-#                 direction,
-#             )
-#         elif case_type == "stress":
-#             sig_h, sig_g = stress_val, stress_val
-#             Fg_s_h, Fg_s_g = Fg_hist_h_arr[-1], Fg_hist_g_arr[-1]
-#             lam_h = solve_lam(
-#                 sig_h,
-#                 lam_h,
-#                 s,
-#                 fiber_hom,
-#                 F_hist_h_arr,
-#                 tau_hist_arr,
-#                 Fg_s_h,
-#                 Fg_hist_h_arr,
-#                 C10,
-#                 K,
-#                 direction,
-#             )
-#             lam_g = solve_lam(
-#                 sig_g,
-#                 lam_g,
-#                 s,
-#                 fiber_gr,
-#                 F_hist_g_arr,
-#                 tau_hist_arr,
-#                 Fg_s_g,
-#                 Fg_hist_g_arr,
-#                 C10,
-#                 K,
-#                 direction,
-#             )
-#             F_s_h, F_s_g = F_calc_uniax(lam_h, direction), F_calc_uniax(
-#                 lam_g, direction
-#             )
-#         else:
-#             lam_h, lam_g = lam_val[step], lam_val[step]
-#             F_s_h, F_s_g = F_calc_uniax(lam_h, direction), F_calc_uniax(
-#                 lam_g, direction
-#             )
-#             Fg_s_h, Fg_s_g = Fg_hist_h_arr[-1], Fg_hist_g_arr[-1]
-#             F_hist_h_temp = jnp.concatenate([F_hist_h_arr, F_s_h[None, ...]])
-#             F_hist_g_temp = jnp.concatenate([F_hist_g_arr, F_s_g[None, ...]])
-#             Fg_hist_h_temp = jnp.concatenate([Fg_hist_h_arr, Fg_s_h[None, ...]])
-#             Fg_hist_g_temp = jnp.concatenate([Fg_hist_g_arr, Fg_s_g[None, ...]])
-#             sig_h = get_stress_yy(
-#                 lam_h,
-#                 s,
-#                 fiber_hom,
-#                 F_hist_h_temp,
-#                 tau_hist_arr,
-#                 Fg_s_h,
-#                 Fg_hist_h_temp,
-#                 C10,
-#                 K,
-#                 direction,
-#             )
-#             sig_g = get_stress_yy(
-#                 lam_g,
-#                 s,
-#                 fiber_gr,
-#                 F_hist_g_temp,
-#                 tau_hist_arr,
-#                 Fg_s_g,
-#                 Fg_hist_g_temp,
-#                 C10,
-#                 K,
-#                 direction,
-#             )
-
-#         F_history_hom.append(F_s_h)
-#         F_history_gr.append(F_s_g)
-
-#         rho_h = rho_calc(s, fiber_hom, tau_history, Q_calc, q_calc)
-#         fiber_hom.rho_history[-1] = float(rho_h)
-#         fiber_hom.m_history[-1] = float(m_calc(fiber_hom, rho_h, float(sig_h), sigma_0))
-#         F_g_hom.append((rho_h / rho_0) ** (1 / 3) * jnp.eye(3))
-
-#         rho_g = rho_calc(s, fiber_gr, tau_history, Q_calc, q_calc)
-#         fiber_gr.rho_history[-1] = float(rho_g)
-#         fiber_gr.m_history[-1] = float(m_calc(fiber_gr, rho_g, float(sig_g), sigma_0))
-#         F_g_gr.append((rho_g / rho_0) ** (1 / 3) * jnp.eye(3))
-
-#         res_lam_hom.append(float(lam_h))
-#         res_lam_gr.append(float(lam_g))
-#         res_sig_hom.append(float(sig_h))
-#         res_sig_gr.append(float(sig_g))
-
-#     if case_type == "disp":
-#         plot_results(
-#             tau_history,
-#             res_sig_hom,
-#             res_sig_gr,
-#             "Stress (MPa)",
-#             "Constant Deformation (Stress Relaxation)",
-#         )
-#         F_history_hom.append(F_s_h)
-#         F_history_gr.append(F_s_g)
-
-#         rho_h = rho_calc(s, fiber_hom, tau_history, Q_calc, q_calc)
-#         fiber_hom.rho_history[-1] = float(rho_h)
-#         fiber_hom.m_history[-1] = float(m_calc(fiber_hom, rho_h, float(sig_h), sigma_0))
-#         F_g_hom.append((rho_h / rho_0) ** (1 / 3) * jnp.eye(3))
-
-#         rho_g = rho_calc(s, fiber_gr, tau_history, Q_calc, q_calc)
-#         fiber_gr.rho_history[-1] = float(rho_g)
-#         fiber_gr.m_history[-1] = float(m_calc(fiber_gr, rho_g, float(sig_g), sigma_0))
-#         F_g_gr.append((rho_g / rho_0) ** (1 / 3) * jnp.eye(3))
-
-#         res_lam_hom.append(float(lam_h))
-#         res_lam_gr.append(float(lam_g))
-#         res_sig_hom.append(float(sig_h))
-#         res_sig_gr.append(float(sig_g))
-
-#     if case_type == "disp":
-#         plot_results(
-#             tau_history,
-#             res_sig_hom,
-#             res_sig_gr,
-#             "Stress (MPa)",
-#             "Constant Deformation (Stress Relaxation)",
-#         )
-#     elif case_type == "stress":
-#         plot_results(
-#             tau_history, res_lam_hom, res_lam_gr, "Stretch", "Constant Stress (Creep)"
-#         )
-#     else:
-#         plot_results(
-#             tau_history, res_sig_hom, res_sig_gr, "Stress (MPa)", "Changing Deformation"
-#         )
+    print("=== Test 1: constant elongation (case U) ===")
+    print(f"stretch held at lambda = {lam_target}")
+    print(f"sigma_f_0 (homeostatic reference) = {sigma_f_0:.6f}")
+    print(
+        f"sigma_f, right after jump = {sigma_f_vals[1]:.6f}  (deviation {deviation[1]:.6f})"
+    )
+    print(
+        f"sigma_f, end of run      = {sigma_f_vals[-1]:.6f}  (deviation {deviation[-1]:.6f})"
+    )
+    print(f"deviation from homeostasis shrinking: {relaxing}")
+    print(f"all finite: {all_finite}")
+    print()
+    return s_vals, sigma11_vals, sigma_f_vals
 
 
-# if __name__ == "__main__":
-#     c1, c2 = 10.0, 5.0
-#     C10, K = 0.0305, 0.610
-#     direction = (0.0, 1.0, 0.0)
-#     W_coll = fung_strain_energy(c1, c2, direction)
-
-#     simulate("disp", 1.5, None, 100, 10.0, 101.0, 1.0, 0.100, W_coll, C10, K, direction)
-#     simulate(
-#         "stress", None, 0.120, 100, 10.0, 101.0, 1.0, 0.100, W_coll, C10, K, direction
-#     )
-
-#     dynamic_lams = [1.0 + 0.2 * jnp.sin(i / 10.0) for i in range(101)]
-#     simulate(
-#         "dynamic",
-#         dynamic_lams,
-#         None,
-#         100,
-#         10.0,
-#         101.0,
-#         1.0,
-#         0.100,
-#         W_coll,
-#         C10,
-#         K,
-#         direction,
-#     )
-
-#     elif case_type == "stress":
-#         plot_results(
-#             tau_history, res_lam_hom, res_lam_gr, "Stretch", "Constant Stress (Creep)"
-#         )
-#     else:
-#         plot_results(
-#             tau_history, res_sig_hom, res_sig_gr, "Stress (MPa)", "Changing Deformation"
-#         )
+# ==========================================
+# Test 2: constant stress (stress-controlled, case S)
+#   Stress is stepped once and held fixed via an outer bisection on lambda
+#   at every time step; remodeling creeps the stretch upward.
+# ==========================================
 
 
-# if __name__ == "__main__":
-#     c1, c2 = 10.0, 5.0
-#     C10, K = 0.0305, 0.610
-#     direction = (0.0, 1.0, 0.0)
-#     W_coll = fung_strain_energy(c1, c2, direction)
+def test_constant_stress(n_steps=60, stress_increase=0.20):
+    """Target is defined on sigma_11 itself (the controlled component), evaluated
+    at the undeformed F=I state, not on sigma_f (trace) -- comparing a component
+    target against a trace-based reference silently makes the target unreachable."""
+    mix, c, par = build_mixture()
+    J_g = J_g_calc(mix)
+    sigma11_ref, _ = sigma11_of_lambda(jnp.asarray(1.0), mix, J_g)
+    target_sigma11 = float(sigma11_ref) * (1.0 + stress_increase)
 
-#     simulate("disp", 1.5, None, 100, 10.0, 101.0, 1.0, 0.100, W_coll, C10, K, direction)
-#     simulate(
-#         "stress", None, 0.120, 100, 10.0, 101.0, 1.0, 0.100, W_coll, C10, K, direction
-#     )
+    lam, aux = bisect_lambda_for_stress(target_sigma11, mix, J_g)
+    F_s, Fg_s, sigma_total, results, mix_hist_trial = aux
+    commit_step(mix, mix_hist_trial, results)
 
-#     dynamic_lams = [1.0 + 0.2 * jnp.sin(i / 10.0) for i in range(101)]
-#     simulate(
-#         "dynamic",
-#         dynamic_lams,
-#         None,
-#         100,
-#         10.0,
-#         101.0,
-#         1.0,
-#         0.100,
-#         W_coll,
-#         C10,
-#         K,
-#         direction,
-#     )
+    s_vals = [0.0, float(mix.history.s[-1])]
+    lam_vals = [1.0, float(lam)]
+    sigma11_vals = [float(sigma11_ref), float(sigma_total[0, 0])]
+
+    for _ in range(n_steps):
+        J_g = J_g_calc(mix)
+        lam, aux = bisect_lambda_for_stress(target_sigma11, mix, J_g)
+        F_s, Fg_s, sigma_total, results, mix_hist_trial = aux
+        commit_step(mix, mix_hist_trial, results)
+        s_vals.append(float(mix.history.s[-1]))
+        lam_vals.append(float(lam))
+        sigma11_vals.append(float(sigma_total[0, 0]))
+
+    stress_held = all(abs(s - target_sigma11) < 1e-4 for s in sigma11_vals[1:])
+    increasing = all(
+        lam_vals[i + 1] >= lam_vals[i] - 1e-9 for i in range(len(lam_vals) - 1)
+    )
+    decreasing = all(
+        lam_vals[i + 1] <= lam_vals[i] + 1e-9 for i in range(len(lam_vals) - 1)
+    )
+    monotonic = increasing or decreasing
+    all_finite = all(jnp.isfinite(jnp.asarray(lam_vals)))
+
+    # Depositing new material at the fixed prestretch G keeps adding residual
+    # stress even without external stretch, so with k_sigma+ > 0 and no offsetting
+    # degradation, a fixed stress target can require increasing COMPRESSION over
+    # time (lambda decreasing) once residual stress alone would exceed it --
+    # not necessarily the increasing stretch of the paper's own case S example.
+    direction = (
+        "decreasing (compression, residual stress outgrew the target)"
+        if decreasing
+        else "increasing" if increasing else "non-monotonic"
+    )
+
+    print("=== Test 2: constant stress (case S) ===")
+    print(
+        f"target sigma_11 = {target_sigma11:.6f} ({stress_increase*100:.0f}% above homeostatic)"
+    )
+    print(f"lambda(0)   = {lam_vals[0]:.6f}")
+    print(f"lambda(end) = {lam_vals[-1]:.6f}")
+    print(f"stress held at target throughout: {stress_held}")
+    print(f"stretch trajectory: {direction}")
+    print(f"monotonic: {monotonic}")
+    print(f"all finite: {all_finite}")
+    print()
+    return s_vals, lam_vals, sigma11_vals
+
+
+# ==========================================
+# Test 3: single-step internal consistency
+#   Verifies the Newton solve at one step is self-consistent: the converged
+#   sigma_f equals material.sigma_f(sigma_j), and rho_calc_from_sigma_f's
+#   closed form agrees with a brute-force trapezoidal integration of Eq. 36
+#   evaluated on the resulting (committed) m history.
+# ==========================================
+
+
+def rho_rk4_reference(
+    rho_prev, sigma_f_prev, sigma_f_new, sigma_f_0, par, ds, n_sub=2000
+):
+    """Fine RK4 integration of dot(rho) = rho*(k+ - k-)/T * sigma_frac(tau), with
+    sigma_frac linearly interpolated between its two step endpoints. A valid
+    ground truth at ANY step size, unlike Eq. 36's trapezoidal discretization,
+    which the paper itself only claims is accurate once s >> T (Q(s) ~ 0)."""
+    rate = (par.k_sigma_plus - par.k_sigma_minus) / par.T
+    frac_prev = (sigma_f_prev - sigma_f_0) / sigma_f_0
+    frac_new = (sigma_f_new - sigma_f_0) / sigma_f_0
+
+    def f(t_frac, rho):
+        frac = frac_prev + t_frac * (frac_new - frac_prev)
+        return rate * frac * rho
+
+    h = 1.0 / n_sub
+    rho = rho_prev
+    t = 0.0
+    for _ in range(n_sub):
+        k1 = f(t, rho)
+        k2 = f(t + h / 2, rho + h / 2 * k1)
+        k3 = f(t + h / 2, rho + h / 2 * k2)
+        k4 = f(t + h, rho + h * k3)
+        rho = rho + h / 6 * (k1 + 2 * k2 + 2 * k3 + k4)
+        t += h
+    return rho
+
+
+def test_single_step(lam_target=1.15, ds_values=(10.0, 2.0, 0.5)):
+    """The closed-form rho update is itself a trapezoidal (second-order)
+    approximation of the ODE dot(rho)=rho*(k+-k-)/T*sigma_frac -- it should
+    match the fine RK4 reference only approximately at large ds, with the
+    error shrinking as ds shrinks. This checks convergence rather than a
+    single fixed tolerance, since ds=10 alone is not close to the continuum
+    limit relative to T=101 (matches the ~0.4% gap found analytically earlier
+    for this same comparison)."""
+    residual = None
+    errors = []
+    for ds in ds_values:
+        mix, c, par = build_mixture(ds=ds)
+        J_g = J_g_calc(mix)
+        Fg_s = F_g_calc(mix)
+        F_s = build_F(jnp.asarray(lam_target))
+        sigma_f_0 = float(c.history.sigma_f[0])
+        rho_prev = float(c.history.rho[-1])
+        sigma_f_prev = float(c.history.sigma_f[-1])
+
+        sigma_total, results, mix_hist_trial = evaluate_trial(F_s, Fg_s, mix, J_g)
+        sf_s, sigma_j, rho_s, m_s, K_cumu_s = results[0]
+
+        if residual is None:
+            residual = float(par.material.sigma_f(sigma_j) - sf_s)
+
+        commit_step(mix, mix_hist_trial, results)
+        rho_closed = float(c.history.rho[-1])
+        rho_rk4 = rho_rk4_reference(
+            rho_prev, sigma_f_prev, float(sf_s), sigma_f_0, par, ds
+        )
+        rel_err = abs(rho_closed - rho_rk4) / abs(rho_rk4)
+        errors.append(rel_err)
+
+    residual_ok = abs(residual) < 1e-8
+    converging = all(errors[i + 1] < errors[i] for i in range(len(errors) - 1))
+    all_finite = all(jnp.isfinite(jnp.asarray(errors)))
+
+    print("=== Test 3: single-step internal consistency ===")
+    print(
+        f"Newton residual (sigma_f_true - sigma_f*) at ds={ds_values[0]}: {residual:.3e}"
+    )
+    print("rho (closed form) vs fine RK4 reference, relative error by step size:")
+    for ds, err in zip(ds_values, errors):
+        print(f"  ds={ds:6.2f}: relative error = {err:.3e}")
+    print(f"residual below tol: {residual_ok}")
+    print(f"error shrinks as ds shrinks (converging to RK4): {converging}")
+    print(f"all finite: {bool(all_finite)}")
+    print()
+    return residual, errors
+
+
+if __name__ == "__main__":
+    test_constant_elongation()
+    test_constant_stress()
+    test_single_step()
