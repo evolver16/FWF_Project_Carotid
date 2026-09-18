@@ -1,313 +1,311 @@
+"""
+U / S / F load cases run against CMM.py.
+
+Three things in CMM_test_cases.py do not match CMM.py and are fixed here:
+  1. constituent(...) has NO `growth` kwarg. Growth is a params flag: params(..., grows=).
+  2. F_g_calc does not exist. CMM.py defines F_g_iso_calc(mix) / F_g_aniso_calc(mix, ag).
+     (CMM.CMM_sigma_calc also calls the missing F_g_calc, so it is dead code as shipped.)
+  3. test_single_step's signature has a non-default arg after defaulted ones -> SyntaxError.
+
+Boundary conditions (paper axis -> index here):
+  paper Z (S3 & S5 constrained)      -> axis 0, CONFINED: lam = 1 always
+  paper Y (S6 fixed, S4 driven)      -> axis 1, DRIVEN
+  paper X (S1 fixed, far face free)  -> axis 2, FREE: sigma_22 = 0
+"""
+
 import jax
 import jax.numpy as jnp
+from dataclasses import dataclass
+from typing import Optional
 
 jax.config.update("jax_enable_x64", True)
 
-from CMM import *
+from CMM import (
+    NeoHookean, Fung, params, constituent, mixture,
+    evaluate_trial, commit_step, J_g_calc, F_g_iso_calc, F_g_aniso_calc,
+)
+
+CONFINED_AXIS, DRIVEN_AXIS, FREE_AXIS = 0, 1, 2
+
+
+def F_g_calc(mix):
+    """The name CMM.py's own CMM_sigma_calc calls but never defines."""
+    return F_g_iso_calc(mix)
+
 
 # ==========================================
-# Shared setup
-#   Single isotropic NeoHookean matrix constituent, uniaxial strain:
-#   F = diag(lambda, 1, 1). J != 1 in general (compressible material), which
-#   matters: trace(sigma) is identically zero at J=1 for this compressible
-#   NeoHookean model (deviatoric part is trace-free, volumetric part vanishes
-#   at J=1), so an incompressible reduction would make sigma_f trivially zero
-#   everywhere and silently break every stress-dependent remodeling law.
+# Builders (corrected against the real CMM API)
 # ==========================================
 
 
-def build_F(lam):
-    return jnp.diag(jnp.array([lam, 1.0, 1.0]))
-
-def build_elastin_matrix(g=1.1, T=101.0, k_minus=0.0, k_plus=0.1, C10=0.305, K=6.1, rho_0=1.0, phi_0=1.0, growth=True):
+def build_elastin_matrix(g=1.1, T=101.0, k_minus=0.0, k_plus=0.1,
+                         C10=0.305, K=6.1, rho_0=1.0, phi_0=1.0,
+                         grows=True, axial=DRIVEN_AXIS, isochoric=True):
+    """isochoric=True reproduces CMM.py's own prestress_stress_snapshot convention:
+    G = diag(1/sqrt(g), g, 1/sqrt(g)) with the deposition stretch on the LOADED
+    axis. isochoric=False is CMM_test_cases.py's diag(g,1,1), which puts the
+    prestretch on the confined axis and has det(G) = g != 1."""
     material = NeoHookean(C10=C10, K=K)
-    G = jnp.diag(jnp.array([g, 1.0, 1.0]))
-    par = params(material=material, T=T, G=G, k_minus=k_minus, k_plus=k_plus, phi_0=phi_0)
+    if isochoric:
+        d = [1.0 / jnp.sqrt(g)] * 3
+        d[axial] = g
+        G = jnp.diag(jnp.array(d))
+    else:
+        G = jnp.diag(jnp.array([g, 1.0, 1.0]))
+    par = params(material=material, T=T, G=G, k_minus=k_minus,
+                 k_plus=k_plus, phi_0=phi_0, grows=grows)
     sigma_f_0 = (rho_0 / phi_0) * material.sigma_f(material.sigma(G))
-    return constituent(par, rho_0=rho_0, sigma_f_0=sigma_f_0, growth=growth)
+    return constituent(par, rho_0=rho_0, sigma_f_0=sigma_f_0)
 
 
-def build_fiber(M, k1=0.0289, k2=1.23, g=1.1, T=101.0, k_minus=0.0, k_plus=0.1, rho_0=1.0, phi_0=1.0, growth=True):
+def build_fiber(M, k1=0.0289, k2=1.23, g=1.1, T=101.0, k_minus=0.0, k_plus=0.1,
+                rho_0=1.0, phi_0=1.0, grows=True):
     M = jnp.asarray(M, dtype=jnp.float64)
     M = M / jnp.linalg.norm(M)
     material = Fung(k1, k2, M)
-
     P = jnp.outer(M, M)
     G = g * P + (1.0 / jnp.sqrt(g)) * (jnp.eye(3) - P)
-
-    par = params(material=material, T=T, G=G, k_minus=k_minus, k_plus=k_plus, phi_0=phi_0)
+    par = params(material=material, T=T, G=G, k_minus=k_minus,
+                 k_plus=k_plus, phi_0=phi_0, grows=grows)
     sigma_f_0 = (rho_0 / phi_0) * material.sigma_f(material.sigma(G))
-    return constituent(par, rho_0=rho_0, sigma_f_0=sigma_f_0, growth=growth)
+    return constituent(par, rho_0=rho_0, sigma_f_0=sigma_f_0)
 
 
-def test_A_mixture(F0=jnp.eye(3),ds=1.0):
-    incomp_elastin_matrix = build_elastin_matrix(K=6e10,growth=False)
-    return mixture([incomp_elastin_matrix],F0,ds=ds)
-
-def test_B_mixture(F0=jnp.eye(3),ds=1.0):
-    incomp_elastin_matrix = build_elastin_matrix(growth=False)
-    return mixture([incomp_elastin_matrix],F0,ds=ds)
-
-def test_C_mixture(F0=jnp.eye(3),ds=1.0):
-    incomp_elastin_matrix = build_elastin_matrix()
-    return mixture([incomp_elastin_matrix],F0,ds=ds)
-
-def test_D_mixture(F0=jnp.eye(3),ds=1.0):
-    incomp_elastin_matrix = build_elastin_matrix(K=6e10, rho_0=0.8, phi_0=0.8, growth=False)
-    alpha = jnp.pi/8
-    fiber_x = build_fiber(M=[1,0,0], rho_0=0.05, phi_0=0.05, growth=False)
-    fiber_y = build_fiber(M=[0,1,0], rho_0=0.05, phi_0=0.05, growth=False)
-    fiber_alpha1 = build_fiber(M=[jnp.sin(alpha),jnp.cos(alpha),0], rho_0=0.05, phi_0=0.05, growth=False)
-    fiber_alpha2 = build_fiber(M=[-jnp.sin(alpha),jnp.cos(alpha),0], rho_0=0.05, phi_0=0.05, growth=False)
-    return mixture([incomp_elastin_matrix,fiber_x,fiber_y,fiber_alpha1,fiber_alpha2],F0,ds=ds)
-
-def test_E_mixture(F0=jnp.eye(3),ds=1.0):
-    incomp_elastin_matrix = build_elastin_matrix(K=6e10, rho_0=0.8, phi_0=0.8, growth=False)
-    alpha = jnp.pi/8
-    fiber_x = build_fiber(M=[1,0,0], rho_0=0.05, phi_0=0.05, growth=True)
-    fiber_y = build_fiber(M=[0,1,0], rho_0=0.05, phi_0=0.05, growth=True)
-    fiber_alpha1 = build_fiber(M=[jnp.sin(alpha),jnp.cos(alpha),0], rho_0=0.05, phi_0=0.05, growth=True)
-    fiber_alpha2 = build_fiber(M=[-jnp.sin(alpha),jnp.cos(alpha),0], rho_0=0.05, phi_0=0.05, growth=True)
-    return mixture([incomp_elastin_matrix,fiber_x,fiber_y,fiber_alpha1,fiber_alpha2],F0,ds=ds)
-
-def sigma11_of_lambda(lam, mix, J_g):
-    Fg_s = F_g_calc(mix)
-    F_s = build_F(lam)
-    sigma_total, results, mix_hist_trial = evaluate_trial(F_s, Fg_s, mix, J_g)
-    return sigma_total[0, 0], (F_s, Fg_s, sigma_total, results, mix_hist_trial)
+def mix_B(F0=None, ds=1.0):
+    """matrix only, no growth"""
+    F0 = jnp.eye(3) if F0 is None else F0
+    return mixture([build_elastin_matrix(grows=False)], F0, ds=ds)
 
 
-def bisect_lambda_for_stress(target_sigma11, mix, J_g, lo=0.2, hi=20.0, iters=60):
-    """sigma_11(lambda) is monotonically increasing, but as the material remodels
-    its own residual (lambda=1) stress can drift above the target -- holding a
-    fixed target may then require lambda < 1 (compression), so the bracket must
-    allow that, and a bracket failure must be surfaced, not silently returned as
-    the edge of the search range."""
-    f_lo, _ = sigma11_of_lambda(jnp.asarray(lo), mix, J_g)
-    f_hi, _ = sigma11_of_lambda(jnp.asarray(hi), mix, J_g)
-    if (f_lo - target_sigma11) * (f_hi - target_sigma11) > 0:
-        raise RuntimeError(
-            f"target sigma_11={target_sigma11:.6f} not bracketed: "
-            f"sigma_11({lo})={float(f_lo):.6f}, sigma_11({hi})={float(f_hi):.6f}"
-        )
-    for _ in range(iters):
-        mid = 0.5 * (lo + hi)
-        f_mid, aux = sigma11_of_lambda(jnp.asarray(mid), mix, J_g)
-        if (f_mid - target_sigma11) * (f_lo - target_sigma11) <= 0:
-            hi = mid
-        else:
-            lo, f_lo = mid, f_mid
-    return mid, aux
+def mix_C(F0=None, ds=1.0):
+    """matrix only, with growth"""
+    F0 = jnp.eye(3) if F0 is None else F0
+    return mixture([build_elastin_matrix(grows=True)], F0, ds=ds)
+
+
+def _five(grows, F0, ds):
+    F0 = jnp.eye(3) if F0 is None else F0
+    a = jnp.pi / 8
+    cs = [
+        build_elastin_matrix(rho_0=0.8, phi_0=0.8, grows=grows),
+        # fibers laid out about the DRIVEN axis (y): axial, transverse, +/-alpha
+        build_fiber(M=[0, 1, 0], rho_0=0.05, phi_0=0.05, grows=grows),
+        build_fiber(M=[1, 0, 0], rho_0=0.05, phi_0=0.05, grows=grows),
+        build_fiber(M=[jnp.sin(a), jnp.cos(a), 0], rho_0=0.05, phi_0=0.05, grows=grows),
+        build_fiber(M=[-jnp.sin(a), jnp.cos(a), 0], rho_0=0.05, phi_0=0.05, grows=grows),
+    ]
+    return mixture(cs, F0, ds=ds)
+
+
+def mix_D(F0=None, ds=1.0):
+    return _five(False, F0, ds)
+
+
+def mix_E(F0=None, ds=1.0):
+    return _five(True, F0, ds)
 
 
 # ==========================================
-# Test 1: constant elongation (displacement-controlled, case U)
-#   Stretch is applied once and held fixed; remodeling relaxes the stress.
+# Burn-in
+#   sigma_j_calc evaluates the cohort integral from s=0, but the analytic
+#   homeostatic value assumes an equilibrated past (integral from -inf). With
+#   an empty history the first step returns only ~ds/T of the true value
+#   (measured: ratio 0.0094 vs ds/T=0.0099). Running at F=I with the gains
+#   ZEROED lets the integral fill without mass feedback corrupting it; it
+#   converges to the snapshot sigma_f_0 (measured ratio 0.9998 after ~7T).
+#   Burning in with gains ON does NOT work: sigma_f < sigma_f_0 drives
+#   rho down via rate=(k_plus-k_minus)/T and the state drifts away.
 # ==========================================
 
 
-def test_constant_elongation(n_steps=60, lam_target=1.2):
-    """Stress remodeling is governed by sigma_f = trace(sigma), not any single
-    tensor component, so relaxation is checked on sigma_f (equivalently
-    c.history.sigma_f), toward the homeostatic reference sigma_f_0."""
-    mix, c, par = build_mixture()
-    J_g = J_g_calc(mix)
-    sigma_f_0 = float(c.history.sigma_f[0])
+def burn_in(mix, n_T=7.0, ds_burn=10.0):
+    """Fill the cohort history at F=I with gains off, then restore the gains.
+    Note: `grows=False` does NOT freeze rho -- it only changes Fg/Jg handling
+    inside sigma_j_calc. rho still evolves through rho_calc_from_sigma_f, which
+    is why the gains have to be zeroed explicitly here."""
+    saved = [(c.params.k_sigma_plus, c.params.k_sigma_minus) for c in mix.constituents]
+    for c in mix.constituents:
+        c.params.k_sigma_plus = jnp.asarray(0.0)
+        c.params.k_sigma_minus = jnp.asarray(0.0)
 
-    F_s = build_F(jnp.asarray(lam_target))
-    Fg_s = F_g_calc(mix)
-    sigma_total, results, mix_hist_trial = evaluate_trial(F_s, Fg_s, mix, J_g)
-    commit_step(mix, mix_hist_trial, results)
-
-    s_vals = [0.0, float(mix.history.s[-1])]
-    sigma11_vals = [sigma_f_0, float(sigma_total[0, 0])]
-    sigma_f_vals = [sigma_f_0, float(c.history.sigma_f[-1])]
-
+    ds_orig, mix.ds = mix.ds, ds_burn
+    n_steps = int(n_T * float(mix.constituents[0].params.T) / ds_burn)
     for _ in range(n_steps):
         J_g = J_g_calc(mix)
-        Fg_s = F_g_calc(mix)
-        sigma_total, results, mix_hist_trial = evaluate_trial(F_s, Fg_s, mix, J_g)
-        commit_step(mix, mix_hist_trial, results)
-        s_vals.append(float(mix.history.s[-1]))
-        sigma11_vals.append(float(sigma_total[0, 0]))
-        sigma_f_vals.append(float(c.history.sigma_f[-1]))
+        st, res, mh = evaluate_trial(jnp.eye(3), F_g_calc(mix), mix, J_g)
+        commit_step(mix, mh, res)
 
-    deviation = [abs(sf - sigma_f_0) for sf in sigma_f_vals]
-    relaxing = deviation[-1] < deviation[1]
-    all_finite = all(jnp.isfinite(jnp.asarray(sigma_f_vals)))
-
-    print("=== Test 1: constant elongation (case U) ===")
-    print(f"stretch held at lambda = {lam_target}")
-    print(f"sigma_f_0 (homeostatic reference) = {sigma_f_0:.6f}")
-    print(
-        f"sigma_f, right after jump = {sigma_f_vals[1]:.6f}  (deviation {deviation[1]:.6f})"
-    )
-    print(
-        f"sigma_f, end of run      = {sigma_f_vals[-1]:.6f}  (deviation {deviation[-1]:.6f})"
-    )
-    print(f"deviation from homeostasis shrinking: {relaxing}")
-    print(f"all finite: {all_finite}")
-    print()
-    return s_vals, sigma11_vals, sigma_f_vals
+    mix.ds = ds_orig
+    for c, (kp, km) in zip(mix.constituents, saved):
+        c.params.k_sigma_plus, c.params.k_sigma_minus = kp, km
+    return mix
 
 
 # ==========================================
-# Test 2: constant stress (stress-controlled, case S)
-#   Stress is stepped once and held fixed via an outer bisection on lambda
-#   at every time step; remodeling creeps the stretch upward.
+# Per-axis BC spec
 # ==========================================
 
 
-def test_constant_stress(n_steps=60, stress_increase=0.20):
-    """Target is defined on sigma_11 itself (the controlled component), evaluated
-    at the undeformed F=I state, not on sigma_f (trace) -- comparing a component
-    target against a trace-based reference silently makes the target unreachable."""
-    mix, c, par = build_mixture()
-    J_g = J_g_calc(mix)
-    sigma11_ref, _ = sigma11_of_lambda(jnp.asarray(1.0), mix, J_g)
-    target_sigma11 = float(sigma11_ref) * (1.0 + stress_increase)
+@dataclass(frozen=True)
+class AxisBC:
+    mode: str                    # prescribed | free | stress | force
+    value: Optional[float] = None
 
-    lam, aux = bisect_lambda_for_stress(target_sigma11, mix, J_g)
-    F_s, Fg_s, sigma_total, results, mix_hist_trial = aux
-    commit_step(mix, mix_hist_trial, results)
 
-    s_vals = [0.0, float(mix.history.s[-1])]
-    lam_vals = [1.0, float(lam)]
-    sigma11_vals = [float(sigma11_ref), float(sigma_total[0, 0])]
+def prescribed(v): return AxisBC("prescribed", float(v))
+def free():        return AxisBC("free")
+def stress(t):     return AxisBC("stress", float(t))
+def force(t):      return AxisBC("force", float(t))
 
-    for _ in range(n_steps):
+
+def sigma_and_P(lams, mix, J_g):
+    Fg_s = F_g_calc(mix)
+    F_s = jnp.diag(lams)
+    sigma_total, results, mix_hist_trial = evaluate_trial(F_s, Fg_s, mix, J_g)
+    J = lams[0] * lams[1] * lams[2]
+    P_diag = J / lams * jnp.diag(sigma_total)          # P_ii = J/lam_i * sigma_ii
+    return sigma_total, P_diag, (F_s, Fg_s, sigma_total, results, mix_hist_trial)
+
+
+def make_residual(axes, mix, J_g):
+    unknown = [i for i, a in enumerate(axes) if a.mode != "prescribed"]
+
+    def lams_from_x(x):
+        vals, xi = [], 0
+        for a in axes:
+            if a.mode == "prescribed":
+                vals.append(a.value)
+            else:
+                vals.append(x[xi]); xi += 1
+        return jnp.array(vals, dtype=jnp.float64)
+
+    def R(x):
+        sigma, P, aux = sigma_and_P(lams_from_x(x), mix, J_g)
+        eqs = []
+        for i in unknown:
+            a = axes[i]
+            if a.mode == "free":
+                eqs.append(sigma[i, i])
+            elif a.mode == "stress":
+                eqs.append(sigma[i, i] - a.value)
+            elif a.mode == "force":
+                eqs.append(P[i] - a.value)
+        return jnp.array(eqs), aux
+
+    return R, unknown
+
+
+def newton_solve(residual, x0, tol=1e-10, max_iter=60, fd_eps=1e-7):
+    x = jnp.asarray(x0, dtype=jnp.float64)
+    n = x.shape[0]
+    r, aux = residual(x)
+    for it in range(max_iter):
+        if float(jnp.max(jnp.abs(r))) < tol:
+            return x, aux
+        J = jnp.zeros((n, n))
+        for j in range(n):
+            h = fd_eps * max(1.0, abs(float(x[j])))
+            rp, _ = residual(x.at[j].add(h))
+            J = J.at[:, j].set((rp - r) / h)
+        dx = jnp.linalg.solve(J, -r)
+        if not bool(jnp.all(jnp.isfinite(dx))):
+            raise RuntimeError(f"non-finite Newton step at iter {it}")
+        x = x + dx
+        r, aux = residual(x)
+    raise RuntimeError(f"Newton not converged: |r|={float(jnp.max(jnp.abs(r))):.3e}")
+
+
+# ==========================================
+# Generic driver -- U/S/F are just different axes tuples
+# ==========================================
+
+
+def run_case(builder, axes, n_steps=40, ds=1.0, x0=None, label="", verbose=True, burn=True):
+    mix = builder(ds=ds)
+    if burn:
+        burn_in(mix)
+    cs = mix.constituents
+    sigma_f_0 = [float(c.history.sigma_f[0]) for c in cs]
+
+    if x0 is None:
+        x0 = jnp.ones(sum(1 for a in axes if a.mode != "prescribed"))
+    x = jnp.asarray(x0, dtype=jnp.float64)
+
+    lam_h, sig_h, P_h, sf_h, s_h = [], [], [], [], []
+    for _ in range(n_steps + 1):
         J_g = J_g_calc(mix)
-        lam, aux = bisect_lambda_for_stress(target_sigma11, mix, J_g)
+        R, _ = make_residual(axes, mix, J_g)
+        x, aux = newton_solve(R, x)
         F_s, Fg_s, sigma_total, results, mix_hist_trial = aux
         commit_step(mix, mix_hist_trial, results)
-        s_vals.append(float(mix.history.s[-1]))
-        lam_vals.append(float(lam))
-        sigma11_vals.append(float(sigma_total[0, 0]))
 
-    stress_held = all(abs(s - target_sigma11) < 1e-4 for s in sigma11_vals[1:])
-    increasing = all(
-        lam_vals[i + 1] >= lam_vals[i] - 1e-9 for i in range(len(lam_vals) - 1)
-    )
-    decreasing = all(
-        lam_vals[i + 1] <= lam_vals[i] + 1e-9 for i in range(len(lam_vals) - 1)
-    )
-    monotonic = increasing or decreasing
-    all_finite = all(jnp.isfinite(jnp.asarray(lam_vals)))
+        lams = jnp.diag(F_s)
+        Pd = (lams[0] * lams[1] * lams[2]) / lams * jnp.diag(sigma_total)
+        s_h.append(float(mix.history.s[-1]))
+        lam_h.append([float(v) for v in lams])
+        sig_h.append([float(v) for v in jnp.diag(sigma_total)])
+        P_h.append([float(v) for v in Pd])
+        sf_h.append([float(c.history.sigma_f[-1]) for c in cs])
 
-    # Depositing new material at the fixed prestretch G keeps adding residual
-    # stress even without external stretch, so with k_sigma+ > 0 and no offsetting
-    # degradation, a fixed stress target can require increasing COMPRESSION over
-    # time (lambda decreasing) once residual stress alone would exceed it --
-    # not necessarily the increasing stretch of the paper's own case S example.
-    direction = (
-        "decreasing (compression, residual stress outgrew the target)"
-        if decreasing
-        else "increasing" if increasing else "non-monotonic"
-    )
+    dev0 = [abs(sf_h[0][j] - sigma_f_0[j]) for j in range(len(cs))]
+    dev1 = [abs(sf_h[-1][j] - sigma_f_0[j]) for j in range(len(cs))]
+    relaxing = all(dev1[j] <= dev0[j] + 1e-12 for j in range(len(cs)))
+    held = {}
+    for i, a in enumerate(axes):
+        if a.mode in ("stress", "force"):
+            ser = [row[i] for row in (sig_h if a.mode == "stress" else P_h)]
+            held[i] = all(abs(v - a.value) < 1e-6 * max(1.0, abs(a.value)) for v in ser)
+    finite = bool(jnp.all(jnp.isfinite(jnp.asarray(sig_h))))
 
-    print("=== Test 2: constant stress (case S) ===")
-    print(
-        f"target sigma_11 = {target_sigma11:.6f} ({stress_increase*100:.0f}% above homeostatic)"
-    )
-    print(f"lambda(0)   = {lam_vals[0]:.6f}")
-    print(f"lambda(end) = {lam_vals[-1]:.6f}")
-    print(f"stress held at target throughout: {stress_held}")
-    print(f"stretch trajectory: {direction}")
-    print(f"monotonic: {monotonic}")
-    print(f"all finite: {all_finite}")
-    print()
-    return s_vals, lam_vals, sigma11_vals
+    if verbose:
+        print(f"  case {label}")
+        print(f"    lam  : [{lam_h[0][0]:.5f} {lam_h[0][1]:.5f} {lam_h[0][2]:.5f}]"
+              f" -> [{lam_h[-1][0]:.5f} {lam_h[-1][1]:.5f} {lam_h[-1][2]:.5f}]")
+        print(f"    sigma_yy: {sig_h[0][1]:+.6e} -> {sig_h[-1][1]:+.6e}")
+        print(f"    P_yy    : {P_h[0][1]:+.6e} -> {P_h[-1][1]:+.6e}")
+        for j in range(len(cs)):
+            print(f"    c{j}: sigma_f_0={sigma_f_0[j]:+.4e} "
+                  f"dev {dev0[j]:.4e} -> {dev1[j]:.4e}")
+        if held:
+            print(f"    target held: {held}")
+        print(f"    relaxing={relaxing}  finite={finite}")
+    return dict(s=s_h, lam=lam_h, sigma=sig_h, P=P_h, sigma_f=sf_h,
+                held=held, relaxing=relaxing, finite=finite)
 
 
-# ==========================================
-# Test 3: single-step internal consistency
-#   Verifies the Newton solve at one step is self-consistent: the converged
-#   sigma_f equals material.sigma_f(sigma_j), and rho_calc_from_sigma_f's
-#   closed form agrees with a brute-force trapezoidal integration of Eq. 36
-#   evaluated on the resulting (committed) m history.
-# ==========================================
+def reference_state(builder, ds=1.0):
+    axes = (prescribed(1.0), prescribed(1.0), free())
+    out = run_case(builder, axes, n_steps=0, ds=ds, label="ref", verbose=False, burn=True)
+    return out["lam"][0][FREE_AXIS], out["sigma"][0][DRIVEN_AXIS], out["P"][0][DRIVEN_AXIS]
 
 
-def rho_rk4_reference(
-    rho_prev, sigma_f_prev, sigma_f_new, sigma_f_0, par, ds, n_sub=2000
-):
-    """Fine RK4 integration of dot(rho) = rho*(k+ - k-)/T * sigma_frac(tau), with
-    sigma_frac linearly interpolated between its two step endpoints. A valid
-    ground truth at ANY step size, unlike Eq. 36's trapezoidal discretization,
-    which the paper itself only claims is accurate once s >> T (Q(s) ~ 0)."""
-    rate = (par.k_sigma_plus - par.k_sigma_minus) / par.T
-    frac_prev = (sigma_f_prev - sigma_f_0) / sigma_f_0
-    frac_new = (sigma_f_new - sigma_f_0) / sigma_f_0
-
-    def f(t_frac, rho):
-        frac = frac_prev + t_frac * (frac_new - frac_prev)
-        return rate * frac * rho
-
-    h = 1.0 / n_sub
-    rho = rho_prev
-    t = 0.0
-    for _ in range(n_sub):
-        k1 = f(t, rho)
-        k2 = f(t + h / 2, rho + h / 2 * k1)
-        k3 = f(t + h / 2, rho + h / 2 * k2)
-        k4 = f(t + h, rho + h * k3)
-        rho = rho + h / 6 * (k1 + 2 * k2 + 2 * k3 + k4)
-        t += h
-    return rho
+def case_U(builder, lam_y=1.2, **kw):
+    return run_case(builder, (prescribed(1.0), prescribed(lam_y), free()),
+                    label="U", **kw)
 
 
-def test_single_step(lam_target=1.15, ds_values=(10.0, 2.0, 0.5)):
-    """The closed-form rho update is itself a trapezoidal (second-order)
-    approximation of the ODE dot(rho)=rho*(k+-k-)/T*sigma_frac -- it should
-    match the fine RK4 reference only approximately at large ds, with the
-    error shrinking as ds shrinks. This checks convergence rather than a
-    single fixed tolerance, since ds=10 alone is not close to the continuum
-    limit relative to T=101 (matches the ~0.4% gap found analytically earlier
-    for this same comparison)."""
-    residual = None
-    errors = []
-    for ds in ds_values:
-        mix, c, par = build_mixture(ds=ds)
-        J_g = J_g_calc(mix)
-        Fg_s = F_g_calc(mix)
-        F_s = build_F(jnp.asarray(lam_target))
-        sigma_f_0 = float(c.history.sigma_f[0])
-        rho_prev = float(c.history.rho[-1])
-        sigma_f_prev = float(c.history.sigma_f[-1])
+def case_S(builder, increase=0.20, ds=1.0, **kw):
+    _, s0, _ = reference_state(builder, ds=ds)
+    return run_case(builder, (prescribed(1.0), stress(s0 * (1 + increase)), free()),
+                    ds=ds, x0=[1.0, 1.0], label="S", **kw)
 
-        sigma_total, results, mix_hist_trial = evaluate_trial(F_s, Fg_s, mix, J_g)
-        sf_s, sigma_j, rho_s, m_s, K_cumu_s = results[0]
 
-        if residual is None:
-            residual = float(par.material.sigma_f(sigma_j) - sf_s)
+def case_F(builder, increase=0.20, ds=1.0, **kw):
+    _, _, P0 = reference_state(builder, ds=ds)
+    return run_case(builder, (prescribed(1.0), force(P0 * (1 + increase)), free()),
+                    ds=ds, x0=[1.0, 1.0], label="F", **kw)
 
-        commit_step(mix, mix_hist_trial, results)
-        rho_closed = float(c.history.rho[-1])
-        rho_rk4 = rho_rk4_reference(
-            rho_prev, sigma_f_prev, float(sf_s), sigma_f_0, par, ds
-        )
-        rel_err = abs(rho_closed - rho_rk4) / abs(rho_rk4)
-        errors.append(rel_err)
 
-    residual_ok = abs(residual) < 1e-8
-    converging = all(errors[i + 1] < errors[i] for i in range(len(errors) - 1))
-    all_finite = all(jnp.isfinite(jnp.asarray(errors)))
-
-    print("=== Test 3: single-step internal consistency ===")
-    print(
-        f"Newton residual (sigma_f_true - sigma_f*) at ds={ds_values[0]}: {residual:.3e}"
-    )
-    print("rho (closed form) vs fine RK4 reference, relative error by step size:")
-    for ds, err in zip(ds_values, errors):
-        print(f"  ds={ds:6.2f}: relative error = {err:.3e}")
-    print(f"residual below tol: {residual_ok}")
-    print(f"error shrinks as ds shrinks (converging to RK4): {converging}")
-    print(f"all finite: {bool(all_finite)}")
-    print()
-    return residual, errors
+BUILDERS = {"B matrix/no-growth": mix_B, "C matrix/growth": mix_C,
+            "D 5-const/no-growth": mix_D, "E 5-const/growth": mix_E}
 
 
 if __name__ == "__main__":
-    test_constant_elongation()
-    test_constant_stress()
-    test_single_step()
+    for name, b in BUILDERS.items():
+        print("=" * 60); print(name); print("=" * 60)
+        for fn in (case_U, case_S, case_F):
+            try:
+                fn(b, n_steps=30)
+            except Exception as e:
+                print(f"  {fn.__name__}: FAILED {type(e).__name__}: {e}")
+            print()

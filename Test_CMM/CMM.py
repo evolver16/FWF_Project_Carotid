@@ -428,7 +428,7 @@ def commit_step(mix, mix_hist_trial, results):
         c.commit(sf_s, m_s, rho_s, K_cumu_s)
 
 
-def CMM_sigma_calc(F_s, mix):
+def CMM_sigma_calc(F_s, mix, F_g_calc):
     J_g = J_g_calc(mix)
     Fg_s = F_g_calc(mix)
     sigma_total, results, mix_hist_trial = evaluate_trial(F_s, Fg_s, mix, J_g)
