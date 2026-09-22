@@ -278,32 +278,82 @@ def rho_dot_minus_calc(c, sigma_f, eps=1e-9):
 
 
 @jit
-def mixture_sigma_solver(mixt,F):
+def mixture_sigma_solver(mixt, F):
+    """Eq. 27 with Eq. 17 substituted (phi cancels, leaving rho/J).
+
+    Also returns the per-constituent (F_e, sigma) it had to build anyway, so
+    commit can reuse them instead of evaluating the same stresses twice.
+    """
     F_g = mixt.F_g
     J = jnp.linalg.det(F)
     sigma_tot = jnp.zeros((3,3))
+    trial = []
     for c in mixt.constituents:
         F_e = F @ jnp.linalg.inv(F_g) @ jnp.linalg.inv(c.F_r)
-        sigma_tot += c.material.sigma(F_e) * c.rho / J
-    return sigma_tot
+        sigma = c.material.sigma(F_e)
+        sigma_tot += sigma * c.rho / J
+        trial.append((F_e, sigma))
+    return sigma_tot, trial
 
 
 @jit
-def update_constituents(mixt,F):
-    ds = mixt.ds
-    F_g = mixt.F_g
-    J = jnp.linalg.det(F)
-    for c in mixt.constituents:
-        R = polar_rotation(F)
-        sigma_pre_s = R @ c.sigma_pre @ R.T
-        F_e = F @ jnp.linalg.inv(F_g) @ jnp.linalg.inv(c.F_r)
-        sigma_s = c.material.sigma(F_e)
+def constituent_update(c, F_e, sigma_s, R, ds, J):
+    """Remodeling step for one constituent at an already-settled F.
 
-        sigma_f_s = c.material.sigma_f(sigma_s)
+    F_e and sigma_s are handed in from mixture_sigma_solver -- nothing is
+    re-evaluated here. Returns new values as plain tensors/scalars; no state
+    is written.
+    """
+    sigma_pre_s = R @ c.sigma_pre @ R.T
+    sigma_f_s = c.material.sigma_f(sigma_s)
 
-        rho_dot_plus = rho_dot_plus_calc(c, sigma_f_s)
-        rho_dot_minus = rho_dot_minus_calc(c, sigma_f_s)
-        rho_s = c.rho + (rho_dot_plus + rho_dot_minus) * ds
+    rho_dot_plus = rho_dot_plus_calc(c, sigma_f_s)
+    rho_dot_minus = rho_dot_minus_calc(c, sigma_f_s)
+    rho_s = c.rho + (rho_dot_plus + rho_dot_minus) * ds
 
-        sigma_rate_euler = rho_dot_plus/c.rho*(sigma_s-sigma_pre_s)
-        c.material.F_r(F_e, J, c, ds, sigma_rate_euler)
+    sigma_rate_euler = rho_dot_plus/c.rho*(sigma_s-sigma_pre_s)
+    F_r_s = c.material.F_r(F_e, J, c, ds, sigma_rate_euler)
+    return rho_s, F_r_s, rho_dot_plus
+
+
+# ==========================================
+# Solver entry point (shared with FCMM.py -- see jaxFEM_solver.py)
+#   sigma_solver(state, F) -> (sigma_tot, aux)   pure, committed state only
+#   commit(state, F, aux)  -> state              once, on the converged F
+# ==========================================
+
+
+# Trial stress at F using only committed state. No F_r solve happens here, so
+# the outer equilibrium loop can call this as often as it likes. aux is the
+# per-constituent (F_e, sigma) that commit reuses.
+sigma_solver = mixture_sigma_solver
+
+
+def commit(mixt, F, aux):
+    """Advance one step on the settled F, reusing sigma_solver's (F_e, sigma)
+    from aux -- no stress is re-evaluated here.
+
+    The rest (R, sigma_pre_s, density rates, the F_r solve) stays here rather
+    than moving into sigma_solver on purpose: sigma_solver runs at every trial
+    F of the equilibrium loop, and this work is only ever needed once.
+
+    Not jitted: it mutates the state containers, and a mutation inside a traced
+    function would only take effect at trace time.
+    """
+    ds, J = mixt.ds, jnp.linalg.det(F)
+    R = polar_rotation(F)
+    updates = [constituent_update(c, F_e, sigma_s, R, ds, J)
+               for c, (F_e, sigma_s) in zip(mixt.constituents, aux)]
+
+    rho_tot_s = sum(u[0] for u in updates)
+    for c, (rho_s, F_r_s, rho_dot_plus) in zip(mixt.constituents, updates):
+        c.rho = rho_s
+        c.F_r = F_r_s
+        c.rho_dot_plus = rho_dot_plus
+        c.phi = rho_s / rho_tot_s
+
+    # F_g_calc reads mixt.rho_tot, so the new total has to land first. The F_g
+    # written here is next step's -- this step used the one it came in with.
+    mixt.rho_tot = rho_tot_s
+    mixt.F_g = mixt.F_g_calc(mixt.ag)
+    return mixt

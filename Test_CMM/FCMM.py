@@ -14,10 +14,13 @@ def F_e_calc(F, F_g, G):
     return F[-1] @ jnp.linalg.inv(F_g[-1]) @ jnp.linalg.inv(inner) @ G
 
 
-def F_g_calc(mixt):
+def F_g_iso_calc(mixt):
     """F_g(s) = (rho_tot(s)/rho_tot(0))^(1/3) I   (Eq. 6, isotropic)"""
     return J_g_calc(mixt) ** (1.0 / 3.0) * jnp.eye(3)
 
+def F_g_aniso_calc(mixt, ag):
+    """F_g(s) = (rho_tot(s)/rho_tot(0))^(1/3) I   (Eq. 7, anisotropic)"""
+    return (J_g_calc(mixt) - 1) * jnp.outer(ag, ag)  + jnp.eye(3)
 
 def J_g_calc(mixt):
     """J_g(s) = det F_g(s) = rho_tot(s)/rho_tot(0), lagged from last committed step"""
@@ -118,30 +121,24 @@ class history:
 
 @jax.tree_util.register_pytree_node_class
 class params:
-    def __init__(self, material, T, G, k_minus, k_plus, phi_0):
+    def __init__(self, material, T, G, k_minus, k_plus, phi_0, grows=True):
         self.material = material
         self.T = jnp.asarray(T)
         self.G = jnp.asarray(G)
         self.k_sigma_minus = jnp.asarray(k_minus)
         self.k_sigma_plus = jnp.asarray(k_plus)
         self.phi_0 = jnp.asarray(phi_0)
-
+        self.grows = grows
     def tree_flatten(self):
-        return (
-            self.material,
-            self.T,
-            self.G,
-            self.k_sigma_minus,
-            self.k_sigma_plus,
-            self.phi_0,
-        ), None
+        return (self.material, self.T, self.G, self.k_sigma_minus,
+                self.k_sigma_plus, self.phi_0), self.grows
 
     @classmethod
     def tree_unflatten(cls, aux_data, children):
         obj = cls.__new__(cls)
-        obj.material, obj.T, obj.G, obj.k_sigma_minus, obj.k_sigma_plus, obj.phi_0 = (
-            children
-        )
+        (obj.material, obj.T, obj.G, obj.k_sigma_minus,
+         obj.k_sigma_plus, obj.phi_0) = children
+        obj.grows = aux_data
         return obj
 
 
@@ -177,7 +174,7 @@ class mixture_history:
 
 
 class mixture:
-    def __init__(self, constituents, F0, ds):
+    def __init__(self, constituents, F0, ds, ag=None):
         self.constituents = constituents
         self.history = mixture_history(
             F=jnp.asarray(F0)[None],
@@ -186,6 +183,13 @@ class mixture:
         )
         self.ds = ds
         self.rho_tot_0 = sum(c.history.rho[0] for c in constituents)
+        self.ag = None if ag is None else jnp.asarray(ag) / jnp.linalg.norm(jnp.asarray(ag))
+
+    def F_g_calc(self):
+        """Mirrors HCMM.mixture.F_g_calc so sigma_solver needs no extra argument."""
+        if self.ag is None:
+            return F_g_iso_calc(self)
+        return F_g_aniso_calc(self, self.ag)
 
     def commit(self, F_s, F_g_s):
         self.history = mixture_history(
@@ -221,12 +225,10 @@ def Phi_j_calc(rho_j, rho_tot):
 def K_exp(par, sigma_f_s, sigma_f_0, eps=1e-12):
     """K_-(s) = 1/T * (1 + k_sigma- * (sigma_f(s)-sigma_f(0))/sigma_f(0))   (Eq. 13)"""
     denom = jnp.where(jnp.abs(sigma_f_0) < eps, 1.0, sigma_f_0)
-    rel = jnp.where(
-        jnp.abs(sigma_f_0) < eps,
-        0.0,
-        par.k_sigma_minus * (sigma_f_s - sigma_f_0) / denom,
-    )
+    rel = jnp.where(jnp.abs(sigma_f_0) < eps, par.k_sigma_minus * sigma_f_s,
+                    par.k_sigma_minus * (sigma_f_s - sigma_f_0) / denom)
     return (1.0 / par.T) * (1 + rel)
+
 
 
 @jit
@@ -246,15 +248,16 @@ def q_calc(hist, K_cumu_s):
 
 
 @jit
-def rho_calc_from_sigma_f(par, hist, sigma_f_s, ds):
+def rho_calc_from_sigma_f(par, hist, sigma_f_s, ds, eps=10e-6):
     """rho(s) = rho(s-1) * exp((k_sigma+ - k_sigma-)/T * integral_{s-1}^{s} sigma_frac dtau)
 
     Closed form of Eq. 1 with Eq. 11 and Eq. 13 substituted into the mass balance.
     """
     sigma_f_0 = hist.sigma_f[0]
     rho_prev = hist.rho[-1]
-    sigma_frac_prev = (hist.sigma_f[-1] - sigma_f_0) / sigma_f_0
-    sigma_frac_new = (sigma_f_s - sigma_f_0) / sigma_f_0
+    denom = jnp.where(jnp.abs(sigma_f_0) < eps, 1.0, sigma_f_0)
+    sigma_frac_prev = jnp.where(jnp.abs(sigma_f_0) < eps, hist.sigma_f[-1], (hist.sigma_f[-1] - sigma_f_0) / denom)
+    sigma_frac_new  = jnp.where(jnp.abs(sigma_f_0) < eps, sigma_f_s,        (sigma_f_s - sigma_f_0) / denom)
     rate = (par.k_sigma_plus - par.k_sigma_minus) / par.T
     return rho_prev * jnp.exp(rate * ds / 2.0 * (sigma_frac_prev + sigma_frac_new))
 
@@ -270,6 +273,52 @@ def m_j_calc(par, rho_s, sigma_f_s, sigma_f_0, eps=1e-12):
     )
     return (rho_s / par.T) * (1 + rel)
 
+
+def prestress_stress_snapshot(g_axial, elastin_kwargs, fiber_specs):
+    """sigma(F=I) = rho_0^elas * material.sigma(G^elas) + sum_i rho_0^i * material.sigma(G^i)
+
+    Snapshot stress at F=I: F_e^j = G^j exactly for every constituent, no
+    cohort history/integral involved. Fiber G's use the fixed, measured g=1.1
+    (Ferruzzi/Bellini); only elastin's g_axial is unknown here.
+
+    elastin_kwargs: dict with C10, K, rho_0.
+    fiber_specs: list of dicts, each with M (direction), k1, k2, g (fixed), rho_0.
+    """
+    C10, K, rho0_e = elastin_kwargs['C10'], elastin_kwargs['K'], elastin_kwargs['rho_0']
+    elastin_material = NeoHookean(C10=C10, K=K)
+    G_e = jnp.diag(jnp.array([1.0 / jnp.sqrt(g_axial), g_axial, 1.0 / jnp.sqrt(g_axial)]))
+    sigma = rho0_e * elastin_material.sigma(G_e)
+
+    for spec in fiber_specs:
+        M = jnp.asarray(spec['M'], dtype=jnp.float64)
+        M = M / jnp.linalg.norm(M)
+        material = Fung(spec['k1'], spec['k2'], M)
+        P = jnp.outer(M, M)
+        g = spec['g']
+        G_f = g * P + (1.0 / jnp.sqrt(g)) * (jnp.eye(3) - P)
+        sigma = sigma + spec['rho_0'] * material.sigma(G_f)
+
+    return sigma
+
+
+def solve_prestress_g(target, elastin_kwargs, fiber_specs, axis=1, lo=1.0, hi=5.0, iters=60):
+    """Bisection on elastin's axial deposition stretch g such that
+    sigma(F=I)[axis,axis] = target   (axis=1 -> Y-Y, Fig. 1's loading direction).
+
+    Only elastin's g is solved for -- fiber deposition stretches stay fixed.
+    """
+    f_lo = float(prestress_stress_snapshot(lo, elastin_kwargs, fiber_specs)[axis, axis])
+    f_hi = float(prestress_stress_snapshot(hi, elastin_kwargs, fiber_specs)[axis, axis])
+    if (f_lo - target) * (f_hi - target) > 0:
+        raise RuntimeError(f"target {target} not bracketed: f({lo})={f_lo}, f({hi})={f_hi}")
+    for _ in range(iters):
+        mid = 0.5 * (lo + hi)
+        f_mid = float(prestress_stress_snapshot(mid, elastin_kwargs, fiber_specs)[axis, axis])
+        if (f_mid - target) * (f_lo - target) <= 0:
+            hi = mid
+        else:
+            lo, f_lo = mid, f_mid
+    return mid
 
 # ==========================================
 # Strain energy and stress
@@ -292,15 +341,19 @@ def sigma_j_calc(par, hist, m_s, K_cumu_s, mix_hist, J_g):
     """sigma^j(s) = (J_g/J)(rho_0^j/phi_0^j) * integral_0^s m*q*sigma(F_e^j) dtau   (Eq. 4/29/30)"""
     m_full = jnp.concatenate([hist.m, jnp.atleast_1d(m_s)])
     q_values = q_calc(hist, K_cumu_s)
-    F_e_history = F_e_calc(mix_hist.F, mix_hist.Fg, par.G)
+
+    if par.grows:
+        Fg_hist, Jg_eff = mix_hist.Fg, J_g
+    else:
+        Fg_hist, Jg_eff = jnp.broadcast_to(jnp.eye(3), mix_hist.Fg.shape), 1.0
+
+    F_e_history = F_e_calc(mix_hist.F, Fg_hist, par.G)
     sigma_values = jax.vmap(par.material.sigma)(F_e_history)
     weights = (m_full * q_values)[:, None, None]
     integral = jnp.trapezoid(sigma_values * weights, mix_hist.s, axis=0)
     J = jnp.linalg.det(mix_hist.F[-1])
-    kinematic_factor = (J_g / J) * (hist.rho[0] / par.phi_0)
+    kinematic_factor = (Jg_eff / J) * (hist.rho[0] / par.phi_0)
     return kinematic_factor * integral
-
-
 # ==========================================
 # Inner solve: sigma_f(s) is the unknown; rho, m, K_cumu follow from it,
 #   sigma_j is the residual check.
@@ -382,9 +435,34 @@ def commit_step(mix, mix_hist_trial, results):
         c.commit(sf_s, m_s, rho_s, K_cumu_s)
 
 
-def CMM_sigma_calc(F_s, mix):
+def CMM_sigma_calc(F_s, mix, F_g_calc):
     J_g = J_g_calc(mix)
     Fg_s = F_g_calc(mix)
     sigma_total, results, mix_hist_trial = evaluate_trial(F_s, Fg_s, mix, J_g)
     commit_step(mix, mix_hist_trial, results)
     return sigma_total
+
+
+# ==========================================
+# Solver entry point (shared with HCMM.py -- see jaxFEM_solver.py)
+#   sigma_solver(state, F) -> (sigma_tot, aux)   pure, committed state only
+#   commit(state, F, aux)  -> state              once, on the converged F
+# ==========================================
+
+
+def sigma_solver(mix, F):
+    """Trial stress at F. evaluate_trial already leaves mix untouched, so this
+    is safe to call repeatedly from an equilibrium loop. aux carries the trial
+    results so commit does not have to redo the inner sigma_f Newton solves."""
+    J_g = J_g_calc(mix)
+    Fg_s = mix.F_g_calc()
+    sigma_total, results, mix_hist_trial = evaluate_trial(F, Fg_s, mix, J_g)
+    return sigma_total, (results, mix_hist_trial)
+
+
+def commit(mix, F, aux):
+    """Append the trial step to the cohort history. Unlike HCMM's commit this
+    does no fresh work -- sigma_solver already produced everything."""
+    results, mix_hist_trial = aux
+    commit_step(mix, mix_hist_trial, results)
+    return mix

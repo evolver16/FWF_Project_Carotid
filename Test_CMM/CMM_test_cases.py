@@ -1,10 +1,10 @@
 """
-U / S / F load cases run against CMM.py.
+U / S / F load cases run against FCMM.py (the full constrained mixture model).
 
-Three things in CMM_test_cases.py do not match CMM.py and are fixed here:
+Three things in CMM_test_cases.py do not match FCMM.py and are fixed here:
   1. constituent(...) has NO `growth` kwarg. Growth is a params flag: params(..., grows=).
-  2. F_g_calc does not exist. CMM.py defines F_g_iso_calc(mix) / F_g_aniso_calc(mix, ag).
-     (CMM.CMM_sigma_calc also calls the missing F_g_calc, so it is dead code as shipped.)
+  2. F_g_calc does not exist. FCMM.py defines F_g_iso_calc(mix) / F_g_aniso_calc(mix, ag).
+     (FCMM.CMM_sigma_calc also calls the missing F_g_calc, so it is dead code as shipped.)
   3. test_single_step's signature has a non-default arg after defaulted ones -> SyntaxError.
 
 Boundary conditions (paper axis -> index here):
@@ -20,7 +20,7 @@ from typing import Optional
 
 jax.config.update("jax_enable_x64", True)
 
-from CMM import (
+from FCMM import (
     NeoHookean, Fung, params, constituent, mixture,
     evaluate_trial, commit_step, J_g_calc, F_g_iso_calc, F_g_aniso_calc,
 )
@@ -29,19 +29,19 @@ CONFINED_AXIS, DRIVEN_AXIS, FREE_AXIS = 0, 1, 2
 
 
 def F_g_calc(mix):
-    """The name CMM.py's own CMM_sigma_calc calls but never defines."""
+    """The name FCMM.py's own CMM_sigma_calc calls but never defines."""
     return F_g_iso_calc(mix)
 
 
 # ==========================================
-# Builders (corrected against the real CMM API)
+# Builders (corrected against the real FCMM API)
 # ==========================================
 
 
 def build_elastin_matrix(g=1.1, T=101.0, k_minus=0.0, k_plus=0.1,
                          C10=0.305, K=6.1, rho_0=1.0, phi_0=1.0,
                          grows=True, axial=DRIVEN_AXIS, isochoric=True):
-    """isochoric=True reproduces CMM.py's own prestress_stress_snapshot convention:
+    """isochoric=True reproduces FCMM.py's own prestress_stress_snapshot convention:
     G = diag(1/sqrt(g), g, 1/sqrt(g)) with the deposition stretch on the LOADED
     axis. isochoric=False is CMM_test_cases.py's diag(g,1,1), which puts the
     prestretch on the confined axis and has det(G) = g != 1."""
