@@ -8,20 +8,11 @@ from jax import jit
 
 
 @jit
-def F_e_calc(F, F_g, G):
+def F_e_calc(F, F_g, F_r):
     """F_e^j(s,tau) = F(s) F_g(s)^-1 [ F(tau) F_g(tau)^-1 ]^-1 G^j"""
     inner = F @ jnp.linalg.inv(F_g)
-    return F[-1] @ jnp.linalg.inv(F_g[-1]) @ jnp.linalg.inv(inner) @ G
+    return F @ jnp.linalg.inv(F_g) @ jnp.linalg.inv(inner) @ F_r
 
-
-def F_g_calc(mixt):
-    """F_g(s) = (rho_tot(s)/rho_tot(0))^(1/3) I   (Eq. 6, isotropic)"""
-    return J_g_calc(mixt) ** (1.0 / 3.0) * jnp.eye(3)
-
-
-def J_g_calc(mixt):
-    """J_g(s) = det F_g(s) = rho_tot(s)/rho_tot(0), lagged from last committed step"""
-    return rho_tot_prev_calc(mixt) / mixt.rho_tot_0
 
 def sym_to_voigt(T):
     """(3,3) symmetric -> (6,) in (11,22,33,12,13,23) order."""
@@ -32,6 +23,14 @@ def voigt_to_sym(v):
     return jnp.array([[v[0], v[3], v[4]],
                        [v[3], v[1], v[5]],
                        [v[4], v[5], v[2]]])
+
+
+@jit
+def polar_rotation(F):
+    """R from the right polar decomposition F = R U, via SVD (F = U_ S V^T -> R = U_ @ V^T).
+    Used once per step (Eq. 17) to rotate the fixed deposition prestress sigma_pre."""
+    U_, _, Vt = jnp.linalg.svd(F)
+    return U_ @ Vt
 
 # ==========================================
 # Material
@@ -87,20 +86,18 @@ class Fung:
         return jnp.trace(sigma)
 
     @jit
-    def lam_rate(self, F_e, F_r, J, c):
-        lam_r = jnp.dot(self.M, F_r @ self.M)
-        term1 = (c.rho_plus_dt / c.rho) * (c.sigma_f - c.sigma_f_pre)
-        term2 = (J * c.phi) / (4 * c.rho * lam_r)
+    def F_r(self, F_e, J, c, ds, sigma_rate_euler):
+        """Eq. 41 closed form. sigma_rate_euler = rho_dot_plus/rho * (sigma - sigma_pre),
+        built by the caller from THIS step's values (same tensor NeoHookean.F_r's
+        Newton solve uses as rhs) — scalarized here via self.sigma_f (trace),
+        since it's linear: self.sigma_f(sigma_rate_euler) ==
+        rho_dot_plus/rho * (sigma_f - sigma_f_pre)."""
+        lam_r = jnp.dot(self.M, c.F_r @ self.M)
         I4 = self.I4(F_e)
-        term3 = 1.0 / (self.d2Psi_dI4(I4) * I4**2 + self.dPsi_dI4(I4) * I4)
-        return term1 * term2 * term3
-
-
-    @jit
-    def F_r(self, F, J, c, ds):
-        rate = self.lam_rate(F, J, c)
-        lam_r_s = self.lam_r + rate * ds
-        return lam_r_s * self.P + (1.0/jnp.sqrt(lam_r_s)) * (jnp.eye(3) - self.P)
+        denom = self.d2Psi_dI4(I4) * I4**2 + self.dPsi_dI4(I4) * I4
+        lam_rate = self.sigma_f(sigma_rate_euler) * (J * c.phi) / (4 * c.rho * lam_r * denom)
+        lam_r_new = lam_r + ds * lam_rate
+        return lam_r_new * self.P + (1.0 / jnp.sqrt(lam_r_new)) * (jnp.eye(3) - self.P)
 
 
 @jax.tree_util.register_pytree_node_class
@@ -134,27 +131,25 @@ class NeoHookean:
         return jnp.trace(sigma)
 
     @jit
-    def _residual(self, x, F_e_old, F_r_old, rhs, ds):
+    def _residual(self, F_r_s, F_e, F_r, sigma_rate_euler, ds):
         """Eq. 20 residual, discretized via Eq. 43 (Ḟr ≈ (Fr_new - Fr_old)/ds).
         x: (6,) Voigt guess for F_r_new."""
-        F_r_new = voigt_to_sym(x)
-        L_r = ((F_r_new - F_r_old) / ds) @ jnp.linalg.inv(F_r_old)
-        _, dsigma = jax.jvp(self.sigma, (F_e_old,), (F_e_old @ L_r,))
-        return sym_to_voigt(dsigma - rhs)
+        F_r_s = voigt_to_sym(F_r_s)
+        L_r = ((F_r_s - F_r) / ds) @ jnp.linalg.inv(F_r)
+        _, dsigma = jax.jvp(self.sigma, (F_e,), (F_e @ L_r,))
+        return sym_to_voigt(dsigma - sigma_rate_euler)
 
     @jit
-    def F_r(self, F_e_old, sigma_old, sigma_pre, rho_dot_plus, rho, F_r_old, ds, n_iter=20):
+    def F_r(self, F_e, J, c, ds, sigma_rate_euler):
         """Solve Eq. 20 for F_r_new via Newton's method. Tensor in, tensor out —
         same calling shape as Fung.F_r, iteration fully internal."""
-        rhs = (rho_dot_plus / rho) * (sigma_old - sigma_pre)
-
         def newton_step(i, x):
-            fvec = self._residual(x, F_e_old, F_r_old, rhs, ds)
-            fjac = jax.jacfwd(self._residual)(x, F_e_old, F_r_old, rhs, ds)
+            fvec = self._residual(x, F_e, c.F_r, sigma_rate_euler, ds)
+            fjac = jax.jacfwd(self._residual)(x, F_e, c.F_r, sigma_rate_euler, ds)
             return x + jnp.linalg.solve(fjac, -fvec)
 
-        x0 = sym_to_voigt(F_r_old)
-        x_final = jax.lax.fori_loop(0, n_iter, newton_step, x0)
+        x0 = sym_to_voigt(c.F_r)
+        x_final = jax.lax.fori_loop(0, 20, newton_step, x0)
         return voigt_to_sym(x_final)
 
 
@@ -165,13 +160,12 @@ class NeoHookean:
 @jax.tree_util.register_pytree_node_class
 class constituent:
     def __init__(self, material, T, rho_0, k_sigma_plus, k_sigma_minus,
-                 G=None, sigma_pre=None, F_r=None):
+                 G=None, sigma_pre=None, F_r=None, phi=1.0):
         self.material = material
         self.T = T
         self.rho = rho_0
         self.k_sigma_plus = jnp.asarray(k_sigma_plus)
         self.k_sigma_minus = jnp.asarray(k_sigma_minus)
-        self.F_r = jnp.eye(3) if F_r is None else F_r
 
         if sigma_pre is None:
             self.sigma_pre = material.sigma(G)
@@ -181,25 +175,135 @@ class constituent:
         self.sigma_f_pre = material.sigma_f(self.sigma_pre)
         self.sigma_f = self.sigma_f_pre
 
+        if F_r is not None:
+            self.F_r = F_r
+        elif G is not None:
+            self.F_r = jnp.linalg.inv(G)
+        else:
+            self.F_r = jnp.eye(3)
+
+        self.phi = jnp.asarray(phi)
+        self.rho_dot_plus = jnp.zeros(())
+
     def tree_flatten(self):
         children = (self.material, self.T, self.rho, self.k_sigma_plus,
                     self.k_sigma_minus, self.F_r, self.sigma_pre,
-                    self.sigma_f_0, self.sigma)
+                    self.sigma_f_pre, self.sigma, self.sigma_f, self.phi,
+                    self.rho_dot_plus)
         return children, None
 
     @classmethod
     def tree_unflatten(cls, aux, children):
         obj = cls.__new__(cls)
         (obj.material, obj.T, obj.rho, obj.k_sigma_plus, obj.k_sigma_minus,
-         obj.F_r, obj.sigma_pre, obj.sigma_f_0, obj.sigma) = children
+         obj.F_r, obj.sigma_pre, obj.sigma_f_pre, obj.sigma, obj.sigma_f,
+         obj.phi, obj.rho_dot_plus) = children
+        return obj
+
+@jax.tree_util.register_pytree_node_class
+class mixture:
+    def __init__(self, constituents, ds, ag=None):
+        self.constituents = constituents
+        self.ds = ds
+        self.rho_tot_0 = sum(c.rho for c in constituents)
+        self.rho_tot = self.rho_tot_0
+
+        if ag is None:
+            self.F_g_calc = self.F_g_iso_calc
+            self.ag = None
+            self.F_g = self.F_g_calc(self.ag)
+        else:
+            ag = ag/jnp.linalg.norm(ag)
+            self.F_g_calc = self.F_g_aniso_calc
+            self.ag = ag
+            self.F_g = self.F_g_calc(self.ag)
+
+    def F_g_iso_calc(self, ag):
+        """F_g(s) = (rho_tot(s)/rho_tot(0))^(1/3) I   (Eq. 6, isotropic)"""
+        return (self.rho_tot/self.rho_tot_0) ** (1.0 / 3.0) * jnp.eye(3)
+
+    def F_g_aniso_calc(self, ag):
+        """F_g(s) = (rho_tot(s)/rho_tot(0))^(1/3) I   (Eq. 7, anisotropic)"""
+        return (self.rho_tot/self.rho_tot_0 - 1) * jnp.outer(ag, ag)  + jnp.eye(3)
+
+    def tree_flatten(self):
+        is_iso = self.ag is None
+        children = (self.constituents, self.ds, self.rho_tot_0, self.rho_tot,
+                    self.F_g, self.ag)
+        return children, is_iso
+
+    @classmethod
+    def tree_unflatten(cls, aux, children):
+        obj = cls.__new__(cls)
+        (obj.constituents, obj.ds, obj.rho_tot_0, obj.rho_tot,
+         obj.F_g, obj.ag) = children
+        is_iso = aux
+        obj.F_g_calc = obj.F_g_iso_calc if is_iso else obj.F_g_aniso_calc
         return obj
 
 
 
+
 # ==========================================
-# Density and volume fractions
+# Density rate (Eq. 24) and update (Eq. 37)
 # ==========================================
 
 
+def _sigma_f_rel(c, sigma_f, eps):
+    """(sigma_f - sigma_f_pre)/sigma_f_pre"""
+    denom = jnp.where(jnp.abs(c.sigma_f_pre) < eps, 1.0, c.sigma_f_pre)
+    return (sigma_f - c.sigma_f_pre) / denom
 
 
+@jit
+def rho_dot_plus_calc(c, sigma_f, eps=1e-9):
+    """Eq. 24: rho_dot_plus = (rho/T)*(1 + k_sigma+ * (sigma_f-sigma_f_pre)/sigma_f_pre)"""
+    rel = _sigma_f_rel(c, sigma_f, eps)
+    return (c.rho / c.T) * (1.0 + c.k_sigma_plus * rel)
+
+
+@jit
+def rho_dot_minus_calc(c, sigma_f, eps=1e-9):
+    """Eq. 24: rho_dot_minus = -(rho/T)*(1 + k_sigma- * (sigma_f-sigma_f_pre)/sigma_f_pre)."""
+    rel = _sigma_f_rel(c, sigma_f, eps)
+    return -(c.rho / c.T) * (1.0 + c.k_sigma_minus * rel)
+
+
+
+
+
+# ==========================================
+# Per-constituent step
+# ==========================================
+
+
+@jit
+def mixture_sigma_solver(mixt,F):
+    F_g = mixt.F_g
+    J = jnp.linalg.det(F)
+    sigma_tot = jnp.zeros((3,3))
+    for c in mixt.constituents:
+        F_e = F @ jnp.linalg.inv(F_g) @ jnp.linalg.inv(c.F_r)
+        sigma_tot += c.material.sigma(F_e) * c.rho / J
+    return sigma_tot
+
+
+@jit
+def update_constituents(mixt,F):
+    ds = mixt.ds
+    F_g = mixt.F_g
+    J = jnp.linalg.det(F)
+    for c in mixt.constituents:
+        R = polar_rotation(F)
+        sigma_pre_s = R @ c.sigma_pre @ R.T
+        F_e = F @ jnp.linalg.inv(F_g) @ jnp.linalg.inv(c.F_r)
+        sigma_s = c.material.sigma(F_e)
+
+        sigma_f_s = c.material.sigma_f(sigma_s)
+
+        rho_dot_plus = rho_dot_plus_calc(c, sigma_f_s)
+        rho_dot_minus = rho_dot_minus_calc(c, sigma_f_s)
+        rho_s = c.rho + (rho_dot_plus + rho_dot_minus) * ds
+
+        sigma_rate_euler = rho_dot_plus/c.rho*(sigma_s-sigma_pre_s)
+        c.material.F_r(F_e, J, c, ds, sigma_rate_euler)

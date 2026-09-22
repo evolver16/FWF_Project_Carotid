@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(/home/leo/miniconda3/envs/ML/bin/python -c ' *)"
+    ]
+  }
+}
