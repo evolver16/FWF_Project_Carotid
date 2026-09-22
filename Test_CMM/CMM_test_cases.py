@@ -22,7 +22,8 @@ jax.config.update("jax_enable_x64", True)
 
 from FCMM import (
     NeoHookean, Fung, params, constituent, mixture,
-    evaluate_trial, commit_step, J_g_calc, F_g_iso_calc, F_g_aniso_calc,
+    sigma_solver, commit, J_g_calc, F_g_iso_calc, F_g_aniso_calc,
+    window_for,
 )
 
 CONFINED_AXIS, DRIVEN_AXIS, FREE_AXIS = 0, 1, 2
@@ -38,7 +39,7 @@ def F_g_calc(mix):
 # ==========================================
 
 
-def build_elastin_matrix(g=1.1, T=101.0, k_minus=0.0, k_plus=0.1,
+def build_elastin_matrix(n_max, ds, g=1.1, T=101.0, k_minus=0.0, k_plus=0.1,
                          C10=0.305, K=6.1, rho_0=1.0, phi_0=1.0,
                          grows=True, axial=DRIVEN_AXIS, isochoric=True):
     """isochoric=True reproduces FCMM.py's own prestress_stress_snapshot convention:
@@ -54,55 +55,57 @@ def build_elastin_matrix(g=1.1, T=101.0, k_minus=0.0, k_plus=0.1,
         G = jnp.diag(jnp.array([g, 1.0, 1.0]))
     par = params(material=material, T=T, G=G, k_minus=k_minus,
                  k_plus=k_plus, phi_0=phi_0, grows=grows)
-    sigma_f_0 = (rho_0 / phi_0) * material.sigma_f(material.sigma(G))
-    return constituent(par, rho_0=rho_0, sigma_f_0=sigma_f_0)
+    sigma_f_0 = material.sigma_f(material.sigma(G))   # per unit mass
+    return constituent.allocate(par, rho_0, sigma_f_0, n_max, ds)
 
 
-def build_fiber(M, k1=0.0289, k2=1.23, g=1.1, T=101.0, k_minus=0.0, k_plus=0.1,
-                rho_0=1.0, phi_0=1.0, grows=True):
-    M = jnp.asarray(M, dtype=jnp.float64)
+def build_fiber(M, n_max, ds, k1=0.0289, k2=1.23, g=1.1, T=101.0, k_minus=0.0,
+                k_plus=0.1, rho_0=1.0, phi_0=1.0, grows=True):
+    M = jnp.asarray(M)
     M = M / jnp.linalg.norm(M)
     material = Fung(k1, k2, M)
     P = jnp.outer(M, M)
     G = g * P + (1.0 / jnp.sqrt(g)) * (jnp.eye(3) - P)
     par = params(material=material, T=T, G=G, k_minus=k_minus,
                  k_plus=k_plus, phi_0=phi_0, grows=grows)
-    sigma_f_0 = (rho_0 / phi_0) * material.sigma_f(material.sigma(G))
-    return constituent(par, rho_0=rho_0, sigma_f_0=sigma_f_0)
+    sigma_f_0 = material.sigma_f(material.sigma(G))   # per unit mass
+    return constituent.allocate(par, rho_0, sigma_f_0, n_max, ds)
 
 
-def mix_B(F0=None, ds=1.0):
+def mix_B(n_max, ds=1.0, F0=None):
     """matrix only, no growth"""
     F0 = jnp.eye(3) if F0 is None else F0
-    return mixture([build_elastin_matrix(grows=False)], F0, ds=ds)
+    return mixture.allocate([build_elastin_matrix(n_max, ds, grows=False)],
+                            F0, ds, n_max)
 
 
-def mix_C(F0=None, ds=1.0):
+def mix_C(n_max, ds=1.0, F0=None):
     """matrix only, with growth"""
     F0 = jnp.eye(3) if F0 is None else F0
-    return mixture([build_elastin_matrix(grows=True)], F0, ds=ds)
+    return mixture.allocate([build_elastin_matrix(n_max, ds, grows=True)],
+                            F0, ds, n_max)
 
 
-def _five(grows, F0, ds):
+def _five(grows, n_max, ds, F0):
     F0 = jnp.eye(3) if F0 is None else F0
     a = jnp.pi / 8
     cs = [
-        build_elastin_matrix(rho_0=0.8, phi_0=0.8, grows=grows),
+        build_elastin_matrix(n_max, ds, rho_0=0.8, phi_0=0.8, grows=grows),
         # fibers laid out about the DRIVEN axis (y): axial, transverse, +/-alpha
-        build_fiber(M=[0, 1, 0], rho_0=0.05, phi_0=0.05, grows=grows),
-        build_fiber(M=[1, 0, 0], rho_0=0.05, phi_0=0.05, grows=grows),
-        build_fiber(M=[jnp.sin(a), jnp.cos(a), 0], rho_0=0.05, phi_0=0.05, grows=grows),
-        build_fiber(M=[-jnp.sin(a), jnp.cos(a), 0], rho_0=0.05, phi_0=0.05, grows=grows),
+        build_fiber([0, 1, 0], n_max, ds, rho_0=0.05, phi_0=0.05, grows=grows),
+        build_fiber([1, 0, 0], n_max, ds, rho_0=0.05, phi_0=0.05, grows=grows),
+        build_fiber([jnp.sin(a), jnp.cos(a), 0], n_max, ds, rho_0=0.05, phi_0=0.05, grows=grows),
+        build_fiber([-jnp.sin(a), jnp.cos(a), 0], n_max, ds, rho_0=0.05, phi_0=0.05, grows=grows),
     ]
-    return mixture(cs, F0, ds=ds)
+    return mixture.allocate(cs, F0, ds, n_max)
 
 
-def mix_D(F0=None, ds=1.0):
-    return _five(False, F0, ds)
+def mix_D(n_max, ds=1.0, F0=None):
+    return _five(False, n_max, ds, F0)
 
 
-def mix_E(F0=None, ds=1.0):
-    return _five(True, F0, ds)
+def mix_E(n_max, ds=1.0, F0=None):
+    return _five(True, n_max, ds, F0)
 
 
 # ==========================================
@@ -118,27 +121,33 @@ def mix_E(F0=None, ds=1.0):
 # ==========================================
 
 
-def burn_in(mix, n_T=7.0, ds_burn=10.0):
-    """Fill the cohort history at F=I with gains off, then restore the gains.
+def burn_in_steps(T, n_T=7.0, ds=10.0):
+    """How many slots burn-in will consume -- callers need this to size n_max."""
+    return int(n_T * float(T) / ds)
+
+
+def burn_in(mix, n_T=7.0):
+    """Fill the cohort history at F=I with the gains off, then restore them.
+
+    Functional: returns a NEW mixture (FCMM state is an immutable pytree now).
+    Runs at the mixture's own ds, so size n_max with burn_in_steps(T, n_T, ds).
+
     Note: `grows=False` does NOT freeze rho -- it only changes Fg/Jg handling
     inside sigma_j_calc. rho still evolves through rho_calc_from_sigma_f, which
-    is why the gains have to be zeroed explicitly here."""
-    saved = [(c.params.k_sigma_plus, c.params.k_sigma_minus) for c in mix.constituents]
-    for c in mix.constituents:
-        c.params.k_sigma_plus = jnp.asarray(0.0)
-        c.params.k_sigma_minus = jnp.asarray(0.0)
+    is why the gains have to be zeroed explicitly here.
+    """
+    saved = [c.params for c in mix.constituents]
+    off = jnp.asarray(0.0)
+    mix = mix.replace(constituents=[
+        constituent(c.params.with_gains(off, off), c.history) for c in mix.constituents])
 
-    ds_orig, mix.ds = mix.ds, ds_burn
-    n_steps = int(n_T * float(mix.constituents[0].params.T) / ds_burn)
-    for _ in range(n_steps):
-        J_g = J_g_calc(mix)
-        st, res, mh = evaluate_trial(jnp.eye(3), F_g_calc(mix), mix, J_g)
-        commit_step(mix, mh, res)
+    eye = jnp.eye(3)
+    for _ in range(burn_in_steps(saved[0].T, n_T, float(mix.ds))):
+        _, aux = sigma_solver(mix, eye)
+        mix = commit(mix, eye, aux)
 
-    mix.ds = ds_orig
-    for c, (kp, km) in zip(mix.constituents, saved):
-        c.params.k_sigma_plus, c.params.k_sigma_minus = kp, km
-    return mix
+    return mix.replace(constituents=[
+        constituent(p, c.history) for p, c in zip(saved, mix.constituents)])
 
 
 # ==========================================
@@ -158,16 +167,15 @@ def stress(t):     return AxisBC("stress", float(t))
 def force(t):      return AxisBC("force", float(t))
 
 
-def sigma_and_P(lams, mix, J_g):
-    Fg_s = F_g_calc(mix)
+def sigma_and_P(lams, mix):
     F_s = jnp.diag(lams)
-    sigma_total, results, mix_hist_trial = evaluate_trial(F_s, Fg_s, mix, J_g)
+    sigma_total, aux = sigma_solver(mix, F_s)
     J = lams[0] * lams[1] * lams[2]
     P_diag = J / lams * jnp.diag(sigma_total)          # P_ii = J/lam_i * sigma_ii
-    return sigma_total, P_diag, (F_s, Fg_s, sigma_total, results, mix_hist_trial)
+    return sigma_total, P_diag, (F_s, sigma_total, aux)
 
 
-def make_residual(axes, mix, J_g):
+def make_residual(axes, mix):
     unknown = [i for i, a in enumerate(axes) if a.mode != "prescribed"]
 
     def lams_from_x(x):
@@ -180,7 +188,7 @@ def make_residual(axes, mix, J_g):
         return jnp.array(vals, dtype=jnp.float64)
 
     def R(x):
-        sigma, P, aux = sigma_and_P(lams_from_x(x), mix, J_g)
+        sigma, P, aux = sigma_and_P(lams_from_x(x), mix)
         eqs = []
         for i in unknown:
             a = axes[i]
@@ -220,12 +228,17 @@ def newton_solve(residual, x0, tol=1e-10, max_iter=60, fd_eps=1e-7):
 # ==========================================
 
 
-def run_case(builder, axes, n_steps=40, ds=1.0, x0=None, label="", verbose=True, burn=True):
-    mix = builder(ds=ds)
+def run_case(builder, axes, n_steps=40, ds=1.0, x0=None, label="", verbose=True,
+             burn=True, n_max=None, T_hint=101.0):
+    """n_max is the retained-cohort WINDOW, not a budget for the whole run --
+    FCMM rolls the oldest cohort out once the window is full, so it no longer
+    has to grow with n_steps. Passed to the builder, which allocates up front."""
+    if n_max is None:
+        n_max = window_for(T_hint, ds) + 2
+    mix = builder(n_max, ds=ds)
     if burn:
-        burn_in(mix)
-    cs = mix.constituents
-    sigma_f_0 = [float(c.history.sigma_f[0]) for c in cs]
+        mix = burn_in(mix)
+    sigma_f_0 = [float(c.history.sigma_f[0]) for c in mix.constituents]
 
     if x0 is None:
         x0 = jnp.ones(sum(1 for a in axes if a.mode != "prescribed"))
@@ -233,23 +246,23 @@ def run_case(builder, axes, n_steps=40, ds=1.0, x0=None, label="", verbose=True,
 
     lam_h, sig_h, P_h, sf_h, s_h = [], [], [], [], []
     for _ in range(n_steps + 1):
-        J_g = J_g_calc(mix)
-        R, _ = make_residual(axes, mix, J_g)
+        R, _ = make_residual(axes, mix)
         x, aux = newton_solve(R, x)
-        F_s, Fg_s, sigma_total, results, mix_hist_trial = aux
-        commit_step(mix, mix_hist_trial, results)
+        F_s, sigma_total, trial_aux = aux
+        mix = commit(mix, F_s, trial_aux)
 
         lams = jnp.diag(F_s)
         Pd = (lams[0] * lams[1] * lams[2]) / lams * jnp.diag(sigma_total)
-        s_h.append(float(mix.history.s[-1]))
+        s_h.append(float(mix.history.n) * ds)
         lam_h.append([float(v) for v in lams])
         sig_h.append([float(v) for v in jnp.diag(sigma_total)])
         P_h.append([float(v) for v in Pd])
-        sf_h.append([float(c.history.sigma_f[-1]) for c in cs])
+        sf_h.append([float(c.history.sigma_f[c.history.n]) for c in mix.constituents])
 
-    dev0 = [abs(sf_h[0][j] - sigma_f_0[j]) for j in range(len(cs))]
-    dev1 = [abs(sf_h[-1][j] - sigma_f_0[j]) for j in range(len(cs))]
-    relaxing = all(dev1[j] <= dev0[j] + 1e-12 for j in range(len(cs)))
+    n_c = len(sigma_f_0)
+    dev0 = [abs(sf_h[0][j] - sigma_f_0[j]) for j in range(n_c)]
+    dev1 = [abs(sf_h[-1][j] - sigma_f_0[j]) for j in range(n_c)]
+    relaxing = all(dev1[j] <= dev0[j] + 1e-12 for j in range(n_c))
     held = {}
     for i, a in enumerate(axes):
         if a.mode in ("stress", "force"):
@@ -263,7 +276,7 @@ def run_case(builder, axes, n_steps=40, ds=1.0, x0=None, label="", verbose=True,
               f" -> [{lam_h[-1][0]:.5f} {lam_h[-1][1]:.5f} {lam_h[-1][2]:.5f}]")
         print(f"    sigma_yy: {sig_h[0][1]:+.6e} -> {sig_h[-1][1]:+.6e}")
         print(f"    P_yy    : {P_h[0][1]:+.6e} -> {P_h[-1][1]:+.6e}")
-        for j in range(len(cs)):
+        for j in range(n_c):
             print(f"    c{j}: sigma_f_0={sigma_f_0[j]:+.4e} "
                   f"dev {dev0[j]:.4e} -> {dev1[j]:.4e}")
         if held:

@@ -1,0 +1,1 @@
+avoid unecessary comments, especially about changes, only keep '''''' for equations when they provide information about formular structure the equation and math behind it and maximum a one liner explaining what this function does but very minimal

@@ -1,3 +1,25 @@
+"""Homogenized constrained mixture model (HCMM), Maes & Famaey (2023) sec. 2.2.
+
+Each constituent carries one remodeling deformation gradient F_r^j instead of a
+cohort history:
+
+    F_e^j(s) = F(s) F_g(s)^-1 F_r^j(s)^-1                          (Eq. 15)
+    rho_dot_+-^j(s) = +-(rho^j/T^j)(1 + k_sigma_+- rel)            (Eq. 24)
+    rho^j(s+ds)     = rho^j(s) + rho_dot^j(s) ds                   (Eq. 37)
+    (rho_dot_+/rho)(sigma^j - sigma_pre^j)
+        = (d sigma^j / d F_e^j) : (F_e^j L_r^j)                    (Eq. 20)
+
+Eq. 20 has a closed form for a 1-D fiber family (Eq. 41, Fung) and is solved
+numerically for a 3-D compressible matrix (Eq. 43 + Newton, NeoHookean).
+
+Time is carried in step units: T is given in days and divided by ds once
+(T_steps = T/ds), so the Euler updates add their increments directly.
+
+Solver entry point (shared with FCMM.py -- see jaxFEM_solver.py):
+    sigma_tot, aux = sigma_solver(state, F)
+    state          = commit(state, F, aux)
+"""
+
 import jax
 import jax.numpy as jnp
 from jax import jit
@@ -9,9 +31,8 @@ from jax import jit
 
 @jit
 def F_e_calc(F, F_g, F_r):
-    """F_e^j(s,tau) = F(s) F_g(s)^-1 [ F(tau) F_g(tau)^-1 ]^-1 G^j"""
-    inner = F @ jnp.linalg.inv(F_g)
-    return F @ jnp.linalg.inv(F_g) @ jnp.linalg.inv(inner) @ F_r
+    """F_e^j(s) = F(s) F_g(s)^-1 F_r^j(s)^-1                        (Eq. 15)"""
+    return F @ jnp.linalg.inv(F_g) @ jnp.linalg.inv(F_r)
 
 
 def sym_to_voigt(T):
@@ -27,8 +48,11 @@ def voigt_to_sym(v):
 
 @jit
 def polar_rotation(F):
-    """R from the right polar decomposition F = R U, via SVD (F = U_ S V^T -> R = U_ @ V^T).
-    Used once per step (Eq. 17) to rotate the fixed deposition prestress sigma_pre."""
+    """R from the polar decomposition F = R U, via SVD F = U_ S V^T -> R = U_ V^T.
+
+    R(s) rotates the deposition prestress: sigma_pre^j(s) = R sigma^j(0) R^T
+    (Eq. 17).
+    """
     U_, _, Vt = jnp.linalg.svd(F)
     return U_ @ Vt
 
@@ -42,7 +66,7 @@ class Fung:
     def __init__(self, k1, k2, M, lam_r=1.0):
         self.k1 = k1
         self.k2 = k2
-        M = jnp.asarray(M, dtype=jnp.float32)
+        M = jnp.asarray(M)
         self.M = M / jnp.linalg.norm(M)
         self.P = jnp.outer(self.M, self.M)
 
@@ -54,49 +78,69 @@ class Fung:
         return cls(*children)
 
     @jit
-    def I4(self, F):        
+    def I4(self, F):
+        """I4 = M . (F^T F) M = |F M|^2, the squared fiber stretch  (Eq. 28)"""
         FM = F @ self.M
         return jnp.dot(FM, FM)
 
     @jit
     def Psi_I4(self, I4):
-        return (self.k1 / (2 * self.k2)) * (jnp.exp(self.k2 * (I4 - 1) ** 2) - 1)
+        """W^coll(I4) = k1/(2 k2) [exp(k2 (I4 - 1)^2) - 1]   for I4 > 1
+                    = 0                                     otherwise  (Eq. 28)
+
+        Fibers carry load in tension only (Epos in sigma_C_HGO_C_fiber.for).
+        """
+        return jnp.where(
+            I4 > 1.0,
+            (self.k1 / (2 * self.k2)) * (jnp.exp(self.k2 * (I4 - 1) ** 2) - 1),
+            0.0,
+        )
 
     @jit
     def dPsi_dI4(self, I4):
+        """dW^coll/dI4"""
         return jax.grad(self.Psi_I4)(I4)
 
     @jit
     def d2Psi_dI4(self, I4):
+        """d^2 W^coll/dI4^2"""
         return jax.grad(self.dPsi_dI4)(I4)
 
     @jit
     def Psi_F(self, F):
-        """W(I4) = k1/(2*k2) * (exp(k2*(I4-1)**2) - 1)"""
+        """W^coll as a function of F, via I4(F)                        (Eq. 28)"""
         return self.Psi_I4(self.I4(F))
 
     @jit
     def sigma(self, F):
+        """sigma = (dW/dF) F^T = 2 (dW/dI4) (F M) (x) (F M)           (Eq. 29)"""
         dW_dF = jax.grad(self.Psi_F)(F)
         return dW_dF @ F.T
 
     @staticmethod
     @jit
     def sigma_f(sigma):
+        """sigma_f = I_1(sigma) = tr(sigma)                            (Eq. 31)"""
         return jnp.trace(sigma)
 
     @jit
-    def F_r(self, F_e, J, c, ds, sigma_rate_euler):
-        """Eq. 41 closed form. sigma_rate_euler = rho_dot_plus/rho * (sigma - sigma_pre),
-        built by the caller from THIS step's values (same tensor NeoHookean.F_r's
-        Newton solve uses as rhs) — scalarized here via self.sigma_f (trace),
-        since it's linear: self.sigma_f(sigma_rate_euler) ==
-        rho_dot_plus/rho * (sigma_f - sigma_f_pre)."""
+    def F_r(self, F_e, J, c, sigma_rate_euler):
+        """Closed-form Eq. 20 for a 1-D fiber family:
+
+        lam_r_dot = (rho_dot_+/rho)(sigma_f - sigma_pre_f) (J phi / 4 rho) lam_r
+                    [ (d^2W/dI4^2) I4^2 + (dW/dI4) I4 ]^-1              (Eq. 41)
+
+        F_r = lam_r M(x)M + lam_r^-1/2 (I - M(x)M)                      (Eq. 38)
+        """
         lam_r = jnp.dot(self.M, c.F_r @ self.M)
         I4 = self.I4(F_e)
         denom = self.d2Psi_dI4(I4) * I4**2 + self.dPsi_dI4(I4) * I4
-        lam_rate = self.sigma_f(sigma_rate_euler) * (J * c.phi) / (4 * c.rho * lam_r * denom)
-        lam_r_new = lam_r + ds * lam_rate
+        slack = jnp.abs(denom) < 1e-12
+        denom_safe = jnp.where(slack, 1.0, denom)
+        lam_rate = jnp.where(
+            slack, 0.0,
+            self.sigma_f(sigma_rate_euler) * (J * c.phi) / (4 * c.rho) * lam_r / denom_safe)
+        lam_r_new = lam_r + lam_rate
         return lam_r_new * self.P + (1.0 / jnp.sqrt(lam_r_new)) * (jnp.eye(3) - self.P)
 
 
@@ -115,6 +159,10 @@ class NeoHookean:
 
     @jit
     def Psi(self, F):
+        """W^elas = C10 (I1bar - 3) + K/2 (J_e - 1)^2                  (Eq. 28)
+
+        with I1bar = J_e^(-2/3) tr(F^T F) and J_e = det F_e.
+        """
         I1 = jnp.trace(F.T @ F)
         J = jnp.linalg.det(F)
         I1_inc = I1 * J ** (-2 / 3)
@@ -122,30 +170,39 @@ class NeoHookean:
 
     @jit
     def sigma(self, F):
+        """sigma = (dW/dF) F^T                                         (Eq. 29)
+
+        The rho^j/(phi^j J) prefactor is applied by the mixture, not here.
+        """
         dW_dF = jax.grad(self.Psi)(F)
         return dW_dF @ F.T
 
     @staticmethod
     @jit
     def sigma_f(sigma):
+        """sigma_f = I_1(sigma) = tr(sigma)                            (Eq. 31)"""
         return jnp.trace(sigma)
 
     @jit
-    def _residual(self, F_r_s, F_e, F_r, sigma_rate_euler, ds):
-        """Eq. 20 residual, discretized via Eq. 43 (Ḟr ≈ (Fr_new - Fr_old)/ds).
-        x: (6,) Voigt guess for F_r_new."""
+    def _residual(self, F_r_s, F_e, F_r, sigma_rate_euler):
+        """Residual of Eq. 20, with F_r_dot discretized by Eq. 43:
+
+        r(F_r(s+ds)) = (d sigma/d F_e) : (F_e L_r)
+                       - (rho_dot_+/rho)(sigma - sigma_pre)             (Eq. 20)
+        L_r = F_r_dot F_r^-1,  F_r_dot = [F_r(s+ds) - F_r(s)]/ds        (Eq. 43)
+        """
         F_r_s = voigt_to_sym(F_r_s)
-        L_r = ((F_r_s - F_r) / ds) @ jnp.linalg.inv(F_r)
+        L_r = (F_r_s - F_r) @ jnp.linalg.inv(F_r)
         _, dsigma = jax.jvp(self.sigma, (F_e,), (F_e @ L_r,))
         return sym_to_voigt(dsigma - sigma_rate_euler)
 
     @jit
-    def F_r(self, F_e, J, c, ds, sigma_rate_euler):
-        """Solve Eq. 20 for F_r_new via Newton's method. Tensor in, tensor out —
-        same calling shape as Fung.F_r, iteration fully internal."""
+    def F_r(self, F_e, J, c, sigma_rate_euler):
+        """F_r(s+ds) solving Eq. 20, by Newton's method on the six independent
+        components of F_r."""
         def newton_step(i, x):
-            fvec = self._residual(x, F_e, c.F_r, sigma_rate_euler, ds)
-            fjac = jax.jacfwd(self._residual)(x, F_e, c.F_r, sigma_rate_euler, ds)
+            fvec = self._residual(x, F_e, c.F_r, sigma_rate_euler)
+            fjac = jax.jacfwd(self._residual)(x, F_e, c.F_r, sigma_rate_euler)
             return x + jnp.linalg.solve(fjac, -fvec)
 
         x0 = sym_to_voigt(c.F_r)
@@ -223,7 +280,7 @@ class mixture:
         return (self.rho_tot/self.rho_tot_0) ** (1.0 / 3.0) * jnp.eye(3)
 
     def F_g_aniso_calc(self, ag):
-        """F_g(s) = (rho_tot(s)/rho_tot(0))^(1/3) I   (Eq. 7, anisotropic)"""
+        """F_g(s) = [rho_tot(s)/rho_tot(0) - 1] a_g (x) a_g + I     (Eq. 7)"""
         return (self.rho_tot/self.rho_tot_0 - 1) * jnp.outer(ag, ag)  + jnp.eye(3)
 
     def tree_flatten(self):
@@ -245,28 +302,38 @@ class mixture:
 
 
 # ==========================================
-# Density rate (Eq. 24) and update (Eq. 37)
+# Mass production and removal (Eq. 24)
 # ==========================================
 
 
-def _sigma_f_rel(c, sigma_f, eps):
-    """(sigma_f - sigma_f_pre)/sigma_f_pre"""
-    denom = jnp.where(jnp.abs(c.sigma_f_pre) < eps, 1.0, c.sigma_f_pre)
-    return (sigma_f - c.sigma_f_pre) / denom
+def _sigma_f_rel(c, sigma_f, rho_tot, rho_tot_0, eps):
+    """Mechanobiological driver of Eq. 24:
+
+        rel = [rho_tot sigma_f(s) - rho_tot(0) sigma_f(0)]
+              / [rho_tot(0) sigma_f(0)]
+
+    sigma_f carries a 1/J, the setpoint sigma_f(0) does not
+    (UMAT_GR_HCM.for: s_fib = 2/det dW I4 against s_fib_hom = 2 dW_hom g^2).
+    The denominator may be omitted when sigma_f(0) = 0 (Eq. 24).
+    """
+    ref = rho_tot_0 * c.sigma_f_pre
+    denom = jnp.where(jnp.abs(ref) < eps, 1.0, ref)
+    return (rho_tot * sigma_f - ref) / denom
 
 
 @jit
-def rho_dot_plus_calc(c, sigma_f, eps=1e-9):
-    """Eq. 24: rho_dot_plus = (rho/T)*(1 + k_sigma+ * (sigma_f-sigma_f_pre)/sigma_f_pre)"""
-    rel = _sigma_f_rel(c, sigma_f, eps)
-    return (c.rho / c.T) * (1.0 + c.k_sigma_plus * rel)
+def rho_dot_plus_calc(c, sigma_f, ds, rho_tot, rho_tot_0, eps=1e-9):
+    """rho_dot_+ = (rho/T)(1 + k_sigma_+ rel) ds                     (Eq. 24)
+    """
+    rel = _sigma_f_rel(c, sigma_f, rho_tot, rho_tot_0, eps)
+    return (c.rho / (c.T / ds)) * (1.0 + c.k_sigma_plus * rel)
 
 
 @jit
-def rho_dot_minus_calc(c, sigma_f, eps=1e-9):
-    """Eq. 24: rho_dot_minus = -(rho/T)*(1 + k_sigma- * (sigma_f-sigma_f_pre)/sigma_f_pre)."""
-    rel = _sigma_f_rel(c, sigma_f, eps)
-    return -(c.rho / c.T) * (1.0 + c.k_sigma_minus * rel)
+def rho_dot_minus_calc(c, sigma_f, ds, rho_tot, rho_tot_0, eps=1e-9):
+    """rho_dot_- = -(rho/T)(1 + k_sigma_- rel) ds                    (Eq. 24)"""
+    rel = _sigma_f_rel(c, sigma_f, rho_tot, rho_tot_0, eps)
+    return -(c.rho / (c.T / ds)) * (1.0 + c.k_sigma_minus * rel)
 
 
 
@@ -279,17 +346,19 @@ def rho_dot_minus_calc(c, sigma_f, eps=1e-9):
 
 @jit
 def mixture_sigma_solver(mixt, F):
-    """Eq. 27 with Eq. 17 substituted (phi cancels, leaving rho/J).
+    """sigma_tot = sum_j phi^j sigma^j                                (Eq. 27)
 
-    Also returns the per-constituent (F_e, sigma) it had to build anyway, so
-    commit can reuse them instead of evaluating the same stresses twice.
+    with sigma^j = rho^j/(phi^j J) (dW^j/dF_e^j) F_e^jT (Eq. 17), so phi^j
+    cancels and each constituent contributes rho^j/J times its material stress.
+
+    Also returns the per-constituent (F_e, sigma) for commit to reuse.
     """
     F_g = mixt.F_g
     J = jnp.linalg.det(F)
     sigma_tot = jnp.zeros((3,3))
     trial = []
     for c in mixt.constituents:
-        F_e = F @ jnp.linalg.inv(F_g) @ jnp.linalg.inv(c.F_r)
+        F_e = F_e_calc(F, F_g, c.F_r)
         sigma = c.material.sigma(F_e)
         sigma_tot += sigma * c.rho / J
         trial.append((F_e, sigma))
@@ -297,22 +366,27 @@ def mixture_sigma_solver(mixt, F):
 
 
 @jit
-def constituent_update(c, F_e, sigma_s, R, ds, J):
-    """Remodeling step for one constituent at an already-settled F.
+def constituent_update(c, F_e, sigma_s, R, ds, J, rho_tot, rho_tot_0):
+    """One constituent's growth and remodeling step at a settled F:
 
-    F_e and sigma_s are handed in from mixture_sigma_solver -- nothing is
-    re-evaluated here. Returns new values as plain tensors/scalars; no state
-    is written.
+        sigma_pre^j(s) = R sigma^j(0) R^T                             (Eq. 17)
+        sigma_f^j(s)   = tr(sigma^j)/J                                (Eq. 31)
+        rho^j(s+ds)    = rho^j + (rho_dot_+ + rho_dot_-)              (Eq. 24/37)
+        F_r^j(s+ds)    from Eq. 20, closed form (Eq. 41) or Newton (Eq. 43)
+
+    The Eq. 20 source is density-weighted the same way as the Eq. 24 driver.
+    F_e and sigma_s come from mixture_sigma_solver; no stress is re-evaluated.
     """
     sigma_pre_s = R @ c.sigma_pre @ R.T
-    sigma_f_s = c.material.sigma_f(sigma_s)
+    sigma_f_s = c.material.sigma_f(sigma_s) / J
 
-    rho_dot_plus = rho_dot_plus_calc(c, sigma_f_s)
-    rho_dot_minus = rho_dot_minus_calc(c, sigma_f_s)
-    rho_s = c.rho + (rho_dot_plus + rho_dot_minus) * ds
+    rho_dot_plus = rho_dot_plus_calc(c, sigma_f_s, ds, rho_tot, rho_tot_0)
+    rho_dot_minus = rho_dot_minus_calc(c, sigma_f_s, ds, rho_tot, rho_tot_0)
+    rho_s = c.rho + rho_dot_plus + rho_dot_minus
 
-    sigma_rate_euler = rho_dot_plus/c.rho*(sigma_s-sigma_pre_s)
-    F_r_s = c.material.F_r(F_e, J, c, ds, sigma_rate_euler)
+    sigma_rate_euler = (rho_dot_plus / c.rho) * (rho_tot * sigma_s / J
+                                                 - rho_tot_0 * sigma_pre_s)
+    F_r_s = c.material.F_r(F_e, J, c, sigma_rate_euler)
     return rho_s, F_r_s, rho_dot_plus
 
 
@@ -323,26 +397,27 @@ def constituent_update(c, F_e, sigma_s, R, ds, J):
 # ==========================================
 
 
-# Trial stress at F using only committed state. No F_r solve happens here, so
-# the outer equilibrium loop can call this as often as it likes. aux is the
+# Trial stress at F from committed state only; no F_r solve. aux carries the
 # per-constituent (F_e, sigma) that commit reuses.
 sigma_solver = mixture_sigma_solver
 
 
 def commit(mixt, F, aux):
-    """Advance one step on the settled F, reusing sigma_solver's (F_e, sigma)
-    from aux -- no stress is re-evaluated here.
+    """Advance the mixture one step on the settled F:
 
-    The rest (R, sigma_pre_s, density rates, the F_r solve) stays here rather
-    than moving into sigma_solver on purpose: sigma_solver runs at every trial
-    F of the equilibrium loop, and this work is only ever needed once.
+        rho^j, F_r^j  per constituent                                (Eq. 24/37, 20)
+        rho_tot(s)    = sum_j rho^j(s)                               (Eq. 25)
+        phi^j(s)      = rho^j(s)/rho_tot(s)
+        F_g(s)        from rho_tot(s)                                (Eq. 6/7)
 
+    F_g is written for the NEXT step; this step used the one it came in with.
     Not jitted: it mutates the state containers, and a mutation inside a traced
     function would only take effect at trace time.
     """
     ds, J = mixt.ds, jnp.linalg.det(F)
     R = polar_rotation(F)
-    updates = [constituent_update(c, F_e, sigma_s, R, ds, J)
+    updates = [constituent_update(c, F_e, sigma_s, R, ds, J,
+                                  mixt.rho_tot, mixt.rho_tot_0)
                for c, (F_e, sigma_s) in zip(mixt.constituents, aux)]
 
     rho_tot_s = sum(u[0] for u in updates)
