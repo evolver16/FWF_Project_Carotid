@@ -1,46 +1,31 @@
 """Homogenized constrained mixture model (HCMM), Maes & Famaey (2023) sec. 2.2.
 
-Each constituent carries one remodeling deformation gradient F_r^j instead of a
-cohort history:
-
-    F_e^j(s) = F(s) F_g(s)^-1 F_r^j(s)^-1                          (Eq. 15)
-    rho_dot_+-^j(s) = +-(rho^j/T^j)(1 + k_sigma_+- rel)            (Eq. 24)
-    rho^j(s+ds)     = rho^j(s) + rho_dot^j(s) ds                   (Eq. 37)
+    F_e^j(s)        = F(s) F_g(s)^-1 F_r^j(s)^-1                    (Eq. 15)
+    rho_dot_+-^j(s) = +-(rho^j/T^j)(1 + k_sigma_+- rel)              (Eq. 24)
+    rho^j(s+ds)     = rho^j(s) + rho_dot^j(s) ds                     (Eq. 37)
     (rho_dot_+/rho)(sigma^j - sigma_pre^j)
-        = (d sigma^j / d F_e^j) : (F_e^j L_r^j)                    (Eq. 20)
+                    = (d sigma^j / d F_e^j) : (F_e^j L_r^j)          (Eq. 20)
 
-Eq. 20 has a closed form for a 1-D fiber family (Eq. 41, Fung) and is solved
-numerically for a 3-D compressible matrix (Eq. 43 + Newton, NeoHookean).
-
-Time is carried in step units: T is given in days and divided by ds once
-(T_steps = T/ds), so the Euler updates add their increments directly.
-
-Solver entry point (shared with FCMM.py -- see jaxFEM_solver.py):
-    sigma_tot, aux = sigma_solver(state, F)
-    state          = commit(state, F, aux)
+Solver interface: sigma_tot, aux = sigma_solver(state, F); state = commit(state, F, aux)
 """
 
 import jax
 import jax.numpy as jnp
 from jax import jit
 
-# ==========================================
-# Kinematics
-# ==========================================
-
 
 @jit
 def F_e_calc(F, F_g, F_r):
-    """F_e^j(s) = F(s) F_g(s)^-1 F_r^j(s)^-1                        (Eq. 15)"""
+    """F_e^j(s) = F(s) F_g(s)^-1 F_r^j(s)^-1   (Eq. 15)"""
     return F @ jnp.linalg.inv(F_g) @ jnp.linalg.inv(F_r)
 
 
 def sym_to_voigt(T):
-    """(3,3) symmetric -> (6,) in (11,22,33,12,13,23) order."""
+    """(3,3) -> (11,22,33,12,13,23)"""
     return jnp.array([T[0,0], T[1,1], T[2,2], T[0,1], T[0,2], T[1,2]])
 
 def voigt_to_sym(v):
-    """(6,) -> (3,3) symmetric."""
+    """(11,22,33,12,13,23) -> (3,3)"""
     return jnp.array([[v[0], v[3], v[4]],
                        [v[3], v[1], v[5]],
                        [v[4], v[5], v[2]]])
@@ -48,17 +33,9 @@ def voigt_to_sym(v):
 
 @jit
 def polar_rotation(F):
-    """R from the polar decomposition F = R U, via SVD F = U_ S V^T -> R = U_ V^T.
-
-    R(s) rotates the deposition prestress: sigma_pre^j(s) = R sigma^j(0) R^T
-    (Eq. 17).
-    """
+    """F = R U,  R = U_ V^T from SVD F = U_ S V^T   (Eq. 17)"""
     U_, _, Vt = jnp.linalg.svd(F)
     return U_ @ Vt
-
-# ==========================================
-# Material
-# ==========================================
 
 
 @jax.tree_util.register_pytree_node_class
@@ -79,17 +56,13 @@ class Fung:
 
     @jit
     def I4(self, F):
-        """I4 = M . (F^T F) M = |F M|^2, the squared fiber stretch  (Eq. 28)"""
+        """I4 = |F M|^2   (Eq. 28)"""
         FM = F @ self.M
         return jnp.dot(FM, FM)
 
     @jit
     def Psi_I4(self, I4):
-        """W^coll(I4) = k1/(2 k2) [exp(k2 (I4 - 1)^2) - 1]   for I4 > 1
-                    = 0                                     otherwise  (Eq. 28)
-
-        Fibers carry load in tension only (Epos in sigma_C_HGO_C_fiber.for).
-        """
+        """W^coll = k1/(2 k2) [exp(k2 (I4 - 1)^2) - 1] if I4 > 1 else 0   (Eq. 28)"""
         return jnp.where(
             I4 > 1.0,
             (self.k1 / (2 * self.k2)) * (jnp.exp(self.k2 * (I4 - 1) ** 2) - 1),
@@ -98,39 +71,33 @@ class Fung:
 
     @jit
     def dPsi_dI4(self, I4):
-        """dW^coll/dI4"""
         return jax.grad(self.Psi_I4)(I4)
 
     @jit
     def d2Psi_dI4(self, I4):
-        """d^2 W^coll/dI4^2"""
         return jax.grad(self.dPsi_dI4)(I4)
 
     @jit
     def Psi_F(self, F):
-        """W^coll as a function of F, via I4(F)                        (Eq. 28)"""
         return self.Psi_I4(self.I4(F))
 
     @jit
     def sigma(self, F):
-        """sigma = (dW/dF) F^T = 2 (dW/dI4) (F M) (x) (F M)           (Eq. 29)"""
+        """sigma = (dW/dF) F^T = 2 (dW/dI4) (F M)(x)(F M)   (Eq. 29)"""
         dW_dF = jax.grad(self.Psi_F)(F)
         return dW_dF @ F.T
 
     @staticmethod
     @jit
     def sigma_f(sigma):
-        """sigma_f = I_1(sigma) = tr(sigma)                            (Eq. 31)"""
+        """sigma_f = tr(sigma)   (Eq. 31)"""
         return jnp.trace(sigma)
 
     @jit
     def F_r(self, F_e, J, c, sigma_rate_euler):
-        """Closed-form Eq. 20 for a 1-D fiber family:
-
-        lam_r_dot = (rho_dot_+/rho)(sigma_f - sigma_pre_f) (J phi / 4 rho) lam_r
-                    [ (d^2W/dI4^2) I4^2 + (dW/dI4) I4 ]^-1              (Eq. 41)
-
-        F_r = lam_r M(x)M + lam_r^-1/2 (I - M(x)M)                      (Eq. 38)
+        """lam_r_dot = (rho_dot_+/rho)(sigma_f - sigma_pre_f) (J phi / 4 rho) lam_r
+                       [(d^2W/dI4^2) I4^2 + (dW/dI4) I4]^-1                     (Eq. 41)
+        F_r = lam_r M(x)M + lam_r^-1/2 (I - M(x)M)                              (Eq. 38)
         """
         lam_r = jnp.dot(self.M, c.F_r @ self.M)
         I4 = self.I4(F_e)
@@ -159,10 +126,7 @@ class NeoHookean:
 
     @jit
     def Psi(self, F):
-        """W^elas = C10 (I1bar - 3) + K/2 (J_e - 1)^2                  (Eq. 28)
-
-        with I1bar = J_e^(-2/3) tr(F^T F) and J_e = det F_e.
-        """
+        """W^elas = C10 (J_e^(-2/3) tr(F^T F) - 3) + K/2 (J_e - 1)^2   (Eq. 28)"""
         I1 = jnp.trace(F.T @ F)
         J = jnp.linalg.det(F)
         I1_inc = I1 * J ** (-2 / 3)
@@ -170,39 +134,34 @@ class NeoHookean:
 
     @jit
     def sigma(self, F):
-        """sigma = (dW/dF) F^T                                         (Eq. 29)
-
-        The rho^j/(phi^j J) prefactor is applied by the mixture, not here.
-        """
+        """sigma = (dW/dF) F^T   (Eq. 29)"""
         dW_dF = jax.grad(self.Psi)(F)
         return dW_dF @ F.T
 
     @staticmethod
     @jit
     def sigma_f(sigma):
-        """sigma_f = I_1(sigma) = tr(sigma)                            (Eq. 31)"""
+        """sigma_f = tr(sigma)   (Eq. 31)"""
         return jnp.trace(sigma)
 
     @jit
-    def _residual(self, F_r_s, F_e, F_r, sigma_rate_euler):
-        """Residual of Eq. 20, with F_r_dot discretized by Eq. 43:
-
-        r(F_r(s+ds)) = (d sigma/d F_e) : (F_e L_r)
-                       - (rho_dot_+/rho)(sigma - sigma_pre)             (Eq. 20)
-        L_r = F_r_dot F_r^-1,  F_r_dot = [F_r(s+ds) - F_r(s)]/ds        (Eq. 43)
+    def _residual(self, F_r_s, F_e, F_r, sigma_rate_euler, scale):
+        """r = rho/(phi J) (d sigma/d F_e) : (F_e L_r) - (rho_dot_+/rho)(sigma - sigma_pre)   (Eq. 20)
+        L_r = [F_r(s+ds) - F_r(s)] F_r^-1                                                    (Eq. 43)
         """
         F_r_s = voigt_to_sym(F_r_s)
         L_r = (F_r_s - F_r) @ jnp.linalg.inv(F_r)
         _, dsigma = jax.jvp(self.sigma, (F_e,), (F_e @ L_r,))
-        return sym_to_voigt(dsigma - sigma_rate_euler)
+        return sym_to_voigt(scale * dsigma - sigma_rate_euler)
 
     @jit
     def F_r(self, F_e, J, c, sigma_rate_euler):
-        """F_r(s+ds) solving Eq. 20, by Newton's method on the six independent
-        components of F_r."""
+        """Newton on the six components of symmetric F_r(s+ds)."""
+        scale = c.rho / (c.phi * J)
+
         def newton_step(i, x):
-            fvec = self._residual(x, F_e, c.F_r, sigma_rate_euler)
-            fjac = jax.jacfwd(self._residual)(x, F_e, c.F_r, sigma_rate_euler)
+            fvec = self._residual(x, F_e, c.F_r, sigma_rate_euler, scale)
+            fjac = jax.jacfwd(self._residual)(x, F_e, c.F_r, sigma_rate_euler, scale)
             return x + jnp.linalg.solve(fjac, -fvec)
 
         x0 = sym_to_voigt(c.F_r)
@@ -210,14 +169,15 @@ class NeoHookean:
         return voigt_to_sym(x_final)
 
 
-# ==========================================
-# State containers
-# ==========================================
-
 @jax.tree_util.register_pytree_node_class
 class constituent:
     def __init__(self, material, T, rho_0, k_sigma_plus, k_sigma_minus,
-                 G=None, sigma_pre=None, F_r=None, phi=1.0):
+                 G=None, sigma_pre=None, F_r=None, phi=1.0,
+                 sigma_pre_mode="deposition"):
+        """sigma_pre_mode: "deposition" (F_e -> G, Cyron/CMM) or "initial" (Maes Eq. 17)."""
+        if sigma_pre_mode not in ("deposition", "initial"):
+            raise ValueError(f"sigma_pre_mode must be 'deposition' or 'initial', got {sigma_pre_mode!r}")
+        self.sigma_pre_mode = sigma_pre_mode
         self.material = material
         self.T = T
         self.rho = rho_0
@@ -247,7 +207,7 @@ class constituent:
                     self.k_sigma_minus, self.F_r, self.sigma_pre,
                     self.sigma_f_pre, self.sigma, self.sigma_f, self.phi,
                     self.rho_dot_plus)
-        return children, None
+        return children, self.sigma_pre_mode
 
     @classmethod
     def tree_unflatten(cls, aux, children):
@@ -255,6 +215,7 @@ class constituent:
         (obj.material, obj.T, obj.rho, obj.k_sigma_plus, obj.k_sigma_minus,
          obj.F_r, obj.sigma_pre, obj.sigma_f_pre, obj.sigma, obj.sigma_f,
          obj.phi, obj.rho_dot_plus) = children
+        obj.sigma_pre_mode = aux
         return obj
 
 @jax.tree_util.register_pytree_node_class
@@ -264,6 +225,8 @@ class mixture:
         self.ds = ds
         self.rho_tot_0 = sum(c.rho for c in constituents)
         self.rho_tot = self.rho_tot_0
+        for c in constituents:
+            c.phi = c.rho / self.rho_tot_0
 
         if ag is None:
             self.F_g_calc = self.F_g_iso_calc
@@ -276,11 +239,11 @@ class mixture:
             self.F_g = self.F_g_calc(self.ag)
 
     def F_g_iso_calc(self, ag):
-        """F_g(s) = (rho_tot(s)/rho_tot(0))^(1/3) I   (Eq. 6, isotropic)"""
+        """F_g(s) = (rho_tot(s)/rho_tot(0))^(1/3) I   (Eq. 6)"""
         return (self.rho_tot/self.rho_tot_0) ** (1.0 / 3.0) * jnp.eye(3)
 
     def F_g_aniso_calc(self, ag):
-        """F_g(s) = [rho_tot(s)/rho_tot(0) - 1] a_g (x) a_g + I     (Eq. 7)"""
+        """F_g(s) = (rho_tot(s)/rho_tot(0) - 1) ag(x)ag + I   (Eq. 7)"""
         return (self.rho_tot/self.rho_tot_0 - 1) * jnp.outer(ag, ag)  + jnp.eye(3)
 
     def tree_flatten(self):
@@ -299,22 +262,10 @@ class mixture:
         return obj
 
 
-
-
-# ==========================================
-# Mass production and removal (Eq. 24)
-# ==========================================
-
-
 def _sigma_f_rel(c, sigma_f, rho_tot, rho_tot_0, eps):
-    """Mechanobiological driver of Eq. 24:
+    """rel = [rho_tot sigma_f(s) - rho_tot(0) sigma_f(0)] / [rho_tot(0) sigma_f(0)]   (Eq. 24)
 
-        rel = [rho_tot sigma_f(s) - rho_tot(0) sigma_f(0)]
-              / [rho_tot(0) sigma_f(0)]
-
-    sigma_f carries a 1/J, the setpoint sigma_f(0) does not
-    (UMAT_GR_HCM.for: s_fib = 2/det dW I4 against s_fib_hom = 2 dW_hom g^2).
-    The denominator may be omitted when sigma_f(0) = 0 (Eq. 24).
+    Denominator dropped when sigma_f(0) = 0.
     """
     ref = rho_tot_0 * c.sigma_f_pre
     denom = jnp.where(jnp.abs(ref) < eps, 1.0, ref)
@@ -323,36 +274,21 @@ def _sigma_f_rel(c, sigma_f, rho_tot, rho_tot_0, eps):
 
 @jit
 def rho_dot_plus_calc(c, sigma_f, ds, rho_tot, rho_tot_0, eps=1e-9):
-    """rho_dot_+ = (rho/T)(1 + k_sigma_+ rel) ds                     (Eq. 24)
-    """
+    """rho_dot_+ ds = (rho/T)(1 + k_sigma_+ rel) ds   (Eq. 24)"""
     rel = _sigma_f_rel(c, sigma_f, rho_tot, rho_tot_0, eps)
     return (c.rho / (c.T / ds)) * (1.0 + c.k_sigma_plus * rel)
 
 
 @jit
 def rho_dot_minus_calc(c, sigma_f, ds, rho_tot, rho_tot_0, eps=1e-9):
-    """rho_dot_- = -(rho/T)(1 + k_sigma_- rel) ds                    (Eq. 24)"""
+    """rho_dot_- ds = -(rho/T)(1 + k_sigma_- rel) ds   (Eq. 24)"""
     rel = _sigma_f_rel(c, sigma_f, rho_tot, rho_tot_0, eps)
     return -(c.rho / (c.T / ds)) * (1.0 + c.k_sigma_minus * rel)
 
 
-
-
-
-# ==========================================
-# Per-constituent step
-# ==========================================
-
-
 @jit
 def mixture_sigma_solver(mixt, F):
-    """sigma_tot = sum_j phi^j sigma^j                                (Eq. 27)
-
-    with sigma^j = rho^j/(phi^j J) (dW^j/dF_e^j) F_e^jT (Eq. 17), so phi^j
-    cancels and each constituent contributes rho^j/J times its material stress.
-
-    Also returns the per-constituent (F_e, sigma) for commit to reuse.
-    """
+    """sigma_tot = sum_j phi^j sigma^j = sum_j (rho^j/J) sigma_mat^j(F_e^j)   (Eq. 17, 27)"""
     F_g = mixt.F_g
     J = jnp.linalg.det(F)
     sigma_tot = jnp.zeros((3,3))
@@ -367,15 +303,11 @@ def mixture_sigma_solver(mixt, F):
 
 @jit
 def constituent_update(c, F_e, sigma_s, R, ds, J, rho_tot, rho_tot_0):
-    """One constituent's growth and remodeling step at a settled F:
-
-        sigma_pre^j(s) = R sigma^j(0) R^T                             (Eq. 17)
-        sigma_f^j(s)   = tr(sigma^j)/J                                (Eq. 31)
-        rho^j(s+ds)    = rho^j + (rho_dot_+ + rho_dot_-)              (Eq. 24/37)
-        F_r^j(s+ds)    from Eq. 20, closed form (Eq. 41) or Newton (Eq. 43)
-
-    The Eq. 20 source is density-weighted the same way as the Eq. 24 driver.
-    F_e and sigma_s come from mixture_sigma_solver; no stress is re-evaluated.
+    """sigma_pre^j(s) = (J_g/J) R sigma^j(0) R^T          deposition (Cyron Eq. 11)
+                   = R sigma^j(0) R^T                   initial    (Eq. 17)
+    sigma_f^j(s)   = tr(sigma^j)/J                      (Eq. 31)
+    rho^j(s+ds)    = rho^j + rho_dot_+ + rho_dot_-      (Eq. 24, 37)
+    F_r^j(s+ds)    from Eq. 20 via Eq. 41 or Eq. 43
     """
     sigma_pre_s = R @ c.sigma_pre @ R.T
     sigma_f_s = c.material.sigma_f(sigma_s) / J
@@ -384,36 +316,18 @@ def constituent_update(c, F_e, sigma_s, R, ds, J, rho_tot, rho_tot_0):
     rho_dot_minus = rho_dot_minus_calc(c, sigma_f_s, ds, rho_tot, rho_tot_0)
     rho_s = c.rho + rho_dot_plus + rho_dot_minus
 
+    rho_pre = rho_tot / J if c.sigma_pre_mode == "deposition" else rho_tot_0
     sigma_rate_euler = (rho_dot_plus / c.rho) * (rho_tot * sigma_s / J
-                                                 - rho_tot_0 * sigma_pre_s)
+                                                 - rho_pre * sigma_pre_s)
     F_r_s = c.material.F_r(F_e, J, c, sigma_rate_euler)
     return rho_s, F_r_s, rho_dot_plus
 
 
-# ==========================================
-# Solver entry point (shared with FCMM.py -- see jaxFEM_solver.py)
-#   sigma_solver(state, F) -> (sigma_tot, aux)   pure, committed state only
-#   commit(state, F, aux)  -> state              once, on the converged F
-# ==========================================
-
-
-# Trial stress at F from committed state only; no F_r solve. aux carries the
-# per-constituent (F_e, sigma) that commit reuses.
 sigma_solver = mixture_sigma_solver
 
 
 def commit(mixt, F, aux):
-    """Advance the mixture one step on the settled F:
-
-        rho^j, F_r^j  per constituent                                (Eq. 24/37, 20)
-        rho_tot(s)    = sum_j rho^j(s)                               (Eq. 25)
-        phi^j(s)      = rho^j(s)/rho_tot(s)
-        F_g(s)        from rho_tot(s)                                (Eq. 6/7)
-
-    F_g is written for the NEXT step; this step used the one it came in with.
-    Not jitted: it mutates the state containers, and a mutation inside a traced
-    function would only take effect at trace time.
-    """
+    """Advance rho^j, F_r^j, phi^j = rho^j/rho_tot and F_g (Eq. 6/7) on the settled F."""
     ds, J = mixt.ds, jnp.linalg.det(F)
     R = polar_rotation(F)
     updates = [constituent_update(c, F_e, sigma_s, R, ds, J,
@@ -427,8 +341,6 @@ def commit(mixt, F, aux):
         c.rho_dot_plus = rho_dot_plus
         c.phi = rho_s / rho_tot_s
 
-    # F_g_calc reads mixt.rho_tot, so the new total has to land first. The F_g
-    # written here is next step's -- this step used the one it came in with.
     mixt.rho_tot = rho_tot_s
     mixt.F_g = mixt.F_g_calc(mixt.ag)
     return mixt

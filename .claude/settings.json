@@ -1,10 +1,16 @@
 {
   "permissions": {
     "allow": [
-      "Bash(/home/leo/miniconda3/envs/ML/bin/python -c ' *)",
-      "Bash(python -)",
-      "Bash(timeout 900 /home/leo/miniconda3/envs/ML/bin/python -c ' *)",
-      "Bash(timeout 600 /home/leo/miniconda3/envs/ML/bin/python -c ' *)"
+      "Bash(/home/leo/miniconda3/envs/ML/bin/python *)",
+      "Bash(timeout * /home/leo/miniconda3/envs/ML/bin/python *)",
+      "Bash(~/miniconda3/envs/ML/bin/python *)",
+      "Bash(timeout * ~/miniconda3/envs/ML/bin/python *)",
+      "Bash(git diff*)",
+      "Bash(git status*)",
+      "Bash(grep *)",
+      "Bash(find *)",
+      "Bash(/home/leo/miniconda3/envs/ML/bin/python *)",
+      "Bash(timeout * /home/leo/miniconda3/envs/ML/bin/python *)"
     ]
   }
 }

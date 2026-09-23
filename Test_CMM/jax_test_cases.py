@@ -113,10 +113,12 @@ def build_FCMM(ds, n_steps=None, burn=True):
 
 
 def build_HCMM(ds, n_steps=None):
+    specs = _specs()
+    rho_tot_0 = sum(p["rho_0"] for *_, p in specs)
     cs = [HCMM.constituent(mat_h, T=p["T"], rho_0=p["rho_0"],
                            k_sigma_plus=p["k_plus"], k_sigma_minus=p["k_minus"],
-                           G=G, phi=p["rho_0"])
-          for mat_h, _, G, p in _specs()]
+                           G=G, phi=p["rho_0"] / rho_tot_0)
+          for mat_h, _, G, p in specs]
     return HCMM.mixture(cs, ds=ds)
 
 
