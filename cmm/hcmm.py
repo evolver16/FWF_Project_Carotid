@@ -12,12 +12,13 @@ Solver interface: sigma_tot, aux = sigma_solver(state, F); state = commit(state,
 import jax
 import jax.numpy as jnp
 from jax import jit
+from tensor3 import det3, inv3
 
 
 @jit
 def F_e_calc(F, F_g, F_r):
     """F_e^j(s) = F(s) F_g(s)^-1 F_r^j(s)^-1   (Eq. 15)"""
-    return F @ jnp.linalg.inv(F_g) @ jnp.linalg.inv(F_r)
+    return F @ inv3(F_g) @ inv3(F_r)
 
 
 def sym_to_voigt(T):
@@ -32,27 +33,31 @@ def voigt_to_sym(v):
 
 
 @jit
-def polar_rotation(F):
-    """F = R U,  R = U_ V^T from SVD F = U_ S V^T   (Eq. 17)"""
-    U_, _, Vt = jnp.linalg.svd(F)
-    return U_ @ Vt
+def polar_rotation(F, n_iter=12):
+    """F = R U,  R_{k+1} = (R_k + R_k^-T)/2 from R_0 = F, smooth at repeated singular values"""
+    return jax.lax.fori_loop(0, n_iter, lambda _, R: 0.5 * (R + inv3(R).T), F)
 
 
 @jax.tree_util.register_pytree_node_class
 class Fung:
-    def __init__(self, k1, k2, M, lam_r=1.0):
+    def __init__(self, k1, k2, M):
         self.k1 = k1
         self.k2 = k2
         M = jnp.asarray(M)
         self.M = M / jnp.linalg.norm(M)
-        self.P = jnp.outer(self.M, self.M)
+
+    @property
+    def P(self):
+        return jnp.outer(self.M, self.M)
 
     def tree_flatten(self):
         return (self.k1, self.k2, self.M), None
 
     @classmethod
     def tree_unflatten(cls, aux_data, children):
-        return cls(*children)
+        obj = cls.__new__(cls)
+        obj.k1, obj.k2, obj.M = children
+        return obj
 
     @jit
     def I4(self, F):
@@ -128,7 +133,7 @@ class NeoHookean:
     def Psi(self, F):
         """W^elas = C10 (J_e^(-2/3) tr(F^T F) - 3) + K/2 (J_e - 1)^2   (Eq. 28)"""
         I1 = jnp.trace(F.T @ F)
-        J = jnp.linalg.det(F)
+        J = det3(F)
         I1_inc = I1 * J ** (-2 / 3)
         return self.C10 * (I1_inc - 3) + self.K / 2 * (J - 1) ** 2
 
@@ -150,23 +155,17 @@ class NeoHookean:
         L_r = [F_r(s+ds) - F_r(s)] F_r^-1                                                    (Eq. 43)
         """
         F_r_s = voigt_to_sym(F_r_s)
-        L_r = (F_r_s - F_r) @ jnp.linalg.inv(F_r)
+        L_r = (F_r_s - F_r) @ inv3(F_r)
         _, dsigma = jax.jvp(self.sigma, (F_e,), (F_e @ L_r,))
         return sym_to_voigt(scale * dsigma - sigma_rate_euler)
 
     @jit
     def F_r(self, F_e, J, c, sigma_rate_euler):
-        """Newton on the six components of symmetric F_r(s+ds)."""
+        """Symmetric F_r(s+ds) from one linear solve, Eq. 20 is affine in F_r(s+ds)."""
         scale = c.rho / (c.phi * J)
-
-        def newton_step(i, x):
-            fvec = self._residual(x, F_e, c.F_r, sigma_rate_euler, scale)
-            fjac = jax.jacfwd(self._residual)(x, F_e, c.F_r, sigma_rate_euler, scale)
-            return x + jnp.linalg.solve(fjac, -fvec)
-
+        r = lambda x: self._residual(x, F_e, c.F_r, sigma_rate_euler, scale)
         x0 = sym_to_voigt(c.F_r)
-        x_final = jax.lax.fori_loop(0, 20, newton_step, x0)
-        return voigt_to_sym(x_final)
+        return voigt_to_sym(x0 - jnp.linalg.solve(jax.jacfwd(r)(x0), r(x0)))
 
 
 @jax.tree_util.register_pytree_node_class
@@ -204,25 +203,30 @@ class NeoHookeanInc:
         r_6 = det F_r(s+ds) - 1
         """
         F_r_s = voigt_to_sym(F_r_s)
-        L_r = (F_r_s - F_r) @ jnp.linalg.inv(F_r)
+        L_r = (F_r_s - F_r) @ inv3(F_r)
         _, dsigma = jax.jvp(self.sigma, (F_e,), (F_e @ L_r,))
         r = sym_to_voigt(scale * dsigma - sigma_rate_euler)
         return jnp.concatenate([r[jnp.array([0, 1, 3, 4, 5])],
-                                jnp.linalg.det(F_r_s)[None] - 1.0])
+                                det3(F_r_s)[None] - 1.0])
 
     @jit
-    def F_r(self, F_e, J, c, sigma_rate_euler):
-        """Newton on symmetric F_r(s+ds) with det F_r = 1."""
+    def F_r(self, F_e, J, c, sigma_rate_euler, tol=1e-14, max_iter=20):
+        """Newton on symmetric F_r(s+ds) with det F_r = 1; implicit gradient via custom_root."""
         scale = c.rho / (c.phi * J)
+        r = lambda x: self._residual(x, F_e, c.F_r, sigma_rate_euler, scale)
 
-        def newton_step(i, x):
-            fvec = self._residual(x, F_e, c.F_r, sigma_rate_euler, scale)
-            fjac = jax.jacfwd(self._residual)(x, F_e, c.F_r, sigma_rate_euler, scale)
-            return x + jnp.linalg.solve(fjac, -fvec)
+        def newton(f, x0):
+            def body(state):
+                x, _, i = state
+                x = x - jnp.linalg.solve(jax.jacfwd(f)(x), f(x))
+                return x, jnp.linalg.norm(f(x)), i + 1
 
-        x0 = sym_to_voigt(c.F_r)
-        x_final = jax.lax.fori_loop(0, 20, newton_step, x0)
-        return voigt_to_sym(x_final)
+            return jax.lax.while_loop(lambda s: (s[1] > tol) & (s[2] < max_iter), body,
+                                      (x0, jnp.linalg.norm(f(x0)), 0))[0]
+
+        x = jax.lax.custom_root(r, sym_to_voigt(c.F_r), newton,
+                                lambda g, y: jnp.linalg.solve(jax.jacobian(g)(y), y))
+        return voigt_to_sym(x)
 
 
 @jax.tree_util.register_pytree_node_class
@@ -251,7 +255,7 @@ class constituent:
         if F_r is not None:
             self.F_r = F_r
         elif G is not None:
-            self.F_r = jnp.linalg.inv(G)
+            self.F_r = inv3(G)
         else:
             self.F_r = jnp.eye(3)
 
@@ -360,7 +364,7 @@ def rho_dot_minus_calc(c, sigma_f, ds, rho_tot, rho_tot_0, eps=1e-9):
 def mixture_sigma_solver(mixt, F):
     """sigma_tot = sum_j phi^j sigma^j = sum_j (rho^j/J) sigma_mat^j(F_e^j)   (Eq. 17, 27)"""
     F_g = mixt.F_g
-    J = jnp.linalg.det(F)
+    J = det3(F)
     sigma_tot = jnp.zeros((3,3))
     trial = []
     for c in mixt.constituents:
@@ -399,7 +403,7 @@ sigma_solver = mixture_sigma_solver
 @jit
 def commit(mixt, F, aux):
     """New state: rho^j, F_r^j, phi^j = rho^j/rho_tot, F_g (Eq. 6/7) on the settled F."""
-    J = jnp.linalg.det(F)
+    J = det3(F)
     R = polar_rotation(F)
     updates = [constituent_update(c, F_e, sigma_s, R, mixt.ds, J, mixt.rho_tot, mixt.rho_tot_0)
                for c, (F_e, sigma_s) in zip(mixt.constituents, aux)]

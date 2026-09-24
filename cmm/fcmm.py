@@ -12,13 +12,20 @@ Solver interface: sigma_tot, aux = sigma_solver(state, F); state = commit(state,
 import jax
 import jax.numpy as jnp
 from jax import jit
+from tensor3 import det3, inv3
 
 
 @jit
-def F_e_calc(F, F_g, G, n):
-    """F_e^j(s,tau) = F(s) F_g(s)^-1 [F(tau) F_g(tau)^-1]^-1 G^j   (Eq. 5)"""
-    inner = F @ jnp.linalg.inv(F_g)
-    return F[n] @ jnp.linalg.inv(F_g[n]) @ jnp.linalg.inv(inner) @ G
+def F_e_calc(F, F_g, R, G, n):
+    """F_e^j(s,tau) = F(s) F_g(s)^-1 [F(tau) F_g(tau)^-1]^-1 R(tau) G^j   (Eq. 5, deposited in the rotated frame)"""
+    inner = F @ inv3(F_g)
+    return F[n] @ inv3(F_g[n]) @ inv3(inner) @ R @ G
+
+
+@jit
+def polar_rotation(F, n_iter=12):
+    """F = R U,  R_{k+1} = (R_k + R_k^-T)/2 from R_0 = F, smooth at repeated singular values"""
+    return jax.lax.fori_loop(0, n_iter, lambda _, R: 0.5 * (R + inv3(R).T), F)
 
 
 def F_g_iso_calc(mixt):
@@ -72,14 +79,16 @@ class Fung:
 
     @classmethod
     def tree_unflatten(cls, aux_data, children):
-        return cls(*children)
+        obj = cls.__new__(cls)
+        obj.k1, obj.k2, obj.M = children
+        return obj
 
     @jit
     def Psi(self, F):
-        """W^coll = k1/(2 k2) [exp(k2 (I4 - 1)^2) - 1],  I4 = |F M|^2   (Eq. 28)"""
+        """W^coll = k1/(2 k2) [exp(k2 (I4 - 1)^2) - 1] if I4 > 1 else 0,  I4 = |F M|^2   (Eq. 28)"""
         FM = F @ self.M
         I4 = jnp.dot(FM, FM)
-        return (self.k1 / (2 * self.k2)) * (jnp.exp(self.k2 * (I4 - 1) ** 2) - 1)
+        return jnp.where(I4 > 1.0, (self.k1 / (2 * self.k2)) * (jnp.exp(self.k2 * (I4 - 1) ** 2) - 1), 0.0)
 
     @jit
     def sigma(self, F):
@@ -111,7 +120,7 @@ class NeoHookean:
     def Psi(self, F):
         """W^elas = C10 (J_e^(-2/3) tr(F^T F) - 3) + K/2 (J_e - 1)^2   (Eq. 28)"""
         I1 = jnp.trace(F.T @ F)
-        J = jnp.linalg.det(F)
+        J = det3(F)
         I1_inc = I1 * J ** (-2 / 3)
         return self.C10 * (I1_inc - 3) + self.K / 2 * (J - 1) ** 2
 
@@ -281,17 +290,20 @@ class constituent:
 
 @jax.tree_util.register_pytree_node_class
 class mixture_history:
-    """Rolling F(tau), F_g(tau) buffers; unfilled slots hold identity."""
+    """Rolling F(tau), F_g(tau), R(tau) buffers; unfilled slots hold identity."""
 
-    def __init__(self, F, Fg, n):
+    def __init__(self, F, Fg, R, n):
         self.F = F
         self.Fg = Fg
+        self.R = R
         self.n = n
 
     @classmethod
     def allocate(cls, n_max, F0):
         eye = jnp.broadcast_to(jnp.eye(3), (n_max, 3, 3))
-        return cls(F=eye.at[0].set(jnp.asarray(F0)), Fg=eye, n=jnp.asarray(0))
+        F0 = jnp.asarray(F0)
+        return cls(F=eye.at[0].set(F0), Fg=eye, R=eye.at[0].set(polar_rotation(F0)),
+                   n=jnp.asarray(0))
 
     @property
     def n_max(self):
@@ -301,15 +313,16 @@ class mixture_history:
         shift = (self.n + 1) >= self.n_max
         k = jnp.minimum(self.n + 1, self.n_max - 1)
         return mixture_history(F=_advance(self.F, F_s, k, shift),
-                               Fg=_advance(self.Fg, Fg_s, k, shift), n=k)
+                               Fg=_advance(self.Fg, Fg_s, k, shift),
+                               R=_advance(self.R, polar_rotation(F_s), k, shift), n=k)
 
     def tree_flatten(self):
-        return (self.F, self.Fg, self.n), None
+        return (self.F, self.Fg, self.R, self.n), None
 
     @classmethod
     def tree_unflatten(cls, aux_data, children):
         obj = cls.__new__(cls)
-        obj.F, obj.Fg, obj.n = children
+        obj.F, obj.Fg, obj.R, obj.n = children
         return obj
 
 
@@ -460,37 +473,43 @@ def Psi_j_tot_calc(par, hist, m_s, K_cumu_s, mix_hist):
     k = mix_hist.n
     m_full = hist.m.at[k].set(m_s)
     q_values = q_calc(hist, K_cumu_s, k)
-    F_e_history = F_e_calc(mix_hist.F, mix_hist.Fg, par.G, k)
+    F_e_history = F_e_calc(mix_hist.F, mix_hist.Fg, mix_hist.R, par.G, k)
     W_values = jax.vmap(par.material.Psi)(F_e_history)
     return jnp.trapezoid(m_full * q_values * W_values, step_axis(k, mix_hist.n_max))
 
 
 @jit
-def sigma_j_calc(par, hist, m_s, K_cumu_s, mix_hist, J_g):
-    """phi^j sigma^j = (1/J) int m^j(tau) q^j(s,tau) (dW^j/dF) F^T dtau   (Eq. 27 x 34, 35)"""
-    k = mix_hist.n
-    m_full = hist.m.at[k].set(m_s)
-    q_values = q_calc(hist, K_cumu_s, k)
-
+def cohort_sigmas(par, mix_hist):
+    """sigma(F_e^j(s,tau)) for every retained cohort   (Eq. 5, 29)"""
     Fg_hist = (mix_hist.Fg if par.grows
                else jnp.broadcast_to(jnp.eye(3), mix_hist.Fg.shape))
+    F_e_history = F_e_calc(mix_hist.F, Fg_hist, mix_hist.R, par.G, mix_hist.n)
+    return jax.vmap(par.material.sigma)(F_e_history)
 
-    F_e_history = F_e_calc(mix_hist.F, Fg_hist, par.G, k)
-    sigma_values = jax.vmap(par.material.sigma)(F_e_history)
-    weights = (m_full * q_values)[:, None, None]
-    integral = jnp.trapezoid(sigma_values * weights,
-                             step_axis(k, mix_hist.n_max), axis=0)
-    J = jnp.linalg.det(mix_hist.F[k])
-    return integral / J
+
+def cohort_weights(hist, m_s, K_cumu_s, k):
+    """m^j(tau) q^j(s,tau)   (Eq. 35)"""
+    return hist.m.at[k].set(m_s) * q_calc(hist, K_cumu_s, k)
+
+
+@jit
+def sigma_j_calc(par, hist, m_s, K_cumu_s, mix_hist, J_g, sigma_values=None):
+    """phi^j sigma^j = (1/J) int m^j(tau) q^j(s,tau) (dW^j/dF) F^T dtau   (Eq. 27 x 34, 35)"""
+    k = mix_hist.n
+    if sigma_values is None:
+        sigma_values = cohort_sigmas(par, mix_hist)
+    weights = cohort_weights(hist, m_s, K_cumu_s, k)[:, None, None]
+    integral = jnp.trapezoid(sigma_values * weights, step_axis(k, mix_hist.n_max), axis=0)
+    return integral / det3(mix_hist.F[k])
 
 
 @jit
 def sigma_j_elastic(par, hist, mix_hist):
     """phi^j sigma^j = (rho^j/J) sigma(F(s) F_g(s)^-1 G^j),  Q^j = 1   (Eq. 4 first term, 5)"""
     k = mix_hist.n
-    F, J = mix_hist.F[k], jnp.linalg.det(mix_hist.F[k])
+    F, J = mix_hist.F[k], det3(mix_hist.F[k])
     F_g = mix_hist.Fg[k] if par.grows else jnp.eye(3)
-    sigma_mat = par.material.sigma(F @ jnp.linalg.inv(F_g) @ par.G)
+    sigma_mat = par.material.sigma(F @ inv3(F_g) @ par.G)
     rho = hist.rho[hist.n]
     return (par.material.sigma_f(sigma_mat) / J, rho / J * sigma_mat, rho,
             jnp.zeros(()), hist.K_cumu[hist.n])
@@ -499,36 +518,41 @@ def sigma_j_elastic(par, hist, mix_hist):
 @jit
 def solve_sigma_f_newton(par, hist, mix_hist, J_g, ds, rho_tot, rho_tot_0,
                          tol=1e-9, max_iter=50):
-    """Newton on sigma_f (per unit mass) closing the m^j <-> sigma^j loop (sec. 2.4.1)."""
+    """Newton on sigma_f (per unit mass) closing the m^j <-> sigma^j loop (sec. 2.4.1); implicit gradient via custom_root."""
     sigma_f_0 = hist.sigma_f_0
+    k = mix_hist.n
+    sigma_values = cohort_sigmas(par, mix_hist)
+    tr_values = jax.vmap(par.material.sigma_f)(sigma_values)
+    axis = step_axis(k, mix_hist.n_max)
+    J = det3(mix_hist.F[k])
 
     def eval_state(sigma_f_s):
         rho_s = rho_calc_from_sigma_f(par, hist, sigma_f_s, ds, rho_tot, rho_tot_0)
         m_s = m_j_calc(par, rho_s, sigma_f_s, sigma_f_0, ds, rho_tot, rho_tot_0)
         K_cumu_s = K_cumu_calc(par, hist, sigma_f_s, ds, rho_tot, rho_tot_0)
-        sigma_j = sigma_j_calc(par, hist, m_s, K_cumu_s, mix_hist, J_g)
-        sigma_f_new = par.material.sigma_f(sigma_j) / rho_s
-        return sigma_f_new, sigma_j, rho_s, m_s, K_cumu_s
+        w = cohort_weights(hist, m_s, K_cumu_s, k)
+        sigma_f_new = jnp.trapezoid(w * tr_values, axis) / (J * rho_s)
+        return sigma_f_new, rho_s, m_s, K_cumu_s
 
     def residual(sigma_f_s):
         sigma_f_new, *_ = eval_state(sigma_f_s)
         return sigma_f_new - sigma_f_s
 
-    def cond(state):
-        _, r, i = state
-        return (jnp.abs(r) > tol) & (i < max_iter)
+    def newton(f, sf0):
+        def body(state):
+            sf, r, i = state
+            dr = jax.grad(f)(sf)
+            sf = sf - r / jnp.where(jnp.abs(dr) < 1e-12, 1e-12, dr)
+            return sf, f(sf), i + 1
 
-    def body(state):
-        sf, r, i = state
-        dr = jax.grad(residual)(sf)
-        dr_safe = jnp.where(jnp.abs(dr) < 1e-12, 1e-12, dr)
-        sf_new = sf - r / dr_safe
-        return (sf_new, residual(sf_new), i + 1)
+        return jax.lax.while_loop(lambda st: (jnp.abs(st[1]) > tol) & (st[2] < max_iter), body,
+                                  (sf0, f(sf0), 0))[0]
 
-    sf0 = hist.sigma_f[hist.n]
-    sf_star, _, _ = jax.lax.while_loop(cond, body, (sf0, residual(sf0), 0))
+    sf_star = jax.lax.custom_root(residual, hist.sigma_f[hist.n], newton,
+                                  lambda g, y: y / g(jnp.ones_like(y)))
 
-    _, sigma_j_star, rho_star, m_star, K_cumu_star = eval_state(sf_star)
+    _, rho_star, m_star, K_cumu_star = eval_state(sf_star)
+    sigma_j_star = sigma_j_calc(par, hist, m_star, K_cumu_star, mix_hist, J_g, sigma_values)
     return sf_star, sigma_j_star, rho_star, m_star, K_cumu_star
 
 

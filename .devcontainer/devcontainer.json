@@ -3,8 +3,20 @@
   "remoteUser": "dev",
   "mounts": [
     "source=claude-config,target=/home/dev/.claude,type=volume",
-    "source=vscode-server,target=/home/dev/.vscode-server,type=volume",
-    "source=${localWorkspaceFolder}/.git,target=${containerWorkspaceFolder}/.git,type=bind,readonly"
+    "source=${localWorkspaceFolder}/.vscode,target=${containerWorkspaceFolder}/.vscode,type=bind,readonly",
+    "source=${localEnv:HOME}/.config/git,target=/home/dev/.config/git,type=bind,readonly",
+    "source=${localWorkspaceFolder}/.claude,target=${containerWorkspaceFolder}/.claude,type=bind,readonly",
+    "source=${localWorkspaceFolder}/.devcontainer,target=${containerWorkspaceFolder}/.devcontainer,type=bind,readonly",
+    "source=${localWorkspaceFolder}/.git/config,target=${containerWorkspaceFolder}/.git/config,type=bind,readonly",
+    "source=${localWorkspaceFolder}/.git/hooks,target=${containerWorkspaceFolder}/.git/hooks,type=bind,readonly"
   ],
-  "remoteEnv": { "GIT_OPTIONAL_LOCKS": "0" }
+  "containerEnv": {
+    "GIT_CONFIG_COUNT": "3",
+    "GIT_CONFIG_KEY_0": "url.no-push-from-container:.pushInsteadOf",
+    "GIT_CONFIG_VALUE_0": "git@",
+    "GIT_CONFIG_KEY_1": "url.no-push-from-container:.pushInsteadOf",
+    "GIT_CONFIG_VALUE_1": "https://",
+    "GIT_CONFIG_KEY_2": "url.no-push-from-container:.pushInsteadOf",
+    "GIT_CONFIG_VALUE_2": "ssh://"
+  }
 }

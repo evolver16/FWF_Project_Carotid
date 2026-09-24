@@ -10,6 +10,7 @@ Axes: 0 = paper Z (confined, lam = 1), 1 = paper Y (driven), 2 = paper X (free).
 import jax
 import jax.numpy as jnp
 from dataclasses import dataclass, replace
+from tensor3 import det3
 
 CONFINED_AXIS, DRIVEN_AXIS, FREE_AXIS = 0, 1, 2
 
@@ -57,7 +58,7 @@ def residual(x, state, bc, sigma_solver):
         return jnp.array(free)
     if bc.case == "S":
         return jnp.array([sigma[DRIVEN_AXIS, DRIVEN_AXIS] - bc.target] + free)
-    J = jnp.linalg.det(F)
+    J = det3(F)
     P = J * sigma[DRIVEN_AXIS, DRIVEN_AXIS] / F[DRIVEN_AXIS, DRIVEN_AXIS]
     return jnp.array([P * bc.A0 - bc.target] + free)
 
