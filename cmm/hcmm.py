@@ -229,6 +229,14 @@ class NeoHookeanInc:
         return voigt_to_sym(x)
 
 
+def _concrete_inf(T):
+    """True only for a concrete T = inf (no turnover); traced T keeps the general path."""
+    try:
+        return bool(jnp.isinf(T))
+    except jax.errors.ConcretizationTypeError:
+        return False
+
+
 @jax.tree_util.register_pytree_node_class
 class constituent:
     def __init__(self, material, T, rho_0, k_sigma_plus, k_sigma_minus,
@@ -238,6 +246,7 @@ class constituent:
         if sigma_pre_mode not in ("deposition", "initial"):
             raise ValueError(f"sigma_pre_mode must be 'deposition' or 'initial', got {sigma_pre_mode!r}")
         self.sigma_pre_mode = sigma_pre_mode
+        self.turnover = not _concrete_inf(T)
         self.material = material
         self.T = T
         self.rho = rho_0
@@ -267,7 +276,7 @@ class constituent:
                     self.k_sigma_minus, self.F_r, self.sigma_pre,
                     self.sigma_f_pre, self.sigma, self.sigma_f, self.phi,
                     self.rho_dot_plus)
-        return children, self.sigma_pre_mode
+        return children, (self.sigma_pre_mode, self.turnover)
 
     @classmethod
     def tree_unflatten(cls, aux, children):
@@ -275,7 +284,7 @@ class constituent:
         (obj.material, obj.T, obj.rho, obj.k_sigma_plus, obj.k_sigma_minus,
          obj.F_r, obj.sigma_pre, obj.sigma_f_pre, obj.sigma, obj.sigma_f,
          obj.phi, obj.rho_dot_plus) = children
-        obj.sigma_pre_mode = aux
+        obj.sigma_pre_mode, obj.turnover = aux
         return obj
 
     def replace(self, **fields):
@@ -383,8 +392,10 @@ def constituent_update(c, F_e, sigma_s, R, ds, J, rho_tot, rho_tot_0):
     rho^j(s+ds)    = rho^j + rho_dot_+ + rho_dot_-      (Eq. 24, 37)
     F_r^j(s+ds)    from Eq. 20 via Eq. 41 or Eq. 43
     """
-    sigma_pre_s = R @ c.sigma_pre @ R.T
     sigma_f_s = c.material.sigma_f(sigma_s) / J
+    if not c.turnover:
+        return c.rho, c.F_r, jnp.zeros_like(c.rho_dot_plus), sigma_f_s
+    sigma_pre_s = R @ c.sigma_pre @ R.T
 
     rho_dot_plus = rho_dot_plus_calc(c, sigma_f_s, ds, rho_tot, rho_tot_0)
     rho_dot_minus = rho_dot_minus_calc(c, sigma_f_s, ds, rho_tot, rho_tot_0)
@@ -398,6 +409,11 @@ def constituent_update(c, F_e, sigma_s, R, ds, J, rho_tot, rho_tot_0):
 
 
 sigma_solver = mixture_sigma_solver
+
+
+def J_target(mixt):
+    """J = det F_g for incompressible constituents (det F_e = det F_r = 1)"""
+    return det3(mixt.F_g)
 
 
 @jit

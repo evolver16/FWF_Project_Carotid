@@ -7,3 +7,4 @@ results/
 *.log
 .context/
 cmm/compiled/
+cmm/scratch/

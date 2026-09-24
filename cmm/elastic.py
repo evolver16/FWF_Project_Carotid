@@ -25,6 +25,27 @@ class NeoHookean:
         return self.C10 * (J ** (-2 / 3) * jnp.trace(F.T @ F) - 3) + self.K / 2 * (J - 1) ** 2
 
 
+@jax.tree_util.register_pytree_node_class
+class NeoHookeanInc:
+    def __init__(self, C10):
+        self.C10 = jnp.asarray(C10)
+
+    def tree_flatten(self):
+        return (self.C10,), None
+
+    @classmethod
+    def tree_unflatten(cls, aux_data, children):
+        return cls(*children)
+
+    def Psi(self, F):
+        """W = C10 (tr(F^T F) - 3), pressure from the hybrid element"""
+        return self.C10 * (jnp.trace(F.T @ F) - 3)
+
+
+def J_target(state):
+    return jnp.ones(())
+
+
 @jit
 def sigma_solver(state, F):
     """sigma = (1/J) (dW/dF) F^T"""
