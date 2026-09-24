@@ -274,6 +274,13 @@ class constituent:
         obj.sigma_pre_mode = aux
         return obj
 
+    def replace(self, **fields):
+        children, aux = self.tree_flatten()
+        obj = constituent.tree_unflatten(aux, children)
+        for k, v in fields.items():
+            setattr(obj, k, v)
+        return obj
+
 @jax.tree_util.register_pytree_node_class
 class mixture:
     def __init__(self, constituents, ds, ag=None):
@@ -315,6 +322,13 @@ class mixture:
          obj.F_g, obj.ag) = children
         is_iso = aux
         obj.F_g_calc = obj.F_g_iso_calc if is_iso else obj.F_g_aniso_calc
+        return obj
+
+    def replace(self, **fields):
+        children, aux = self.tree_flatten()
+        obj = mixture.tree_unflatten(aux, children)
+        for k, v in fields.items():
+            setattr(obj, k, v)
         return obj
 
 
@@ -376,27 +390,23 @@ def constituent_update(c, F_e, sigma_s, R, ds, J, rho_tot, rho_tot_0):
     sigma_rate_euler = (rho_dot_plus / c.rho) * (rho_tot * sigma_s / J
                                                  - rho_pre * sigma_pre_s)
     F_r_s = c.material.F_r(F_e, J, c, sigma_rate_euler)
-    return rho_s, F_r_s, rho_dot_plus
+    return rho_s, F_r_s, rho_dot_plus, sigma_f_s
 
 
 sigma_solver = mixture_sigma_solver
 
 
+@jit
 def commit(mixt, F, aux):
-    """Advance rho^j, F_r^j, phi^j = rho^j/rho_tot and F_g (Eq. 6/7) on the settled F."""
-    ds, J = mixt.ds, jnp.linalg.det(F)
+    """New state: rho^j, F_r^j, phi^j = rho^j/rho_tot, F_g (Eq. 6/7) on the settled F."""
+    J = jnp.linalg.det(F)
     R = polar_rotation(F)
-    updates = [constituent_update(c, F_e, sigma_s, R, ds, J,
-                                  mixt.rho_tot, mixt.rho_tot_0)
+    updates = [constituent_update(c, F_e, sigma_s, R, mixt.ds, J, mixt.rho_tot, mixt.rho_tot_0)
                for c, (F_e, sigma_s) in zip(mixt.constituents, aux)]
-
     rho_tot_s = sum(u[0] for u in updates)
-    for c, (rho_s, F_r_s, rho_dot_plus) in zip(mixt.constituents, updates):
-        c.rho = rho_s
-        c.F_r = F_r_s
-        c.rho_dot_plus = rho_dot_plus
-        c.phi = rho_s / rho_tot_s
-
-    mixt.rho_tot = rho_tot_s
-    mixt.F_g = mixt.F_g_calc(mixt.ag)
-    return mixt
+    constituents = [c.replace(rho=rho_s, F_r=F_r_s, rho_dot_plus=rho_dot_plus,
+                              phi=rho_s / rho_tot_s, sigma=sigma_s, sigma_f=sigma_f_s)
+                    for c, (rho_s, F_r_s, rho_dot_plus, sigma_f_s), (_, sigma_s)
+                    in zip(mixt.constituents, updates, aux)]
+    new = mixt.replace(constituents=constituents, rho_tot=rho_tot_s)
+    return new.replace(F_g=new.F_g_calc(new.ag))

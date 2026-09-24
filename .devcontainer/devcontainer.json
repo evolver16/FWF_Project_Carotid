@@ -1,0 +1,10 @@
+{
+  "image": "py312-jax",
+  "remoteUser": "dev",
+  "mounts": [
+    "source=claude-config,target=/home/dev/.claude,type=volume",
+    "source=vscode-server,target=/home/dev/.vscode-server,type=volume",
+    "source=${localWorkspaceFolder}/.git,target=${containerWorkspaceFolder}/.git,type=bind,readonly"
+  ],
+  "remoteEnv": { "GIT_OPTIONAL_LOCKS": "0" }
+}
