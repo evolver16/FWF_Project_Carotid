@@ -170,6 +170,62 @@ class NeoHookean:
 
 
 @jax.tree_util.register_pytree_node_class
+class NeoHookeanInc:
+    def __init__(self, C10):
+        self.C10 = C10
+
+    def tree_flatten(self):
+        return (self.C10,), None
+
+    @classmethod
+    def tree_unflatten(cls, aux_data, children):
+        return cls(*children)
+
+    @jit
+    def Psi(self, F):
+        """W^elas = C10 (tr(F^T F) - 3)   (Eq. 32)"""
+        return self.C10 * (jnp.trace(F.T @ F) - 3)
+
+    @jit
+    def sigma(self, F):
+        """sigma = 2 C10 (B - I1/3 I), B = F F^T; pressure added by the solver   (Eq. 33)"""
+        B = F @ F.T
+        return 2 * self.C10 * (B - jnp.trace(B) / 3 * jnp.eye(3))
+
+    @staticmethod
+    @jit
+    def sigma_f(sigma):
+        """sigma_f = tr(sigma)   (Eq. 31)"""
+        return jnp.trace(sigma)
+
+    @jit
+    def _residual(self, F_r_s, F_e, F_r, sigma_rate_euler, scale):
+        """r = dev[rho/(phi J) (d sigma/d F_e) : (F_e L_r) - (rho_dot_+/rho)(sigma - sigma_pre)]   (Eq. 20, 44)
+        r_6 = det F_r(s+ds) - 1
+        """
+        F_r_s = voigt_to_sym(F_r_s)
+        L_r = (F_r_s - F_r) @ jnp.linalg.inv(F_r)
+        _, dsigma = jax.jvp(self.sigma, (F_e,), (F_e @ L_r,))
+        r = sym_to_voigt(scale * dsigma - sigma_rate_euler)
+        return jnp.concatenate([r[jnp.array([0, 1, 3, 4, 5])],
+                                jnp.linalg.det(F_r_s)[None] - 1.0])
+
+    @jit
+    def F_r(self, F_e, J, c, sigma_rate_euler):
+        """Newton on symmetric F_r(s+ds) with det F_r = 1."""
+        scale = c.rho / (c.phi * J)
+
+        def newton_step(i, x):
+            fvec = self._residual(x, F_e, c.F_r, sigma_rate_euler, scale)
+            fjac = jax.jacfwd(self._residual)(x, F_e, c.F_r, sigma_rate_euler, scale)
+            return x + jnp.linalg.solve(fjac, -fvec)
+
+        x0 = sym_to_voigt(c.F_r)
+        x_final = jax.lax.fori_loop(0, 20, newton_step, x0)
+        return voigt_to_sym(x_final)
+
+
+@jax.tree_util.register_pytree_node_class
 class constituent:
     def __init__(self, material, T, rho_0, k_sigma_plus, k_sigma_minus,
                  G=None, sigma_pre=None, F_r=None, phi=1.0,

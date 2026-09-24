@@ -128,6 +128,36 @@ class NeoHookean:
         return jnp.trace(sigma)
 
 
+@jax.tree_util.register_pytree_node_class
+class NeoHookeanInc:
+    def __init__(self, C10):
+        self.C10 = C10
+
+    def tree_flatten(self):
+        return (self.C10,), None
+
+    @classmethod
+    def tree_unflatten(cls, aux_data, children):
+        return cls(*children)
+
+    @jit
+    def Psi(self, F):
+        """W^elas = C10 (tr(F^T F) - 3)   (Eq. 32)"""
+        return self.C10 * (jnp.trace(F.T @ F) - 3)
+
+    @jit
+    def sigma(self, F):
+        """sigma = 2 C10 (B - I1/3 I), B = F F^T; pressure added by the solver   (Eq. 33)"""
+        B = F @ F.T
+        return 2 * self.C10 * (B - jnp.trace(B) / 3 * jnp.eye(3))
+
+    @staticmethod
+    @jit
+    def sigma_f(sigma):
+        """sigma_f = tr(sigma)   (Eq. 31)"""
+        return jnp.trace(sigma)
+
+
 def _advance(buf, value, k, shift):
     """Write value at slot k, rolling out the oldest entry if shift."""
     return jnp.where(shift, jnp.roll(buf, -1, axis=0), buf).at[k].set(value)
@@ -199,7 +229,8 @@ class history:
 
 @jax.tree_util.register_pytree_node_class
 class params:
-    def __init__(self, material, T, G, k_minus, k_plus, phi_0, grows=True):
+    def __init__(self, material, T, G, k_minus, k_plus, phi_0, grows=True,
+                 remodels=True):
         self.material = material
         self.T = jnp.asarray(T)
         self.G = jnp.asarray(G)
@@ -207,21 +238,22 @@ class params:
         self.k_sigma_plus = jnp.asarray(k_plus)
         self.phi_0 = jnp.asarray(phi_0)
         self.grows = grows
+        self.remodels = remodels
 
     def with_gains(self, k_plus, k_minus):
         return params(self.material, self.T, self.G, k_minus, k_plus,
-                      self.phi_0, self.grows)
+                      self.phi_0, self.grows, self.remodels)
 
     def tree_flatten(self):
         return (self.material, self.T, self.G, self.k_sigma_minus,
-                self.k_sigma_plus, self.phi_0), self.grows
+                self.k_sigma_plus, self.phi_0), (self.grows, self.remodels)
 
     @classmethod
     def tree_unflatten(cls, aux_data, children):
         obj = cls.__new__(cls)
         (obj.material, obj.T, obj.G, obj.k_sigma_minus,
          obj.k_sigma_plus, obj.phi_0) = children
-        obj.grows = aux_data
+        obj.grows, obj.remodels = aux_data
         return obj
 
 
@@ -234,7 +266,7 @@ class constituent:
     @classmethod
     def allocate(cls, params, rho_0, sigma_f_0, n_max, ds):
         """m^j(0) = rho^j(0)/T^j   (Eq. 10)"""
-        m_0 = rho_0 / T_steps(params, ds)
+        m_0 = rho_0 / T_steps(params, ds) if params.remodels else 0.0
         return cls(params, history.allocate(n_max, m_0, sigma_f_0, rho_0))
 
     def tree_flatten(self):
@@ -453,6 +485,18 @@ def sigma_j_calc(par, hist, m_s, K_cumu_s, mix_hist, J_g):
 
 
 @jit
+def sigma_j_elastic(par, hist, mix_hist):
+    """phi^j sigma^j = (rho^j/J) sigma(F(s) F_g(s)^-1 G^j),  Q^j = 1   (Eq. 4 first term, 5)"""
+    k = mix_hist.n
+    F, J = mix_hist.F[k], jnp.linalg.det(mix_hist.F[k])
+    F_g = mix_hist.Fg[k] if par.grows else jnp.eye(3)
+    sigma_mat = par.material.sigma(F @ jnp.linalg.inv(F_g) @ par.G)
+    rho = hist.rho[hist.n]
+    return (par.material.sigma_f(sigma_mat) / J, rho / J * sigma_mat, rho,
+            jnp.zeros(()), hist.K_cumu[hist.n])
+
+
+@jit
 def solve_sigma_f_newton(par, hist, mix_hist, J_g, ds, rho_tot, rho_tot_0,
                          tol=1e-9, max_iter=50):
     """Newton on sigma_f (per unit mass) closing the m^j <-> sigma^j loop (sec. 2.4.1)."""
@@ -499,6 +543,7 @@ def sigma_solver(mix, F):
 
     results = [solve_sigma_f_newton(c.params, h, mix_hist_trial, J_g, mix.ds,
                                     rho_tot, mix.rho_tot_0)
+               if c.params.remodels else sigma_j_elastic(c.params, h, mix_hist_trial)
                for c, h in zip(mix.constituents, rolled)]
 
     sigma_total = jnp.zeros((3, 3))

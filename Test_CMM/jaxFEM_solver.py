@@ -39,6 +39,7 @@ class BC:
     case: str
     target: float
     A0: float = 2500.0
+    hybrid: bool = False
 
     def __post_init__(self):
         if self.case not in ("U", "S", "F"):
@@ -46,8 +47,8 @@ class BC:
 
     @property
     def n_unknowns(self):
-        """U prescribes the driven stretch, so only the free axis is unknown."""
-        return 1 if self.case == "U" else 2
+        """Free stretches; hybrid (J = 1) removes the free axis."""
+        return (1 if self.case == "U" else 2) - (1 if self.hybrid else 0)
 
 
 # ==========================================
@@ -56,17 +57,27 @@ class BC:
 
 
 def F_from_x(x, bc):
-    """F = diag(1, lam_driven, lam_free). The confined axis is always 1."""
-    if bc.case == "U":
-        return jnp.diag(jnp.array([1.0, bc.target, x[0]]))
-    return jnp.diag(jnp.array([1.0, x[0], x[1]]))
+    """F = diag(1, lam_driven, lam_free); hybrid: lam_free = 1/lam_driven."""
+    lam = bc.target if bc.case == "U" else x[0]
+    if bc.hybrid:
+        return jnp.diag(jnp.array([1.0, lam, 1.0 / lam]))
+    return jnp.diag(jnp.array([1.0, lam, x[-1]]))
 
 
 def x_from_F(F, bc):
     """Inverse of F_from_x, for seeding the next step from the last solution."""
-    if bc.case == "U":
-        return jnp.array([F[FREE_AXIS, FREE_AXIS]])
-    return jnp.array([F[DRIVEN_AXIS, DRIVEN_AXIS], F[FREE_AXIS, FREE_AXIS]])
+    x = [] if bc.case == "U" else [F[DRIVEN_AXIS, DRIVEN_AXIS]]
+    if not bc.hybrid:
+        x.append(F[FREE_AXIS, FREE_AXIS])
+    return jnp.array(x)
+
+
+def total_sigma(state, F, bc, sigma_solver):
+    """sigma - p I with p from sigma_free = 0 when hybrid   (Eq. 33 note)"""
+    sigma, aux = sigma_solver(state, F)
+    if bc.hybrid:
+        sigma = sigma - sigma[FREE_AXIS, FREE_AXIS] * jnp.eye(3)
+    return sigma, aux
 
 
 # ==========================================
@@ -77,20 +88,20 @@ def x_from_F(F, bc):
 def residual(x, state, bc, sigma_solver):
     """Traction BCs on the free and driven faces. Uses committed state only."""
     F = F_from_x(x, bc)
-    sigma, _ = sigma_solver(state, F)
-    free = sigma[FREE_AXIS, FREE_AXIS]
+    sigma, _ = total_sigma(state, F, bc, sigma_solver)
+    free = [] if bc.hybrid else [sigma[FREE_AXIS, FREE_AXIS]]
 
     if bc.case == "U":
-        return jnp.array([free])
+        return jnp.array(free)
 
     if bc.case == "S":
-        return jnp.array([sigma[DRIVEN_AXIS, DRIVEN_AXIS] - bc.target, free])
+        return jnp.array([sigma[DRIVEN_AXIS, DRIVEN_AXIS] - bc.target] + free)
 
     # Case F is a dead load on the REFERENCE area, so the residual is nominal
     # (1st Piola-Kirchhoff) traction: P_11 = J * sigma_11 / lam_1.
     J = jnp.linalg.det(F)
     P = J * sigma[DRIVEN_AXIS, DRIVEN_AXIS] / F[DRIVEN_AXIS, DRIVEN_AXIS]
-    return jnp.array([P * bc.A0 - bc.target, free])
+    return jnp.array([P * bc.A0 - bc.target] + free)
 
 
 def solve_F(state, bc, sigma_solver, x0, tol=None, max_iter=50):
@@ -105,6 +116,8 @@ def solve_F(state, bc, sigma_solver, x0, tol=None, max_iter=50):
     as this precision allows.
     """
     x = jnp.asarray(x0, dtype=jnp.result_type(float))
+    if x.shape[0] == 0:
+        return F_from_x(x, bc), x, 0, True
     eps = float(jnp.finfo(x.dtype).eps)
 
     def r(xx):
@@ -142,7 +155,7 @@ def step(state, bc, model, x0):
     if not converged:
         raise RuntimeError(f"equilibrium Newton did not converge in {n_iter} iterations")
 
-    sigma, aux = model.sigma_solver(state, F)
+    sigma, aux = total_sigma(state, F, bc, model.sigma_solver)
     state = model.commit(state, F, aux)
     return state, F, x, sigma
 
