@@ -1,4 +1,4 @@
-"""Studies: python studies.py maes | sweep | compare [MODEL CASE] | verify | fem | fe | cylinder | artery [MODE] | grad | vessel | incompressible | tet10"""
+"""Studies: python studies.py maes | sweep | compare [MODEL CASE] | verify | fem | fe | cylinder | artery [MODE] | grad | vessel | bending | local_growth | incompressible | tet10"""
 
 import argparse
 import csv
@@ -21,16 +21,26 @@ DRIVEN = solver.DRIVEN_AXIS
 
 
 def outputs(study, *names):
-    """results/<study>/<name>; one shared suffix _1, _2, ... if any name already exists."""
+    """results/<study>/<name>; an existing file (a .pvd with its step folder) moves to results/_archive/<study>/,
+    stamped with its modification time"""
     d = RESULTS / study
     d.mkdir(parents=True, exist_ok=True)
-    n = 0
-    while True:
-        paths = [d / (name if n == 0 else f"{pathlib.Path(name).stem}_{n}{pathlib.Path(name).suffix}")
-                 for name in names]
-        if not any(p.exists() for p in paths):
-            return paths
-        n += 1
+    paths = [d / name for name in names]
+    for p in paths:
+        if not p.exists():
+            continue
+        stamp = time.strftime("%Y%m%d-%H%M%S", time.localtime(p.stat().st_mtime))
+        a = RESULTS / "_archive" / study
+        if p.suffix == ".pvd":
+            a = a / f"{p.stem}_{stamp}"
+            a.mkdir(parents=True, exist_ok=True)
+            if p.with_suffix("").is_dir():
+                p.with_suffix("").rename(a / p.stem)
+            p.rename(a / p.name)
+        else:
+            a.mkdir(parents=True, exist_ok=True)
+            p.rename(a / f"{p.stem}_{stamp}{p.suffix}")
+    return paths
 
 
 def write_csv(rows, path):
@@ -76,7 +86,7 @@ def maes(ds=10.0, n_steps=100):
                     gap_sigma=(float(jnp.max(jnp.abs(sh - sf)) / jnp.abs(sf[0])) if case == "U"
                                else float((sh[-1] - sf[-1]) / sf[-1]) if case == "F" else float("nan")),
                 ))
-    csv_path, fig_path = outputs("maes", "maes.csv", "fig2.png")
+    csv_path, fig_path = outputs("material/maes", "maes.csv", "fig2.png")
     write_csv(rows, csv_path)
 
     t = jnp.arange(1, n_steps + 1) * ds
@@ -151,7 +161,7 @@ def sweep(total_days=400.0):
         if (p["g"], p["k_plus"], ds) == (SWEEP_BASE["g"], SWEEP_BASE["k_plus"], 10.0):
             keep[case] = (out, ds, lam_key)
 
-    csv_path, traj_path, gaps_path = outputs("sweep", "sweep.csv", "trajectories.png", "gaps.png")
+    csv_path, traj_path, gaps_path = outputs("material/sweep", "sweep.csv", "trajectories.png", "gaps.png")
     write_csv(rows, csv_path)
     specs = []
     for case, (out, ds, lam_key) in sorted(keep.items()):
@@ -180,7 +190,7 @@ def compare(model="E", case="S", ds=10.0, n_steps=100):
         dict(t=t, series={k: v["sigma_driven"] for k, v in out.items()}, title=f"{model} {case}", ylabel="sigma_yy (MPa)"),
         dict(t=t, series={k: v["lam_driven"] for k, v in out.items()}, title=f"{model} {case}", ylabel="lam_y (-)"),
         dict(t=t, series={k: v["lam_free"] for k, v in out.items()}, title=f"{model} {case}", ylabel="lam_x (-)"),
-    ], outputs("compare", f"{model}{case}.png")[0], ncols=3)
+    ], outputs("material/compare", f"{model}{case}.png")[0], ncols=3)
 
 
 # ---------- code verification, constant F, k = 0 ----------
@@ -247,7 +257,7 @@ def verify():
                  for s, t in (constant_F_run(spec, F, ds, v) for v in ("FCMM", "HCMM dep"))]
             cells.append(f"ds={ds:4.1f} F {100 * e[0]:5.2f}% H {100 * e[1]:5.2f}%")
         log(f"  {kind:6s} g={g} lam={lam}:  " + "  ".join(cells))
-    outputs("verify", "verify.txt")[0].write_text("\n".join(lines) + "\n")
+    outputs("material/verify", "verify.txt")[0].write_text("\n".join(lines) + "\n")
 
 
 # ---------- FEM readiness: batching, general F, objectivity, tangent, gradients ----------
@@ -391,7 +401,7 @@ def fem(n_points=64, n_steps=5, ds=10.0):
             except Exception as ex:
                 log(f"  {name} {model}  {which:6s} not reverse-differentiable ({type(ex).__name__})")
 
-    outputs("fem", "fem_check.txt")[0].write_text("\n".join(lines) + "\n")
+    outputs("material/fem_readiness", "fem_check.txt")[0].write_text("\n".join(lines) + "\n")
 
 
 # ---------- FE M1: patch test, single hex8 vs single-element solver ----------
@@ -459,7 +469,7 @@ def fe():
         log(f"  {model_name} {case}  {key}(1000 d) FE {fe_q[-1]:.6f}  1-point {float(ref[key][-1]):.6f}  "
             f"max diff {e:.1e}  ({time.time() - t0:.1f}s)  {'PASS' if e < 1e-8 else 'FAIL'}")
 
-    outputs("fe", "fe_m1.txt")[0].write_text("\n".join(lines) + "\n")
+    outputs("fe_verification", "patch_single_element.txt")[0].write_text("\n".join(lines) + "\n")
 
 
 # ---------- FE M2: pressurized quarter cylinder, elastic ----------
@@ -526,7 +536,7 @@ def cylinder(r_i=5.0, t=1.3, L=0.22, C10=0.305, K=6.1):
     log("  successive differences " + "  ".join(f"{x:.2e}" for x in d)
         + "  ratios " + "  ".join(f"{d[i] / d[i + 1]:.1f}" for i in range(len(d) - 1)))
 
-    outputs("fe", "fe_m2_cylinder.txt")[0].write_text("\n".join(lines) + "\n")
+    outputs("fe_verification", "cylinder_lame.txt")[0].write_text("\n".join(lines) + "\n")
 
 
 # ---------- FE M3: arterial G&R, Maes & Famaey (2023) sec. 2.7 / Fig. 4 ----------
@@ -577,10 +587,11 @@ def wall_area(m, u):
 
 def artery_simulate(m, sysm, Qloc, par, mode="deposition", n_steps=100, bc=None, measure=None,
                     pre_tol=1e-6, pre_iter=60, anderson=5, tol=1e-10, log=None, final=False,
-                    elastin="compressible", checkpoint=None):
+                    elastin="compressible", checkpoint=None, record=None, bc_gr=None, insult=None):
     """Prestress G_elas <- F G_elas at p_hom until u = 0 (Maes UMAT_DEP; Anderson-accelerated, 0 = plain),
     G&R at p_gr -> measure(u) per step (default lambda_theta(inner), wall area), reverse-differentiable in par;
-    final: also (u, states) at the end"""
+    final: also (u, states) at the end; record(k, u, states): after prestress (k = 0) and step k (forward only);
+    bc_gr: G&R BCs per step instead of bc(p_gr); insult(states) -> states: applied once after the prestress"""
     import fem
     if bc is None:
         bc = lambda p: cylinder_bc(m, p)
@@ -602,8 +613,15 @@ def artery_simulate(m, sysm, Qloc, par, mode="deposition", n_steps=100, bc=None,
         xs, fs = (xs + [G_e.ravel()])[-anderson - 1:], (fs + [(sysm.gauss_F(u) @ G_e - G_e).ravel()])[-anderson - 1:]
         G_e = fem.anderson(xs, fs).reshape(G_e.shape)
 
-    u, states, hist = sysm.run(states, [bc(par["p_gr"])] * n_steps, u0=zero, tol=tol,
-                               on_step=lambda u, _: measure(u), checkpoint=checkpoint)
+    if insult:
+        states = insult(states)
+    on_step = lambda u, _: measure(u)
+    if record:
+        record(0, u, states)
+        k = iter(range(1, n_steps + 1))
+        on_step = lambda u, st: (record(next(k), u, st), measure(u))[1]
+    u, states, hist = sysm.run(states, bc_gr or [bc(par["p_gr"])] * n_steps, u0=zero, tol=tol,
+                               on_step=on_step, checkpoint=checkpoint)
     series = tuple(jnp.stack(v) for v in zip(*hist))
     return (series, u, states) if final else series
 
@@ -703,7 +721,7 @@ def grad(n_check=(2, 12, 1), steps_check=20, n_full=(8, 60, 4), steps_full=100):
     for k in par:
         log(f"  d/d{k:7s} {float(g[k]): .6e}   elasticity (p/lam) d lam/dp {float(g[k] * par[k] / val): .4f}")
 
-    outputs("fe", "fe_m4_gradients.txt")[0].write_text("\n".join(lines) + "\n")
+    outputs("artery", "gradients.txt")[0].write_text("\n".join(lines) + "\n")
 
 
 # ---------- FE M6: general geometry (Abaqus .inp, Laplace wall basis), bent stenotic vessel ----------
@@ -744,8 +762,8 @@ def vessel(etype="hex8", n=None, n_steps=100, check_n=((2, 15, 1), (4, 30, 1), (
         lines.append(text)
 
     tag = "" if etype == "hex8" else f"_{etype}"
-    txt, inp, vtk0, vtk1, csv_path, fig = outputs("vessel", *(f"vessel{tag}{s}" for s in (
-        ".txt", ".inp", "_ref.vtk", "_day1000.vtk", ".csv", ".png")))
+    txt, inp, pvd, csv_path, fig = outputs("vessel", *(f"vessel{tag}{s}" for s in (
+        ".txt", ".inp", ".pvd", ".csv", ".png")))
 
     log(f"1) Abaqus .inp round trip (bent stenotic half tube, {etype})")
     src = meshlib.bent_tube(n=n, etype=etype)
@@ -808,9 +826,20 @@ def vessel(etype="hex8", n=None, n_steps=100, check_n=((2, 15, 1), (4, 30, 1), (
                          surface_area(m, u, m.faces["inner"]) / A0,
                          jnp.sum(sysm.wdet * det3(sysm.gauss_F(u))) / V0)
     par = artery_par()
+    series = meshlib.VTKSeries(pvd)
+    basis = {f"e_{k}": Q[..., i] for i, k in enumerate(("r", "theta", "z"))}
+
+    def record(k, u, states):
+        F = sysm.gauss_F(u)
+        a = F @ Qj[..., 1:2]
+        a = a / jnp.linalg.norm(a, axis=-2, keepdims=True)
+        s_tt = (jnp.swapaxes(a, -1, -2) @ sysm.stress(u, states) @ a)[..., 0, 0]
+        series.write(10.0 * k, m.X, m.conn, *sysm.fields(u, states, dict(sigma_tt_kPa=1e3 * s_tt, **basis)))
+
     t0 = time.time()
     (thr, inl, area, vol), u, states = artery_simulate(m, sysm, Qj, par, n_steps=n_steps, bc=bc, measure=measure,
-                                                       log=log, final=True)
+                                                       log=log, final=True, record=record)
+    log(f"  ParaView: {pvd.name} ({len(series.entries)} time steps, day 0 = prestressed at p_hom)")
     log(f"  done in {time.time() - t0:.1f}s   (LU factorizations {sysm.linear.factorizations})")
     for k in (0, 9, 49, 99):
         if k < n_steps:
@@ -822,18 +851,6 @@ def vessel(etype="hex8", n=None, n_steps=100, check_n=((2, 15, 1), (4, 30, 1), (
     g = jax.grad(lambda p: artery_simulate(m, sysm, Qj, p, n_steps=n_steps, bc=bc, measure=measure)[0][-1])(par)
     log(f"  {time.time() - t0:.1f}s:  " + "  ".join(f"d/d{k} {float(v):+.3e}" for k, v in g.items()))
 
-    u = np.asarray(u)
-    F = sysm.gauss_F(jnp.asarray(u))
-    sig = sysm.stress(jnp.asarray(u), states)
-    a = F @ Qj[..., 1:2]
-    a = a / jnp.linalg.norm(a, axis=-2, keepdims=True)
-    s_tt = (jnp.swapaxes(a, -1, -2) @ sig @ a)[..., 0, 0]
-    meshlib.write_vtk(vtk0, m.X, m.conn, cell_data=dict(e_r=Q[..., 0].mean(1), e_z=Q[..., 2].mean(1)))
-    fields = dict(J=np.asarray(det3(F)), mass=np.asarray(states.rho_tot / states.rho_tot_0),
-                  sigma_tt_kPa=1e3 * np.asarray(s_tt))
-    meshlib.write_vtk(vtk1, m.X, m.conn,
-                      point_data=dict(u=u.reshape(-1, 3), **{k: sysm.to_nodes(v) for k, v in fields.items()}),
-                      cell_data={k: v.mean(1) for k, v in fields.items()})
     write_csv([dict(day=10 * (k + 1), throat=float(thr[k]), inlet=float(inl[k]), lumen_area=float(area[k]),
                     wall_volume=float(vol[k])) for k in range(n_steps)], csv_path)
     t = np.arange(1, n_steps + 1) * 10.0
@@ -841,6 +858,207 @@ def vessel(etype="hex8", n=None, n_steps=100, check_n=((2, 15, 1), (4, 30, 1), (
                           title="Lumen radius stretch", ylabel="r / r_ref (-)"),
                      dict(t=t, series={"lumen area": np.asarray(area), "wall volume": np.asarray(vol)},
                           title="Ratios to reference", ylabel="(-)")], fig)
+    txt.write_text("\n".join(lines) + "\n")
+
+
+# ---------- mass redistribution: bent straight tube at homeostatic pressure ----------
+
+def bending(n_steps=100, theta=0.2, n_ramp=5, n=(3, 24, 60), L=60.0):
+    """Straight half tube prestressed at p_hom (homeostasis everywhere), then both ends rotated by -+theta about y
+    at unchanged pressure: collagen is produced on the stretched side (x < 0) and removed on the compressed side (x > 0);
+    evaluated in the middle half, away from the clamped ends"""
+    import fem
+    import mesh as meshlib
+    from tensor3 import det3
+    lines = []
+
+    def log(text):
+        print(text, flush=True)
+        lines.append(text)
+
+    txt, pvd, csv_path, fig = outputs("mass_redistribution", "bending.txt", "bending.pvd", "bending.csv", "bending.png")
+    m = meshlib.half_tube(L=L, n=n)
+    sysm = fem.System(m, setups.hcmm, pressure_faces=m.faces["inner"])
+    xg = fem.gauss_points(m.X, m.conn)
+    Q = meshlib.cylinder_basis(xg)
+    Qj = jnp.asarray(Q)
+    par = artery_par(p_gr=artery_par()["p_hom"])
+
+    ends = np.concatenate([m.nodes["inlet"], m.nodes["outlet"]])
+    sign = np.where(np.isin(ends, m.nodes["inlet"]), 1.0, -1.0)
+    mid = np.flatnonzero(np.isclose(m.param[:, 2], 0.5))
+
+    def bc(p, th=0.0):
+        """u_y = 0 on y = 0; clamped end faces: u_x = 0, u_z = +-th x (end rotation about y). Distributed support:
+        the lateral pressure resultant of the bent tube would otherwise load single nodes"""
+        dofs = np.concatenate([3 * m.nodes["sym"] + 1, 3 * ends + 2, 3 * ends])
+        vals = np.concatenate([np.zeros(len(m.nodes["sym"])), th * sign * m.X[ends, 0], np.zeros(len(ends))])
+        i = np.argsort(dofs)
+        return fem.BC(dofs[i], vals[i], p=p)
+
+    bc_gr = [bc(par["p_gr"], theta * min(k / n_ramp, 1.0)) for k in range(1, n_steps + 1)]
+    log(f"half tube r_i 5, t 1.3, L {L:.0f} mm: {m.n_elem} hex8, {sysm.n_dof} dofs, HCMM model E")
+    log(f"prestress at {float(par['p_hom']) * 1e3:.0f} kPa, then G&R at the same pressure with both ends rotated "
+        f"by {theta} rad (ramp over {n_ramp} steps): axial strain ~ +-{200 * theta * 6.3 / L:.1f} % at the outer wall")
+
+    names = ("elastin", "circ", "axial", "helix+", "helix-")
+    w = np.asarray(sysm.wdet)
+    middle = (xg[..., 2] > L / 4) & (xg[..., 2] < 3 * L / 4)
+    sides = {"stretched": (xg[..., 0] < 0) & middle, "compressed": (xg[..., 0] > 0) & middle}
+    e_z = Qj[..., 2:3]
+    M, S, rho0 = [], [], []
+    series = meshlib.VTKSeries(pvd)
+
+    def record(k, u, states):
+        """mass after the commit of step k (day 10 k); stresses from the equilibrium state"""
+        st = sysm.commit(u, states) if k else states
+        rho = [np.asarray(c.rho) for c in st.constituents]
+        if not k:
+            rho0.extend(rho)
+        M.append([[np.sum(w * r * mask) for r in rho] for mask in sides.values()])
+        a = sysm.gauss_F(u) @ e_z
+        a = a / jnp.linalg.norm(a, axis=-2, keepdims=True)
+        s_zz = np.asarray(1e3 * (jnp.swapaxes(a, -1, -2) @ sysm.stress(u, states) @ a)[..., 0, 0])
+        S.append([np.sum(w * s_zz * mask) / np.sum(w * mask) for mask in sides.values()])
+        gauss = dict(rho_rel=st.rho_tot / st.rho_tot_0, J_g=det3(st.F_g), sigma_zz_kPa=s_zz,
+                     **{f"rho_rel_{nm}": r / r0 for nm, r, r0 in zip(names[1:], rho[1:], rho0[1:])})
+        series.write(10.0 * k, m.X, m.conn, *sysm.fields(u, states, gauss))
+
+    t0 = time.time()
+    (defl,), u, states = artery_simulate(m, sysm, Qj, par, n_steps=n_steps, bc=bc, bc_gr=bc_gr, log=log, final=True,
+                                          measure=lambda u: (jnp.mean(jnp.asarray(u).reshape(-1, 3)[mid, 0]),),
+                                          record=record)
+    log(f"  done in {time.time() - t0:.1f}s, ParaView: {pvd.name} ({len(series.entries)} time steps)")
+
+    M, S = np.array(M), np.array(S)
+    col = M[:, :, 1:].sum(-1)
+    col0 = col[0]
+    d_side = 100 * (col / col0 - 1)
+    d_tot = 100 * (col.sum(1) / col0.sum() - 1)
+    moved = 100 * (col[:, 0] - col0[0]) / col0.sum()
+    fam = 100 * (M[:, :, 1:] / M[0, :, 1:] - 1)
+    log(f"\ncollagen mass change (%) in the middle half (z = {L / 4:.0f}-{3 * L / 4:.0f} mm), each side relative to its "
+        "own start; 'gained' = stretched-side gain as % of the middle's collagen\n  (elastin has no turnover: constant)")
+    for k in (0, 1, 5, 10, 25, 50, 100):
+        if k <= n_steps:
+            log(f"  day {10 * k:4d}  stretched {d_side[k, 0]:+7.2f}  compressed {d_side[k, 1]:+7.2f}  "
+                f"total {d_tot[k]:+6.2f}  gained {moved[k]:+6.2f}   axial family {fam[k, 0, 1]:+7.2f} / "
+                f"{fam[k, 1, 1]:+7.2f}   mean sigma_zz {S[k, 0]:6.1f} / {S[k, 1]:6.1f} kPa")
+    log(f"  mid-span lateral deflection day {10 * n_ramp}: {float(defl[n_ramp - 1]):+.3f} mm, "
+        f"day {10 * n_steps}: {float(defl[-1]):+.3f} mm")
+    log("\nper family, day " + f"{10 * n_steps}: " + "   ".join(
+        f"{nm} {fam[-1, 0, j]:+.2f} / {fam[-1, 1, j]:+.2f} %" for j, nm in enumerate(names[1:])))
+
+    t = 10.0 * np.arange(n_steps + 1)
+    write_csv([dict(day=t[k], collagen_stretched_pct=d_side[k, 0], collagen_compressed_pct=d_side[k, 1],
+                    collagen_total_pct=d_tot[k], **{f"{nm}_{sd}_pct": fam[k, i, j] for j, nm in enumerate(names[1:])
+                                                    for i, sd in enumerate(sides)},
+                    sigma_zz_stretched_kPa=S[k, 0], sigma_zz_compressed_kPa=S[k, 1]) for k in range(n_steps + 1)],
+              csv_path)
+    plotting.panels([dict(t=t, series={"stretched half": d_side[:, 0], "compressed half": d_side[:, 1],
+                                       "whole tube": d_tot}, title="Collagen mass change", ylabel="%"),
+                     dict(t=t, series={f"{nm} {sd}": fam[:, i, j] for j, nm in enumerate(names[1:3])
+                                       for i, sd in enumerate(sides)}, title="Per family", ylabel="%"),
+                     dict(t=t, series={"stretched half": S[:, 0], "compressed half": S[:, 1]},
+                          title="Mean axial stress", ylabel="sigma_zz (kPa)")], fig)
+    txt.write_text("\n".join(lines) + "\n")
+
+
+def local_growth(n_steps=200, delta=0.3, n=(3, 24, 40), L=40.0, w_z=4.0, w_theta=0.4):
+    """Growth-only displacement: half tube prestressed to u = 0 at p_hom, loads unchanged afterwards; the collagen
+    set point sigma_f_pre is lowered by delta in a patch (no elastic effect at the change), so all later u comes
+    from growth and remodeling.  patch g = exp(-((z - L/2)/w_z)^2 - ((theta - pi/2)/w_theta)^2)"""
+    import fem
+    import mesh as meshlib
+    from tensor3 import det3
+    lines = []
+
+    def log(text):
+        print(text, flush=True)
+        lines.append(text)
+
+    txt, pvd, csv_path, fig = outputs("mass_redistribution", *(f"local_growth{s}" for s in (".txt", ".pvd", ".csv", ".png")))
+    m = meshlib.half_tube(L=L, n=n)
+    sysm = fem.System(m, setups.hcmm, pressure_faces=m.faces["inner"])
+    xg = fem.gauss_points(m.X, m.conn)
+    Qj = jnp.asarray(meshlib.cylinder_basis(xg))
+    par = artery_par(p_gr=artery_par()["p_hom"])
+    ends = np.concatenate([m.nodes["inlet"], m.nodes["outlet"]])
+
+    def bc(p):
+        """u_y = 0 on y = 0, clamped ends u_x = u_z = 0"""
+        dofs = np.unique(np.concatenate([3 * m.nodes["sym"] + 1, 3 * ends, 3 * ends + 2]))
+        return fem.BC(dofs, np.zeros(len(dofs)), p=p)
+
+    theta = np.arctan2(xg[..., 1], xg[..., 0])
+    g = np.exp(-((xg[..., 2] - L / 2) / w_z) ** 2 - ((theta - np.pi / 2) / w_theta) ** 2)
+
+    def insult(states):
+        cs = states.constituents
+        return states.replace(constituents=[cs[0]] + [c.replace(sigma_f_pre=c.sigma_f_pre * (1 - delta * g))
+                                                       for c in cs[1:]])
+
+    def node(t, z, r):
+        return int(np.flatnonzero(np.isclose(m.param[:, 1], t) & np.isclose(m.param[:, 2], z)
+                                  & np.isclose(m.param[:, 0], r))[0])
+
+    probes = {"patch": (node(0.5, 0.5, 0), node(0.5, 0.5, 1)), "far": (node(0.0, 0.5, 0), node(0.0, 0.5, 1))}
+    w = np.asarray(sysm.wdet)
+    in_patch = g > 0.5
+    hist = []
+    series = meshlib.VTKSeries(pvd)
+
+    def record(k, u, states):
+        """after the commit of step k (day 10 k)"""
+        st = sysm.commit(u, states) if k else states
+        x = m.X + np.asarray(u).reshape(-1, 3)
+        row = dict(day=10.0 * k, max_u=float(np.linalg.norm(np.asarray(u).reshape(-1, 3), axis=1).max()))
+        for name, (i, o) in probes.items():
+            row[f"h_{name}"] = float(np.linalg.norm(x[o] - x[i]))
+            row[f"r_in_{name}"] = float(np.linalg.norm(x[i, :2]))
+        J_g = np.asarray(det3(st.F_g))
+        rho = sum(np.asarray(c.rho) for c in st.constituents[1:])
+        hist.append(row | dict(J_g_max=float(J_g.max()), collagen_patch=float(np.sum(w * rho * in_patch))))
+        series.write(10.0 * k, m.X, m.conn, *sysm.fields(u, states, dict(
+            J_g=J_g, rho_rel=st.rho_tot / st.rho_tot_0, setpoint=1 - delta * g,
+            rho_rel_collagen=rho / sum(np.asarray(c.rho) for c in insult_state[0].constituents[1:]))))
+
+    insult_state = []
+    log(f"half tube r_i 5, t 1.3, L {L:.0f} mm: {m.n_elem} hex8, {sysm.n_dof} dofs, HCMM model E, ends clamped")
+    log(f"prestress at {float(par['p_hom']) * 1e3:.0f} kPa to u = 0; then loads unchanged, collagen set point sigma_f_pre "
+        f"lowered by {100 * delta:.0f} % in a patch (w_z {w_z} mm, w_theta {w_theta} rad, top of the tube, mid-length)")
+    t0 = time.time()
+
+    def insult_keep(states):
+        insult_state.append(states)
+        return insult(states)
+
+    artery_simulate(m, sysm, Qj, par, n_steps=n_steps, bc=bc, log=log, insult=insult_keep, record=record,
+                    measure=lambda u: (jnp.zeros(()),))
+    log(f"  done in {time.time() - t0:.1f}s, ParaView: {pvd.name} ({len(series.entries)} time steps)")
+
+    h0 = {k: hist[0][f"h_{k}"] for k in probes}
+    r0 = {k: hist[0][f"r_in_{k}"] for k in probes}
+    c0 = hist[0]["collagen_patch"]
+    log("\n  day   max|u| [mm]   wall thickness patch / far   inner radius change patch / far [mm]   "
+        "collagen in patch   J_g max")
+    for k in (0, 1, 10, 25, 50, 100, 150, 200):
+        if k <= n_steps:
+            r = hist[k]
+            log(f"  {r['day']:5.0f}   {r['max_u']:9.2e}   {r['h_patch'] / h0['patch']:10.4f} / {r['h_far'] / h0['far']:.4f}"
+                f"          {r['r_in_patch'] - r0['patch']:+8.4f} / {r['r_in_far'] - r0['far']:+8.4f}"
+                f"                {100 * (r['collagen_patch'] / c0 - 1):+6.2f} %   {r['J_g_max']:.4f}")
+
+    write_csv(hist, csv_path)
+    t = np.array([r["day"] for r in hist])
+    plotting.panels([dict(t=t, series={"patch": np.array([r["h_patch"] for r in hist]) / h0["patch"],
+                                       "far": np.array([r["h_far"] for r in hist]) / h0["far"]},
+                          title="Wall thickness", ylabel="h / h(day 0) (-)"),
+                     dict(t=t, series={"max |u|": np.array([r["max_u"] for r in hist]),
+                                       "inner radius change, patch": np.array([r["r_in_patch"] - r0["patch"] for r in hist])},
+                          title="Growth-induced displacement", ylabel="mm"),
+                     dict(t=t, series={"collagen in patch": 100 * (np.array([r["collagen_patch"] for r in hist]) / c0 - 1)},
+                          title="Collagen mass in the patch", ylabel="%")], fig)
     txt.write_text("\n".join(lines) + "\n")
 
 
@@ -968,10 +1186,10 @@ def incompressible(r_i=5.0, t=1.3, L=0.22, C10=0.305, ratio=1e4):
     log("\n5) artery G&R (model E, 100 steps), elastin K/C10 as given or incompressible:"
         " lambda_theta(day 1000), max spread of u_r(a) over theta")
     C10_e = float(artery_par()["C10"])
-    for n in ((2, 15, 1), (8, 60, 4)):
-        for element, elastin, K in (("standard", "compressible", 20.0), ("standard", "compressible", 1e3),
-                                    ("fbar", "compressible", 1e2), ("fbar", "compressible", 1e3),
-                                    ("hybrid", "incompressible", None)):
+    variants = [("standard", "compressible", 20.0), ("standard", "compressible", 1e3),
+                ("fbar", "compressible", 1e2), ("fbar", "compressible", 1e3), ("hybrid", "incompressible", None)]
+    for n, subset in (((2, 15, 1), variants), ((8, 60, 4), [variants[i] for i in (0, 2, 4)])):
+        for element, elastin, K in subset:
             m, sysm, Qloc = artery_mesh(n, element)
             par = artery_par() if K is None else artery_par(K=K * C10_e)
             idx = m.nodes[(0, -1)]
@@ -991,7 +1209,7 @@ def incompressible(r_i=5.0, t=1.3, L=0.22, C10=0.305, ratio=1e4):
             except (RuntimeError, np.linalg.LinAlgError) as e:
                 log(f"{label} unstable: {e}  ({time.time() - t0:.1f}s)")
 
-    outputs("fe", "fe_m7_incompressible.txt")[0].write_text("\n".join(lines) + "\n")
+    outputs("fe_verification", "incompressible.txt")[0].write_text("\n".join(lines) + "\n")
 
 
 # ---------- FE: quadratic tetrahedra (C3D10), mesh I/O, inclined supports ----------
@@ -1100,12 +1318,12 @@ def tet10(steps=100):
         err = abs(float(g[k]) - fd) / abs(fd)
         log(f"  {k:7s} adjoint {float(g[k]): .8e}   FD {fd: .8e}   rel err {err:.1e}  {'PASS' if err < 1e-5 else 'FAIL'}")
 
-    outputs("fe", "fe_tet10.txt")[0].write_text("\n".join(lines) + "\n")
+    outputs("fe_verification", "tet10.txt")[0].write_text("\n".join(lines) + "\n")
 
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("study", choices=["maes", "sweep", "compare", "verify", "fem", "fe", "cylinder", "artery", "grad", "vessel", "incompressible", "tet10"])
+    ap.add_argument("study", choices=["maes", "sweep", "compare", "verify", "fem", "fe", "cylinder", "artery", "grad", "vessel", "bending", "local_growth", "incompressible", "tet10"])
     ap.add_argument("args", nargs="*", help="compare: MODEL CASE, artery: MODE, vessel: hex8|tet10")
     a = ap.parse_args()
     RESULTS.mkdir(parents=True, exist_ok=True)

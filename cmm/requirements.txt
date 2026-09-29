@@ -1,0 +1,7 @@
+jax==0.11.1
+jaxlib==0.11.1
+numpy==2.5.2
+scipy==1.18.1
+matplotlib==3.11.1
+pypardiso==0.4.7
+mkl==2026.1.0

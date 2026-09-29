@@ -1,5 +1,6 @@
-"""Meshes of hex8 or tet10: structured generators, boundary faces, Abaqus .inp and gmsh .msh I/O, legacy VTK."""
+"""Meshes of hex8 or tet10: structured generators, boundary faces, Abaqus .inp and gmsh .msh I/O, VTK .vtu/.pvd."""
 
+import base64
 import itertools
 import pathlib
 from dataclasses import dataclass, field
@@ -347,6 +348,19 @@ def cylinder_basis(x):
     return np.stack([np.stack([c, s, o], -1), np.stack([-s, c, o], -1), np.stack([o, o, i], -1)], -1)
 
 
+def half_tube(r_i=5.0, t=1.3, L=30.0, n=(3, 24, 30), etype="hex8"):
+    """Straight half tube (y >= 0) along z; named nodes/faces: inner, outer, inlet (z = 0), outlet (z = L), sym (y = 0)"""
+    def mapping(s):
+        r, th = r_i + t * s[:, 0], np.pi * s[:, 1]
+        return np.stack([r * np.cos(th), r * np.sin(th), L * s[:, 2]], axis=1)
+
+    m = structured(n, mapping, etype)
+    for name, key in (("inner", (0, -1)), ("outer", (0, 1)), ("inlet", (2, -1)), ("outlet", (2, 1))):
+        m.nodes[name], m.faces[name] = m.nodes[key], m.faces[key]
+    m.nodes["sym"] = np.union1d(m.nodes[(1, -1)], m.nodes[(1, 1)])
+    return m
+
+
 def bent_tube(r_i=5.0, t=1.3, R_c=20.0, L_in=10.0, L_out=10.0, stenosis=0.25, width=0.08, n=(3, 24, 40),
               etype="hex8"):
     """Half tube (y >= 0) along a centerline: straight z (inlet at z = 0), 90 deg arc of radius R_c, straight x.
@@ -378,25 +392,49 @@ def bent_tube(r_i=5.0, t=1.3, R_c=20.0, L_in=10.0, L_out=10.0, stenosis=0.25, wi
     return m
 
 
-def write_vtk(path, X, conn, point_data=None, cell_data=None):
-    """Legacy ASCII VTK unstructured grid (hex8: VTK_HEXAHEDRON, tet10: VTK_QUADRATIC_TETRA, same node order)"""
-    n, e = len(X), len(conn)
+def _data_array(name, v, vtk_type="Float64"):
+    """Base64 binary DataArray; (n, 3, 3) is written as a 9-component tensor"""
+    dtype = {"Float64": np.float64, "Int64": np.int64, "UInt8": np.uint8}[vtk_type]
+    v = np.ascontiguousarray(v, dtype=dtype)
+    ncomp = 1 if v.ndim == 1 else int(np.prod(v.shape[1:]))
+    raw = v.tobytes()
+    data = base64.b64encode(np.uint32(len(raw)).tobytes() + raw).decode()
+    return (f'<DataArray type="{vtk_type}" Name="{name}" NumberOfComponents="{ncomp}" format="binary">'
+            f"{data}</DataArray>")
+
+
+def write_vtu(path, X, conn, point_data=None, cell_data=None):
+    """VTK XML unstructured grid (hex8: VTK_HEXAHEDRON, tet10: VTK_QUADRATIC_TETRA, same node order)"""
     el = element_for(conn.shape[1])
-    out = ["# vtk DataFile Version 3.0", "cmm", "ASCII", "DATASET UNSTRUCTURED_GRID", f"POINTS {n} double"]
-    out += [" ".join(f"{v:.10g}" for v in x) for x in X]
-    out += [f"CELLS {e} {(el.n_nodes + 1) * e}"] + [f"{el.n_nodes} " + " ".join(map(str, c)) for c in conn]
-    out += [f"CELL_TYPES {e}"] + [str(el.vtk)] * e
-
-    def arrays(data):
-        lines = []
-        for name, v in (data or {}).items():
-            v = np.asarray(v, dtype=float)
-            head = f"VECTORS {name} double" if v.ndim == 2 else f"SCALARS {name} double 1\nLOOKUP_TABLE default"
-            lines += [head] + [" ".join(f"{a:.10g}" for a in np.atleast_1d(r)) for r in v]
-        return lines
-
-    if point_data:
-        out += [f"POINT_DATA {n}"] + arrays(point_data)
-    if cell_data:
-        out += [f"CELL_DATA {e}"] + arrays(cell_data)
+    n, e = len(X), len(conn)
+    out = ['<?xml version="1.0"?>',
+           '<VTKFile type="UnstructuredGrid" version="1.0" byte_order="LittleEndian" header_type="UInt32">',
+           "<UnstructuredGrid>", f'<Piece NumberOfPoints="{n}" NumberOfCells="{e}">',
+           "<Points>", _data_array("Points", X), "</Points>",
+           "<Cells>", _data_array("connectivity", np.ravel(conn), "Int64"),
+           _data_array("offsets", el.n_nodes * np.arange(1, e + 1), "Int64"),
+           _data_array("types", np.full(e, el.vtk), "UInt8"), "</Cells>"]
+    for tag, data in (("PointData", point_data), ("CellData", cell_data)):
+        out += [f"<{tag}>"] + [_data_array(k, v) for k, v in (data or {}).items()] + [f"</{tag}>"]
+    out += ["</Piece>", "</UnstructuredGrid>", "</VTKFile>"]
     pathlib.Path(path).write_text("\n".join(out) + "\n")
+
+
+class VTKSeries:
+    """ParaView time series: <stem>/<k>.vtu per call and <stem>.pvd indexing them by time (rewritten each call)"""
+
+    def __init__(self, pvd):
+        self.pvd = pathlib.Path(pvd)
+        self.dir = self.pvd.with_suffix("")
+        self.dir.mkdir(parents=True, exist_ok=True)
+        for f in self.dir.glob("*.vtu"):
+            f.unlink()
+        self.entries = []
+
+    def write(self, t, X, conn, point_data=None, cell_data=None):
+        name = f"{self.dir.name}/{len(self.entries):04d}.vtu"
+        write_vtu(self.pvd.parent / name, X, conn, point_data, cell_data)
+        self.entries.append((t, name))
+        rows = [f'<DataSet timestep="{t:g}" part="0" file="{f}"/>' for t, f in self.entries]
+        self.pvd.write_text("\n".join(['<?xml version="1.0"?>', '<VTKFile type="Collection" version="1.0">',
+                                       "<Collection>", *rows, "</Collection>", "</VTKFile>"]) + "\n")

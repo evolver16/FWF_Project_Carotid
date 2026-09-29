@@ -2,9 +2,11 @@
 .vscode/
 .ruff_cache/
 .claude/
+.devcontainer/
 results/
 *.pyc
 *.log
 .context/
 cmm/compiled/
 cmm/scratch/
+.devcontainer/

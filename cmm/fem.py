@@ -189,28 +189,113 @@ def gmres(A, b, M, tol, m):
     return None, m
 
 
-class LinearSolver:
-    """K x = b or K^T x = b by GMRES preconditioned with the last LU of K; refactorized when that fails."""
+class Pardiso:
+    """MKL PARDISO, real unsymmetric; the CSC arrays of K are passed as the CSR matrix K^T (no copy), symbolic
+    analysis is reused while the sparsity pattern is unchanged.
+    Threads: all (MKL_NUM_THREADS) from parallel_from unknowns on, else 1; solves must use the factorization's
+    count (fewer crashes MKL). KMP_BLOCKTIME=0: idle MKL threads would otherwise spin and slow JAX/numpy"""
 
-    def __init__(self, tol=1e-12, max_iter=20, refactor_after=5, ordering="MMD_AT_PLUS_A"):
+    def __init__(self, threads=None, parallel_from=20000):
+        import os
+        os.environ.setdefault("KMP_BLOCKTIME", "0")
+        from pypardiso import PyPardisoSolver
+        self.p = PyPardisoSolver(mtype=11)
+        self.max_threads = self.p.libmkl.MKL_Get_Max_Threads()
+        self.fixed_threads, self.parallel_from = threads, parallel_from
+        self.threads = 1
+        it = self.p.iparm
+        it[:] = 0
+        it[0] = 1    # user iparm
+        it[1] = 3    # parallel nested dissection (METIS)
+        it[9] = 13   # pivot perturbation 1e-13
+        it[10] = 1   # scaling
+        it[12] = 1   # weighted matching
+        self.A = None
+        self.shape = None
+
+    def factor(self, K):
+        K = K.tocsc()
+        K.sort_indices()
+        A = sp.csr_matrix((K.data, K.indices, K.indptr), shape=K.shape[::-1])
+        same = (self.A is not None and self.A.shape == A.shape and np.array_equal(self.A.indptr, A.indptr)
+                and np.array_equal(self.A.indices, A.indices))
+        if self.A is not None and not same:
+            self.release()
+        self.threads = min(self.fixed_threads or (self.max_threads if K.shape[0] >= self.parallel_from else 1),
+                           self.max_threads)
+        self._set_threads()
+        self.p.iparm[11] = 0
+        self.p.set_phase(22 if same else 12)
+        self.p._call_pardiso(A, np.zeros((A.shape[0], 1)))
+        self.A, self.shape = A, K.shape
+        return self
+
+    def _set_threads(self):
+        self.p.libmkl.MKL_Domain_Set_Num_Threads(self.threads, 4)
+
+    def solve(self, b, trans="N"):
+        self._set_threads()
+        self.p.iparm[11] = 2 if trans == "N" else 0
+        self.p.set_phase(33)
+        return self.p._call_pardiso(self.A, np.ascontiguousarray(b, dtype=float))
+
+    def release(self):
+        if self.A is not None:
+            self.p.free_memory(everything=True)
+            self.A = None
+
+    def __del__(self):
+        try:
+            self.release()
+        except Exception:
+            pass
+
+
+def pardiso_available():
+    try:
+        Pardiso()
+        return True
+    except (ImportError, OSError):
+        return False
+
+
+class LinearSolver:
+    """K x = b or K^T x = b by GMRES preconditioned with the last LU of K; refactorized when that fails.
+    backend "pardiso" (MKL, multithreaded) or "superlu" (scipy, serial); default pardiso when installed"""
+
+    def __init__(self, tol=1e-12, max_iter=20, refactor_after=5, ordering="MMD_AT_PLUS_A", backend=None):
         self.tol, self.max_iter, self.refactor_after, self.ordering = tol, max_iter, refactor_after, ordering
+        self.backend = backend or ("pardiso" if pardiso_available() else "superlu")
         self.lu = None
+        self._pardiso = None
         self.factorizations = self.iterations = 0
+
+    def _factor(self, K):
+        if self.backend == "superlu":
+            return spla.splu(K.tocsc(), permc_spec=self.ordering)
+        self._pardiso = self._pardiso or Pardiso()
+        return self._pardiso.factor(K)
 
     def __call__(self, K, b, trans="N"):
         if not (np.isfinite(K.data).all() and np.isfinite(b).all()):
             raise RuntimeError("linear solve: non-finite tangent or right-hand side")
         A = K if trans == "N" else K.T
+        ok = lambda x: x is not None and np.linalg.norm(A @ x - b) <= 10 * self.tol * np.linalg.norm(b)
         if self.lu is not None and self.lu.shape == K.shape:
             x, it = gmres(A, b, lambda v: self.lu.solve(v, trans=trans), self.tol, self.max_iter)
             self.iterations += it
-            if x is not None and np.linalg.norm(A @ x - b) <= 10 * self.tol * np.linalg.norm(b):
+            if ok(x):
                 if it > self.refactor_after:
                     self.lu = None
                 return x
-        self.lu = spla.splu(K.tocsc(), permc_spec=self.ordering)
+        self.lu = self._factor(K)
         self.factorizations += 1
-        return self.lu.solve(b, trans=trans)
+        x = self.lu.solve(b, trans=trans)
+        if ok(x):
+            return x
+        y, it = gmres(A, b, lambda v: self.lu.solve(v, trans=trans), self.tol, self.max_iter)
+        self.iterations += it
+        return x if y is None else y
 
 
 class System:
@@ -286,6 +371,25 @@ class System:
         np.add.at(out, self.mesh.conn.ravel(), np.repeat(mean, self.n_en, axis=0) * vol.reshape((-1,) + (1,) * (v.ndim - 2)))
         acc = np.bincount(self.mesh.conn.ravel(), weights=vol, minlength=self.mesh.n_nodes)
         return out / acc.reshape((-1,) + (1,) * (v.ndim - 2))
+
+    def fields(self, u, states, gauss=None):
+        """(point_data, cell_data) for write_vtu: u, J, total Cauchy stress, von Mises, rho/rho_0 and
+        J_g = det F_g (mixtures) and the Gauss-point fields in gauss (n_el, n_gp, ...) as nodal and element means"""
+        u = jnp.asarray(u)
+        F = self.gauss_F(u)
+        q = self.last_p if self.n_p else np.zeros(self.mesh.n_elem)
+        sig = np.asarray(self.stress(u, states)) - np.asarray(q)[:, None, None, None] * np.eye(3)
+        dev = sig - np.trace(sig, axis1=-2, axis2=-1)[..., None, None] * np.eye(3) / 3
+        g = dict(J=det3(F), sigma=sig, von_mises=np.sqrt(1.5 * np.sum(dev * dev, axis=(-2, -1))))
+        if hasattr(states, "rho_tot"):
+            g["rho_rel"] = states.rho_tot / states.rho_tot_0
+            g["J_g"] = det3(states.F_g)
+        g.update(gauss or {})
+        g = {k: np.asarray(v) for k, v in g.items()}
+        w = np.asarray(self.wdet)
+        mean = lambda v: np.einsum("eg,eg...->e...", w, v) / w.sum(1).reshape((-1,) + (1,) * (v.ndim - 2))
+        return (dict(u=np.asarray(u).reshape(-1, 3), **{k: self.to_nodes(v) for k, v in g.items()}),
+                {k: mean(v) for k, v in g.items()})
 
     def _split(self, x):
         """x = (u, element pressures); zero pressures without the hybrid element"""
