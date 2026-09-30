@@ -10,3 +10,4 @@ results/
 cmm/compiled/
 cmm/scratch/
 .devcontainer/
+*.egg-info/

@@ -14,11 +14,11 @@ import numpy as np
 
 import plotting
 import setups
-import solver
+from verification import material_point
 from setups import MODELS, TARGETS, VARIANTS, Spec, G_fiber, G_matrix, neo_hookean, fung
 
 RESULTS = pathlib.Path(__file__).parent / "results"
-DRIVEN = solver.DRIVEN_AXIS
+DRIVEN = material_point.DRIVEN_AXIS
 
 
 def outputs(study, *names):
@@ -53,8 +53,8 @@ def write_csv(rows, path):
 
 
 def run_variants(specs, bc, ds, n_steps, ag=None, variants=VARIANTS, x0=None):
-    """{variant: solver.run output} for the same specs and BC."""
-    return {var: solver.run(build(specs, ds, ag), module, bc, n_steps=n_steps,
+    """{variant: material_point.run output} for the same specs and BC."""
+    return {var: material_point.run(build(specs, ds, ag), module, bc, n_steps=n_steps,
                             x0=jnp.ones(bc.n_unknowns) if x0 is None else x0)
             for var, (build, module) in variants.items()}
 
@@ -120,14 +120,14 @@ def matrix_specs(p):
 def reference_bc(case, specs, ds, variant, stretch=1.2, increase=0.2):
     """U: stretch; S/F: (1 + increase) x the variant's own homeostatic stress/force."""
     if case == "U":
-        return solver.BC("U", stretch)
+        return material_point.BC("U", stretch)
     build, module = VARIANTS[variant]
     mix = build(specs, ds, None)
-    F, _, _, _ = solver.solve_F(mix, solver.BC("U", 1.0), module.sigma_solver, jnp.ones(1))
+    F, _, _, _ = material_point.solve_F(mix, material_point.BC("U", 1.0), module.sigma_solver, jnp.ones(1))
     sigma, _ = module.sigma_solver(mix, F)
     s = float(sigma[DRIVEN, DRIVEN])
     P = float(jnp.linalg.det(F) * s / F[DRIVEN, DRIVEN] * 2500.0)
-    return solver.BC(case, (s if case == "S" else P) * (1 + increase))
+    return material_point.BC(case, (s if case == "S" else P) * (1 + increase))
 
 
 def sweep(total_days=400.0):
@@ -280,7 +280,7 @@ def rotate_specs(specs, Q):
     """Material frame rotated by Q: M -> Q M, G -> Q G Q^T"""
     out = []
     for sp in specs:
-        mats = ((sp.mat_f, sp.mat_h) if not isinstance(sp.mat_f, setups.fcmm.Fung)
+        mats = ((sp.mat_f, sp.mat_h) if not isinstance(sp.mat_f, setups.materials.Fung)
                 else fung(sp.mat_f.k1, sp.mat_f.k2, Q @ sp.mat_f.M))
         out.append(replace(sp, mat_f=mats[0], mat_h=mats[1], G=Q @ sp.G @ Q.T))
     return out
@@ -408,9 +408,9 @@ def fem(n_points=64, n_steps=5, ds=10.0):
 # ---------- FE M1: patch test, single hex8 vs single-element solver ----------
 
 def fe():
-    import elastic
+    import materials
     import fem
-    import mesh as meshlib
+    from fem import mesh as meshlib
 
     lines = []
 
@@ -424,20 +424,20 @@ def fe():
     boundary = np.unique(np.concatenate(list(m.nodes.values())))
     fixed = (3 * boundary[:, None] + np.arange(3)).ravel()
     u_exact = ((np.asarray(F0) - np.eye(3)) @ m.X.T).T.ravel()
-    materials = {"elastic": (elastic, elastic.NeoHookean(0.305, 6.1)),
-                 "HCMM E": (setups.hcmm, setups.build_hcmm(setups.maes_specs("E", "S"), 10.0, MODELS["E"]["ag"]))}
-    for name, (model, state) in materials.items():
+    models = {"elastic": (None, materials.NeoHookean(0.305, 6.1)),
+              "HCMM E": (setups.hcmm, setups.build_hcmm(setups.maes_specs("E", "S"), 10.0, MODELS["E"]["ag"]))}
+    for name, (model, state) in models.items():
         sysm = fem.System(m, model)
         states = fem.broadcast_state(state, m.n_elem)
         u, it = sysm.solve(np.zeros(sysm.n_dof), states, fem.BC(fixed, u_exact[fixed]))
         sig = sysm.stress(jnp.asarray(u), states)
-        sig0 = model.sigma_solver(state, F0)[0]
+        sig0 = sysm.model.sigma_solver(state, F0)[0]
         eu = float(np.abs(u - u_exact).max())
         es = float(jnp.abs(sig - sig0).max() / jnp.abs(sig0).max())
         log(f"  {name:8s} Newton it {it}  max|u - u_exact| {eu:.1e}  max rel sigma err {es:.1e}  "
             f"{'PASS' if eu < 1e-10 and es < 1e-10 else 'FAIL'}")
 
-    log("\n2) one hex8 with the Fig. 1 BCs vs solver.py (HCMM dep, 100 steps of 10 days)")
+    log("\n2) one hex8 with the Fig. 1 BCs vs material_point.py (HCMM dep, 100 steps of 10 days)")
     L = 50.0
     m = meshlib.box((1, 1, 1), (L, L, L))
     top = m.nodes[(DRIVEN, 1)]
@@ -446,7 +446,7 @@ def fe():
     for model_name, case in (("B", "U"), ("B", "S"), ("B", "F"), ("E", "U"), ("E", "S"), ("E", "F")):
         specs, ag = setups.maes_specs(model_name, case), MODELS[model_name]["ag"]
         build, module = VARIANTS["HCMM dep"]
-        ref = solver.run(build(specs, 10.0, ag), module, setups.bc_for(model_name, case), n_steps=100)
+        ref = material_point.run(build(specs, 10.0, ag), module, setups.bc_for(model_name, case), n_steps=100)
         target = TARGETS[case]
         if case == "U":
             fixed = np.concatenate([fixed_base, 3 * top + DRIVEN])
@@ -493,9 +493,9 @@ def radial_u(m, u, side):
 
 
 def cylinder(r_i=5.0, t=1.3, L=0.22, C10=0.305, K=6.1):
-    import elastic
+    import materials
     import fem
-    import mesh as meshlib
+    from fem import mesh as meshlib
 
     lines = []
 
@@ -503,7 +503,7 @@ def cylinder(r_i=5.0, t=1.3, L=0.22, C10=0.305, K=6.1):
         print(text, flush=True)
         lines.append(text)
 
-    mat = elastic.NeoHookean(C10, K)
+    mat = materials.NeoHookean(C10, K)
     a, b = r_i, r_i + t
     mu, lam = 2 * C10, K - 4 * C10 / 3
     meshes = [(2, 12, 1), (4, 24, 1), (8, 48, 1), (16, 96, 1)]
@@ -516,7 +516,7 @@ def cylinder(r_i=5.0, t=1.3, L=0.22, C10=0.305, K=6.1):
     prev = None
     for n in meshes:
         m = meshlib.quarter_cylinder(r_i, t, L, n)
-        sysm = fem.System(m, elastic, pressure_faces=m.faces[(0, -1)])
+        sysm = fem.System(m, pressure_faces=m.faces[(0, -1)])
         u, it = sysm.solve(np.zeros(sysm.n_dof), fem.broadcast_state(mat, m.n_elem), cylinder_bc(m, p))
         e = [abs(radial_u(m, u, s) / exact[s] - 1) for s in (-1, 1)]
         rate = "" if prev is None else f"  ratio {prev / e[0]:.1f}"
@@ -528,7 +528,7 @@ def cylinder(r_i=5.0, t=1.3, L=0.22, C10=0.305, K=6.1):
     vals = []
     for n in meshes + [(8, 60, 4)]:
         m = meshlib.quarter_cylinder(r_i, t, L, n)
-        sysm = fem.System(m, elastic, pressure_faces=m.faces[(0, -1)])
+        sysm = fem.System(m, pressure_faces=m.faces[(0, -1)])
         t0 = time.time()
         u, it = sysm.solve(np.zeros(sysm.n_dof), fem.broadcast_state(mat, m.n_elem), cylinder_bc(m, p))
         vals.append(radial_u(m, u, -1))
@@ -562,12 +562,11 @@ def artery_states(G_e, Qloc, par, mode, ds=10.0, elastin="compressible"):
         e_r, e_t, e_z = Q[:, 0], Q[:, 1], Q[:, 2]
         dirs = [e_t, e_z, jnp.cos(ALPHA) * e_t + jnp.sin(ALPHA) * e_z, jnp.cos(ALPHA) * e_t - jnp.sin(ALPHA) * e_z]
         mat = hcmm.NeoHookean(par["C10"], par["K"]) if elastin == "compressible" else hcmm.NeoHookeanInc(par["C10"])
-        cs = [hcmm.constituent(mat, T=jnp.inf, rho_0=MATRIX_DE["rho_0"],
-                               k_sigma_plus=0.0, k_sigma_minus=0.0, G=Ge, sigma_pre_mode=mode)]
-        cs += [hcmm.constituent(hcmm.Fung(par["k1"], par["k2"], M), T=par["T"], rho_0=FIBER["rho_0"],
-                                k_sigma_plus=par["k_plus"], k_sigma_minus=par["k_minus"], G=G_fiber(par["g"], M),
+        cs = [hcmm.constituent(mat, MATRIX_DE["rho_0"], G=Ge, sigma_pre_mode=mode)]
+        cs += [hcmm.constituent(hcmm.Fung(par["k1"], par["k2"], M), FIBER["rho_0"],
+                                *hcmm.maes(par["T"], par["k_plus"], par["k_minus"]), G=G_fiber(par["g"], M),
                                 sigma_pre_mode=mode) for M in dirs]
-        return hcmm.mixture(cs, ds=ds, ag=e_r)
+        return hcmm.mixture(cs, ds=ds, growth=hcmm.Anisotropic(e_r))
 
     st = jax.vmap(jax.checkpoint(make))(G_e.reshape(-1, 3, 3), Qloc.reshape(-1, 3, 3))
     return jax.tree.map(lambda x: x.reshape(G_e.shape[:2] + x.shape[1:]), st)
@@ -576,7 +575,7 @@ def artery_states(G_e, Qloc, par, mode, ds=10.0, elastin="compressible"):
 def artery_mesh(n=(8, 60, 4), element="standard"):
     """(mesh, System, local bases (e_r, e_theta, e_z) at the Gauss points)"""
     import fem
-    import mesh as meshlib
+    from fem import mesh as meshlib
     m = meshlib.quarter_cylinder(n=n)
     sysm = fem.System(m, setups.hcmm, pressure_faces=m.faces[(0, -1)], element=element)
     return m, sysm, jnp.asarray(meshlib.cylinder_basis(fem.gauss_points(m.X, m.conn)))
@@ -737,7 +736,7 @@ def dof_bc(m, p, fixed):
 
 def surface_area(m, u, faces):
     """Deformed area of quad4 or tri6 faces by their Gauss rule"""
-    from elements import face_for
+    from fem.elements import face_for
     face = face_for(faces.shape[1])
     dN = jnp.asarray(np.stack([face.dN(g) for g in face.gauss]))
     x = (jnp.asarray(m.X) + jnp.asarray(u).reshape(-1, 3))[faces]
@@ -753,9 +752,9 @@ def ring_radius(m, u, ring):
 
 def vessel(etype="hex8", n=None, n_steps=100, check_n=((2, 15, 1), (4, 30, 1), (8, 60, 1))):
     import fem
-    import mesh as meshlib
-    from elements import face_for
-    from tensor3 import det3
+    from fem import mesh as meshlib
+    from fem.elements import face_for
+    from fem.tensor3 import det3
     n = n or {"hex8": (3, 24, 40), "tet10": (1, 12, 20)}[etype]
     lines = []
 
@@ -870,8 +869,8 @@ def bending(n_steps=100, theta=0.2, n_ramp=5, n=(3, 24, 60), L=60.0):
     at unchanged pressure: collagen is produced on the stretched side (x < 0) and removed on the compressed side (x > 0);
     evaluated in the middle half, away from the clamped ends"""
     import fem
-    import mesh as meshlib
-    from tensor3 import det3
+    from fem import mesh as meshlib
+    from fem.tensor3 import det3
     lines = []
 
     def log(text):
@@ -971,8 +970,8 @@ def local_growth(n_steps=200, delta=0.3, n=(3, 24, 40), L=40.0, w_z=4.0, w_theta
     set point sigma_f_pre is lowered by delta in a patch (no elastic effect at the change), so all later u comes
     from growth and remodeling.  patch g = exp(-((z - L/2)/w_z)^2 - ((theta - pi/2)/w_theta)^2)"""
     import fem
-    import mesh as meshlib
-    from tensor3 import det3
+    from fem import mesh as meshlib
+    from fem.tensor3 import det3
     lines = []
 
     def log(text):
@@ -1068,8 +1067,8 @@ def turnover(days=2000.0, n_steps=200, n=(4, 30, 1), name="turnover", **par_kw):
     """Pressure step p_hom -> p_gr held constant, uniform quarter cylinder: widening = elastic part (equilibrium at
     p_gr before any turnover) + turnover part (the rest).  par_kw: any artery_par key (p_gr, T, k_plus, k_minus, ...)"""
     import fem
-    import mesh as meshlib
-    from tensor3 import det3
+    from fem import mesh as meshlib
+    from fem.tensor3 import det3
     lines = []
 
     def log(text):
@@ -1156,9 +1155,9 @@ def cylinder_exact_inc(p, A, B, mu):
 
 
 def incompressible(r_i=5.0, t=1.3, L=0.22, C10=0.305, ratio=1e4):
-    import elastic
+    import materials
     import fem
-    import mesh as meshlib
+    from fem import mesh as meshlib
     lines = []
 
     def log(text):
@@ -1168,7 +1167,7 @@ def incompressible(r_i=5.0, t=1.3, L=0.22, C10=0.305, ratio=1e4):
     mu = 2 * C10
     a, b = r_i, r_i + t
     meshes = [(2, 12, 1), (4, 24, 1), (8, 48, 1)]
-    comp, inc = elastic.NeoHookean(C10, ratio * mu), elastic.NeoHookeanInc(C10)
+    comp, inc = materials.NeoHookean(C10, ratio * mu), materials.NeoHookeanInc(C10)
     variants = [("standard", comp), ("fbar", comp), ("hybrid", inc)]
 
     log(f"1) small pressure, plane-strain Lame: compressible K/mu = {ratio:.0e} (standard, fbar), incompressible (hybrid)")
@@ -1180,7 +1179,7 @@ def incompressible(r_i=5.0, t=1.3, L=0.22, C10=0.305, ratio=1e4):
         errs = []
         for n in meshes:
             m = meshlib.quarter_cylinder(r_i, t, L, n)
-            sysm = fem.System(m, elastic, pressure_faces=m.faces[(0, -1)], element=element)
+            sysm = fem.System(m, pressure_faces=m.faces[(0, -1)], element=element)
             u, _ = sysm.solve(np.zeros(sysm.n_dof), fem.broadcast_state(mat, m.n_elem), cylinder_bc(m, p))
             errs.append(abs(float(radial_u(m, u, -1)) / exact["inc" if element == "hybrid" else "comp"] - 1))
         log(f"  {element:8s} rel err u_r(a): " + "  ".join(f"{e:.2e}" for e in errs)
@@ -1193,13 +1192,13 @@ def incompressible(r_i=5.0, t=1.3, L=0.22, C10=0.305, ratio=1e4):
         errs = []
         for n in meshes:
             m = meshlib.quarter_cylinder(r_i, t, L, n)
-            sysm = fem.System(m, elastic, pressure_faces=m.faces[(0, -1)], element=element)
+            sysm = fem.System(m, pressure_faces=m.faces[(0, -1)], element=element)
             u, _, _ = sysm.run(fem.broadcast_state(mat, m.n_elem), [cylinder_bc(m, p * k / 5) for k in range(1, 6)])
             errs.append(abs(float(radial_u(m, u, -1)) / (a_ex - a) - 1))
         log(f"  {element:8s} rel err u_r(a): " + "  ".join(f"{e:.2e}" for e in errs)
             + "   ratios " + "  ".join(f"{errs[i] / errs[i + 1]:.1f}" for i in range(len(errs) - 1)))
 
-    log("\n3) one hybrid hex8 vs solver.py hybrid, incompressible Maes models A and D (HCMM dep, 100 steps)")
+    log("\n3) one hybrid hex8 vs material_point.py hybrid, incompressible Maes models A and D (HCMM dep, 100 steps)")
     Lb = 50.0
     m = meshlib.box((1, 1, 1), (Lb, Lb, Lb))
     top = m.nodes[(DRIVEN, 1)]
@@ -1222,7 +1221,7 @@ def incompressible(r_i=5.0, t=1.3, L=0.22, C10=0.305, ratio=1e4):
     for model_name in ("A", "D"):
         for case in ("U", "S", "F"):
             specs, ag = setups.maes_specs(model_name, case), MODELS[model_name]["ag"]
-            ref = solver.run(build(specs, 10.0, ag), module, setups.bc_for(model_name, case), n_steps=100)
+            ref = material_point.run(build(specs, 10.0, ag), module, setups.bc_for(model_name, case), n_steps=100)
             bc, faces = box_case(model_name, case)
             sysm = fem.System(m, module, pressure_faces=faces, element="hybrid")
             t0 = time.time()
@@ -1292,9 +1291,9 @@ def incompressible(r_i=5.0, t=1.3, L=0.22, C10=0.305, ratio=1e4):
 
 def tet10(steps=100):
     import tempfile
-    import elastic
+    import materials
     import fem
-    import mesh as meshlib
+    from fem import mesh as meshlib
     lines = []
 
     def log(text):
@@ -1311,8 +1310,8 @@ def tet10(steps=100):
     boundary = np.unique(np.concatenate(list(m.nodes.values())))
     fixed = (3 * boundary[:, None] + np.arange(3)).ravel()
     u_exact = ((F0 - np.eye(3)) @ m.X.T).T.ravel()
-    sysm = fem.System(m, elastic)
-    u, _ = sysm.solve(np.zeros(sysm.n_dof), fem.broadcast_state(elastic.NeoHookean(C10, K), m.n_elem, sysm.n_gp),
+    sysm = fem.System(m)
+    u, _ = sysm.solve(np.zeros(sysm.n_dof), fem.broadcast_state(materials.NeoHookean(C10, K), m.n_elem, sysm.n_gp),
                       fem.BC(fixed, u_exact[fixed]))
     e = np.abs(u - u_exact).max()
     log(f"  {m.n_elem} tet10  max|u - u_exact| {e:.1e}  {'PASS' if e < 1e-10 else 'FAIL'}")
@@ -1325,8 +1324,8 @@ def tet10(steps=100):
         errs = []
         for n in meshes:
             m = meshlib.quarter_cylinder(a, t, 0.22, n, etype)
-            sysm = fem.System(m, elastic, pressure_faces=m.faces[(0, -1)])
-            u, _ = sysm.solve(np.zeros(sysm.n_dof), fem.broadcast_state(elastic.NeoHookean(C10, K), m.n_elem, sysm.n_gp),
+            sysm = fem.System(m, pressure_faces=m.faces[(0, -1)])
+            u, _ = sysm.solve(np.zeros(sysm.n_dof), fem.broadcast_state(materials.NeoHookean(C10, K), m.n_elem, sysm.n_gp),
                               cylinder_bc(m, p))
             errs.append(abs(float(radial_u(m, u, -1)) / (C1 * a + C2 / a) - 1))
         log(f"  {etype:6s} " + "  ".join(f"{e:.2e}" for e in errs)
@@ -1337,8 +1336,8 @@ def tet10(steps=100):
     errs = []
     for n in meshes:
         m = meshlib.quarter_cylinder(a, t, 0.22, n, "tet10")
-        sysm = fem.System(m, elastic, pressure_faces=m.faces[(0, -1)], element="hybrid")
-        u, _, _ = sysm.run(fem.broadcast_state(elastic.NeoHookeanInc(C10), m.n_elem, sysm.n_gp),
+        sysm = fem.System(m, pressure_faces=m.faces[(0, -1)], element="hybrid")
+        u, _, _ = sysm.run(fem.broadcast_state(materials.NeoHookeanInc(C10), m.n_elem, sysm.n_gp),
                            [cylinder_bc(m, 0.1 * k / 5) for k in range(1, 6)])
         errs.append(abs(float(radial_u(m, u, -1)) / (a_ex - a) - 1))
     log("  " + "  ".join(f"{e:.2e}" for e in errs) + "   ratios "

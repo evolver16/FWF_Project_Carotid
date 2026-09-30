@@ -1,4 +1,4 @@
-"""Single-element solver for the Maes & Famaey (2023) U/S/F cases (Fig. 1).
+"""0D material point (homogeneous F) for the Maes & Famaey (2023) U/S/F cases (Fig. 1); reference for the FE code.
 
 Model interface:
     sigma_tot, aux = model.sigma_solver(state, F)   pure, committed state only
@@ -10,7 +10,7 @@ Axes: 0 = paper Z (confined, lam = 1), 1 = paper Y (driven), 2 = paper X (free).
 import jax
 import jax.numpy as jnp
 from dataclasses import dataclass, replace
-from tensor3 import det3
+from fem.tensor3 import det3
 
 CONFINED_AXIS, DRIVEN_AXIS, FREE_AXIS = 0, 1, 2
 

@@ -14,9 +14,10 @@ import jax.numpy as jnp
 
 import fcmm
 import hcmm
-import solver
+import materials
+from verification import material_point
 
-DRIVEN, FREE = solver.DRIVEN_AXIS, solver.FREE_AXIS
+DRIVEN, FREE = material_point.DRIVEN_AXIS, material_point.FREE_AXIS
 T_DAYS = 101.0
 
 
@@ -45,23 +46,24 @@ def G_fiber(g, M):
 
 
 def neo_hookean(C10, K=None):
-    """(FCMM, HCMM) matrix material; K=None -> incompressible (Eq. 32)"""
-    if K is None:
-        return fcmm.NeoHookeanInc(C10), hcmm.NeoHookeanInc(C10)
-    return fcmm.NeoHookean(C10, K), hcmm.NeoHookean(C10, K)
+    """(FCMM, HCMM) matrix material, shared; K=None -> incompressible (Eq. 32)"""
+    mat = materials.NeoHookeanInc(C10) if K is None else materials.NeoHookean(C10, K)
+    return mat, mat
 
 
 def fung(k1, k2, M):
-    """(FCMM, HCMM) fiber material"""
-    M = jnp.asarray(M)
-    return fcmm.Fung(k1, k2, M), hcmm.Fung(k1, k2, M)
+    """(FCMM, HCMM) fiber material, shared"""
+    mat = materials.Fung(k1, k2, jnp.asarray(M))
+    return mat, mat
 
 
 def burn_in(mix, n_steps):
     """Fill the FCMM cohort history at F = I with gains off."""
     saved = [c.params for c in mix.constituents]
     off = jnp.asarray(0.0)
-    mix = mix.replace(constituents=[fcmm.constituent(c.params.with_gains(off, off), c.history)
+    gains_off = lambda p: (p.replace(production=p.production.replace(k=off), removal=p.removal.replace(k=off))
+                           if p.remodels else p)
+    mix = mix.replace(constituents=[fcmm.constituent(gains_off(c.params), c.history)
                                     for c in mix.constituents])
     for _ in range(n_steps):
         _, aux = fcmm.sigma_solver(mix, jnp.eye(3))
@@ -74,21 +76,19 @@ def build_fcmm(specs, ds, ag=None):
     n_max = fcmm.window_for(T_DAYS, ds) + 2
     cs = []
     for s in specs:
-        par = fcmm.params(material=s.mat_f, T=s.T, G=s.G, k_minus=0.0, k_plus=s.k_plus,
-                          phi_0=s.rho_0, grows=True, remodels=s.remodels)
+        par = fcmm.params(s.mat_f, s.G, *(fcmm.maes(s.T, s.k_plus) if s.remodels else (None, None)))
         cs.append(fcmm.constituent.allocate(par, s.rho_0, s.mat_f.sigma_f(s.mat_f.sigma(s.G)),
                                             n_max, ds))
-    mix = fcmm.mixture.allocate(cs, jnp.eye(3), ds, n_max, ag=ag)
+    mix = fcmm.mixture.allocate(cs, jnp.eye(3), ds, n_max, fcmm.Isotropic() if ag is None else fcmm.Anisotropic(ag))
     return burn_in(mix, n_max)
 
 
 def build_hcmm(specs, ds, ag=None, mode="deposition"):
     rho_tot_0 = sum(s.rho_0 for s in specs)
-    cs = [hcmm.constituent(s.mat_h, T=s.T if s.remodels else jnp.inf, rho_0=s.rho_0,
-                           k_sigma_plus=s.k_plus, k_sigma_minus=0.0, G=s.G,
+    cs = [hcmm.constituent(s.mat_h, s.rho_0, *(hcmm.maes(s.T, s.k_plus) if s.remodels else (None, None)), G=s.G,
                            phi=s.rho_0 / rho_tot_0, sigma_pre_mode=mode)
           for s in specs]
-    return hcmm.mixture(cs, ds=ds, ag=ag)
+    return hcmm.mixture(cs, ds=ds, growth=hcmm.Isotropic() if ag is None else hcmm.Anisotropic(ag))
 
 
 VARIANTS = {
@@ -118,7 +118,7 @@ TARGETS = {"U": 1.5, "S": 0.120, "F": 300.0}
 
 
 def bc_for(model, case):
-    return solver.BC(case, TARGETS[case], hybrid=MODELS[model]["inc"])
+    return material_point.BC(case, TARGETS[case], hybrid=MODELS[model]["inc"])
 
 
 def prestress_G(mat_f, rho_e, fibers, inc, target=0.100):

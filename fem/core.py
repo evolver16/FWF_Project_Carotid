@@ -1,6 +1,6 @@
 """Total-Lagrangian hex8 FE: kernels, assembly, follower pressure, Newton, G&R time loop.
 
-Model interface per integration point (hcmm, fcmm, elastic):
+Model interface per integration point (hcmm, fcmm; default Elastic: the state is a material, no G&R):
     sigma, aux = model.sigma_solver(state, F)
     state      = model.commit(state, F, aux)
     J_target(state)                              optional, hybrid element (default 1)
@@ -14,9 +14,8 @@ import numpy as np
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 
-import setups  # noqa: F401  (x64, compilation cache)
-from elements import element_for, face_for
-from tensor3 import det3, inv3
+from fem.elements import element_for, face_for
+from fem.tensor3 import det3, inv3
 
 ELEMENTS = ("standard", "fbar", "hybrid")
 
@@ -298,6 +297,20 @@ class LinearSolver:
         return x if y is None else y
 
 
+class Elastic:
+    """Default model without G&R: the state at a Gauss point is a material with sigma(F), Cauchy = sigma(F)/J"""
+
+    @staticmethod
+    @jax.jit
+    def sigma_solver(state, F):
+        return state.sigma(F) / det3(F), None
+
+    @staticmethod
+    @jax.jit
+    def commit(state, F, aux):
+        return state
+
+
 class System:
     """Mesh of hex8 (2x2x2 Gauss) or tet10 (4-point); element formulation:
     "standard", "fbar" (F^ = (J_0/J)^(1/3) F, J_0 at the element centre),
@@ -306,10 +319,11 @@ class System:
     fbar develops hourglass-type modes in long G&R runs for K/mu >~ 1e3; use hybrid there.
     """
 
-    def __init__(self, mesh, model, pressure_faces=None, batch=128, element="standard"):
+    def __init__(self, mesh, model=None, pressure_faces=None, batch=128, element="standard"):
         if element not in ELEMENTS:
             raise ValueError(f"element must be one of {ELEMENTS}, got {element!r}")
-        self.mesh, self.model, self.batch, self.element = mesh, model, batch, element
+        self.mesh, self.batch, self.element = mesh, batch, element
+        self.model = Elastic if model is None else model
         self.n_dof = 3 * mesh.n_nodes
         self.n_p = mesh.n_elem if element == "hybrid" else 0
         self.n_x = self.n_dof + self.n_p

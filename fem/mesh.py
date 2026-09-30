@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from elements import HEX_CORNERS, ELEMENT_TYPES, element_for, face_for
+from fem.elements import HEX_CORNERS, ELEMENT_TYPES, element_for, face_for
 
 HEX_FACES = {(0, -1): [0, 3, 7, 4], (0, 1): [1, 2, 6, 5],
              (1, -1): [0, 1, 5, 4], (1, 1): [3, 7, 6, 2],

@@ -4,8 +4,8 @@ import jax
 import jax.numpy as jnp
 from jax import jit
 
-from hcmm_materials.voigt import sym_to_voigt, voigt_to_sym
-from tensor3 import det3, inv3
+from materials.voigt import sym_to_voigt, voigt_to_sym
+from fem.tensor3 import det3, inv3
 
 
 @jax.tree_util.register_pytree_node_class

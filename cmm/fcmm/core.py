@@ -1,9 +1,8 @@
-"""Full constrained mixture model (FCMM), Maes & Famaey (2023) sec. 2.1.
+"""FCMM core: cohort histories, constituents, mixture, stress and the commit of one G&R step.
 
     rho^j(s)     = rho_0^j Q^j(s) + int_0^s m^j(tau) q^j(s,tau) dtau   (Eq. 1)
     F_e^j(s,tau) = F(s) F_g(s)^-1 [F(tau) F_g(tau)^-1]^-1 G^j          (Eq. 5)
     sigma^j(s)   = 1/(phi^j J) int_0^s m^j q^j (dW^j/dF) F^T dtau      (Eq. 4)
-    m^j(s)       = (rho^j/T^j)(1 + k_sigma_+ rel)                      (Eq. 11)
     q^j(s,tau)   = exp(-int_tau^s K_-^j dtau')                         (Eq. 12)
 
 Solver interface: sigma_tot, aux = sigma_solver(state, F); state = commit(state, F, aux)
@@ -12,7 +11,34 @@ Solver interface: sigma_tot, aux = sigma_solver(state, F); state = commit(state,
 import jax
 import jax.numpy as jnp
 from jax import jit
-from tensor3 import det3, inv3
+from fem.tensor3 import det3, inv3
+
+
+def pytree(data, static=()):
+    """Register a class as pytree: data attributes are leaves, static ones aux data; adds replace(**fields)"""
+    def wrap(cls):
+        def flatten(obj):
+            return tuple(getattr(obj, k) for k in data), tuple(getattr(obj, k) for k in static)
+
+        def unflatten(aux, children):
+            obj = cls.__new__(cls)
+            for k, v in zip(data, children):
+                setattr(obj, k, v)
+            for k, v in zip(static, aux):
+                setattr(obj, k, v)
+            return obj
+
+        def replace(self, **fields):
+            children, aux = flatten(self)
+            obj = unflatten(aux, children)
+            for k, v in fields.items():
+                setattr(obj, k, v)
+            return obj
+
+        jax.tree_util.register_pytree_node(cls, flatten, unflatten)
+        cls.replace = replace
+        return cls
+    return wrap
 
 
 @jit
@@ -28,29 +54,9 @@ def polar_rotation(F, n_iter=12):
     return jax.lax.fori_loop(0, n_iter, lambda _, R: 0.5 * (R + inv3(R).T), F)
 
 
-def F_g_iso_calc(mixt):
-    """F_g(s) = (rho_tot(s)/rho_tot(0))^(1/3) I   (Eq. 6)"""
-    return J_g_calc(mixt) ** (1.0 / 3.0) * jnp.eye(3)
-
-
-def F_g_aniso_calc(mixt, ag):
-    """F_g(s) = (rho_tot(s)/rho_tot(0) - 1) ag(x)ag + I   (Eq. 7)"""
-    return (J_g_calc(mixt) - 1) * jnp.outer(ag, ag) + jnp.eye(3)
-
-
-def J_g_calc(mixt):
-    """J_g(s) = det F_g(s) = rho_tot(s)/rho_tot(0)   (Eq. 6/7)"""
-    return rho_tot_prev_calc(mixt) / mixt.rho_tot_0
-
-
 def step_axis(n, n_max):
     """Trapezoid abscissa in step units, clamped at n so unfilled slots have zero width."""
     return jnp.minimum(jnp.arange(n_max), n).astype(jnp.result_type(float))
-
-
-def T_steps(par, ds):
-    """T_steps = T/ds"""
-    return par.T / ds
 
 
 def window_for(T, ds, tol=1e-3, per_cohort=False):
@@ -66,113 +72,12 @@ def window_for(T, ds, tol=1e-3, per_cohort=False):
     return int(math.ceil(-math.log(tol * (1.0 - math.exp(-ds / T))) * T / ds))
 
 
-@jax.tree_util.register_pytree_node_class
-class Fung:
-    def __init__(self, k1, k2, M):
-        self.k1 = k1
-        self.k2 = k2
-        M = jnp.asarray(M)
-        self.M = M / jnp.linalg.norm(M)
-
-    def tree_flatten(self):
-        return (self.k1, self.k2, self.M), None
-
-    @classmethod
-    def tree_unflatten(cls, aux_data, children):
-        obj = cls.__new__(cls)
-        obj.k1, obj.k2, obj.M = children
-        return obj
-
-    @jit
-    def Psi(self, F):
-        """W^coll = k1/(2 k2) [exp(k2 (I4 - 1)^2) - 1] if I4 > 1 else 0,  I4 = |F M|^2   (Eq. 28)"""
-        FM = F @ self.M
-        I4 = jnp.dot(FM, FM)
-        return jnp.where(I4 > 1.0, (self.k1 / (2 * self.k2)) * (jnp.exp(self.k2 * (I4 - 1) ** 2) - 1), 0.0)
-
-    @jit
-    def sigma(self, F):
-        """sigma = (dW/dF) F^T   (Eq. 29)"""
-        dW_dF = jax.grad(self.Psi)(F)
-        return dW_dF @ F.T
-
-    @staticmethod
-    @jit
-    def sigma_f(sigma):
-        """sigma_f = tr(sigma)   (Eq. 31)"""
-        return jnp.trace(sigma)
-
-
-@jax.tree_util.register_pytree_node_class
-class NeoHookean:
-    def __init__(self, C10, K):
-        self.C10 = C10
-        self.K = K
-
-    def tree_flatten(self):
-        return (self.C10, self.K), None
-
-    @classmethod
-    def tree_unflatten(cls, aux_data, children):
-        return cls(*children)
-
-    @jit
-    def Psi(self, F):
-        """W^elas = C10 (J_e^(-2/3) tr(F^T F) - 3) + K/2 (J_e - 1)^2   (Eq. 28)"""
-        I1 = jnp.trace(F.T @ F)
-        J = det3(F)
-        I1_inc = I1 * J ** (-2 / 3)
-        return self.C10 * (I1_inc - 3) + self.K / 2 * (J - 1) ** 2
-
-    @jit
-    def sigma(self, F):
-        """sigma = (dW/dF) F^T   (Eq. 29)"""
-        dW_dF = jax.grad(self.Psi)(F)
-        return dW_dF @ F.T
-
-    @staticmethod
-    @jit
-    def sigma_f(sigma):
-        """sigma_f = tr(sigma)   (Eq. 31)"""
-        return jnp.trace(sigma)
-
-
-@jax.tree_util.register_pytree_node_class
-class NeoHookeanInc:
-    def __init__(self, C10):
-        self.C10 = C10
-
-    def tree_flatten(self):
-        return (self.C10,), None
-
-    @classmethod
-    def tree_unflatten(cls, aux_data, children):
-        return cls(*children)
-
-    @jit
-    def Psi(self, F):
-        """W^elas = C10 (tr(F^T F) - 3)   (Eq. 32)"""
-        return self.C10 * (jnp.trace(F.T @ F) - 3)
-
-    @jit
-    def sigma(self, F):
-        """sigma = 2 C10 (B - I1/3 I), B = F F^T; pressure added by the solver   (Eq. 33)"""
-        B = F @ F.T
-        return 2 * self.C10 * (B - jnp.trace(B) / 3 * jnp.eye(3))
-
-    @staticmethod
-    @jit
-    def sigma_f(sigma):
-        """sigma_f = tr(sigma)   (Eq. 31)"""
-        return jnp.trace(sigma)
-
-
 def _advance(buf, value, k, shift):
     """Write value at slot k, rolling out the oldest entry if shift."""
     return jnp.where(shift, jnp.roll(buf, -1, axis=0), buf).at[k].set(value)
 
 
-@jax.tree_util.register_pytree_node_class
+@pytree(("m", "sigma_f", "K_cumu", "rho", "n", "sigma_f_0", "rho_0"))
 class history:
     """Rolling per-cohort buffers m^j, sigma_f^j, K_cumu^j, rho^j of one constituent."""
 
@@ -224,49 +129,24 @@ class history:
             rho_0=self.rho_0,
         )
 
-    def tree_flatten(self):
-        return (self.m, self.sigma_f, self.K_cumu, self.rho, self.n,
-                self.sigma_f_0, self.rho_0), None
 
-    @classmethod
-    def tree_unflatten(cls, aux_data, children):
-        obj = cls.__new__(cls)
-        (obj.m, obj.sigma_f, obj.K_cumu, obj.rho, obj.n,
-         obj.sigma_f_0, obj.rho_0) = children
-        return obj
-
-
-@jax.tree_util.register_pytree_node_class
+@pytree(("material", "G", "production", "removal"), static=("grows",))
 class params:
-    def __init__(self, material, T, G, k_minus, k_plus, phi_0, grows=True,
-                 remodels=True):
+    def __init__(self, material, G, production=None, removal=None, grows=True):
+        """production/removal: laws from fcmm.production / fcmm.removal (None: no turnover, e.g. elastin)"""
         self.material = material
-        self.T = jnp.asarray(T)
         self.G = jnp.asarray(G)
-        self.k_sigma_minus = jnp.asarray(k_minus)
-        self.k_sigma_plus = jnp.asarray(k_plus)
-        self.phi_0 = jnp.asarray(phi_0)
+        self.production = production
+        self.removal = removal
         self.grows = grows
-        self.remodels = remodels
 
-    def with_gains(self, k_plus, k_minus):
-        return params(self.material, self.T, self.G, k_minus, k_plus,
-                      self.phi_0, self.grows, self.remodels)
-
-    def tree_flatten(self):
-        return (self.material, self.T, self.G, self.k_sigma_minus,
-                self.k_sigma_plus, self.phi_0), (self.grows, self.remodels)
-
-    @classmethod
-    def tree_unflatten(cls, aux_data, children):
-        obj = cls.__new__(cls)
-        (obj.material, obj.T, obj.G, obj.k_sigma_minus,
-         obj.k_sigma_plus, obj.phi_0) = children
-        obj.grows, obj.remodels = aux_data
-        return obj
+    @property
+    def remodels(self):
+        """static: None-ness of the laws is part of the pytree structure"""
+        return self.production is not None or self.removal is not None
 
 
-@jax.tree_util.register_pytree_node_class
+@pytree(("params", "history"))
 class constituent:
     def __init__(self, params, history):
         self.params = params
@@ -274,21 +154,12 @@ class constituent:
 
     @classmethod
     def allocate(cls, params, rho_0, sigma_f_0, n_max, ds):
-        """m^j(0) = rho^j(0)/T^j   (Eq. 10)"""
-        m_0 = rho_0 / T_steps(params, ds) if params.remodels else 0.0
+        """m^j(0) = production at rel = 0, e.g. rho^j(0)/T^j   (Eq. 10)"""
+        m_0 = params.production.m(rho_0, sigma_f_0, sigma_f_0, ds, 1.0, 1.0) if params.remodels else 0.0
         return cls(params, history.allocate(n_max, m_0, sigma_f_0, rho_0))
 
-    def tree_flatten(self):
-        return (self.params, self.history), None
 
-    @classmethod
-    def tree_unflatten(cls, aux_data, children):
-        obj = cls.__new__(cls)
-        obj.params, obj.history = children
-        return obj
-
-
-@jax.tree_util.register_pytree_node_class
+@pytree(("F", "Fg", "R", "n"))
 class mixture_history:
     """Rolling F(tau), F_g(tau), R(tau) buffers; unfilled slots hold identity."""
 
@@ -316,51 +187,24 @@ class mixture_history:
                                Fg=_advance(self.Fg, Fg_s, k, shift),
                                R=_advance(self.R, polar_rotation(F_s), k, shift), n=k)
 
-    def tree_flatten(self):
-        return (self.F, self.Fg, self.R, self.n), None
 
-    @classmethod
-    def tree_unflatten(cls, aux_data, children):
-        obj = cls.__new__(cls)
-        obj.F, obj.Fg, obj.R, obj.n = children
-        return obj
-
-
-@jax.tree_util.register_pytree_node_class
+@pytree(("constituents", "ds", "history", "rho_tot_0", "growth"))
 class mixture:
-    def __init__(self, constituents, ds, history, rho_tot_0, ag=None):
+    def __init__(self, constituents, ds, history, rho_tot_0, growth):
+        """growth: law from fcmm.growth, F_g from J_g = rho_tot / rho_tot_0"""
         self.constituents = constituents
         self.ds = ds
         self.history = history
         self.rho_tot_0 = rho_tot_0
-        self.ag = ag
+        self.growth = growth
 
     @classmethod
-    def allocate(cls, constituents, F0, ds, n_max, ag=None):
-        ag = None if ag is None else jnp.asarray(ag) / jnp.linalg.norm(jnp.asarray(ag))
+    def allocate(cls, constituents, F0, ds, n_max, growth):
         return cls(constituents, ds, mixture_history.allocate(n_max, F0),
-                   sum(c.history.rho_0 for c in constituents), ag)
+                   sum(c.history.rho_0 for c in constituents), growth)
 
     def F_g_calc(self):
-        if self.ag is None:
-            return F_g_iso_calc(self)
-        return F_g_aniso_calc(self, self.ag)
-
-    def replace(self, constituents=None, history=None):
-        return mixture(self.constituents if constituents is None else constituents,
-                       self.ds,
-                       self.history if history is None else history,
-                       self.rho_tot_0, self.ag)
-
-    def tree_flatten(self):
-        children = (self.constituents, self.ds, self.history, self.rho_tot_0, self.ag)
-        return children, (self.ag is None)
-
-    @classmethod
-    def tree_unflatten(cls, aux_data, children):
-        obj = cls.__new__(cls)
-        (obj.constituents, obj.ds, obj.history, obj.rho_tot_0, obj.ag) = children
-        return obj
+        return self.growth.F_g(J_g_calc(self))
 
 
 def rho_tot_prev_calc(mixt):
@@ -368,10 +212,9 @@ def rho_tot_prev_calc(mixt):
     return sum(c.history.rho[c.history.n] for c in mixt.constituents)
 
 
-@jit
-def Phi_j_calc(rho_j, rho_tot):
-    """phi^j = rho^j/rho_tot   (Eq. 27)"""
-    return rho_j / rho_tot
+def J_g_calc(mixt):
+    """J_g(s) = det F_g(s) = rho_tot(s)/rho_tot(0)   (Eq. 6/7)"""
+    return rho_tot_prev_calc(mixt) / mixt.rho_tot_0
 
 
 SIGMA_F_EPS = 1e-12
@@ -389,18 +232,11 @@ def sigma_f_rel(sigma_f_s, sigma_f_0, rho_tot, rho_tot_0, eps=SIGMA_F_EPS):
 
 
 @jit
-def K_exp(par, sigma_f_s, sigma_f_0, ds, rho_tot, rho_tot_0, eps=SIGMA_F_EPS):
-    """K_-^j(s) = (1/T^j)(1 + k_sigma_- rel)   (Eq. 13)"""
-    rel = sigma_f_rel(sigma_f_s, sigma_f_0, rho_tot, rho_tot_0, eps)
-    return (1.0 / T_steps(par, ds)) * (1 + par.k_sigma_minus * rel)
-
-
-@jit
 def K_cumu_calc(par, hist, sigma_f_s, ds, rho_tot, rho_tot_0):
     """K_cumu(s) = K_cumu(s-1) + [K_-(s-1) + K_-(s)]/2   (Eq. 12)"""
     sigma_f_0 = hist.sigma_f_0
-    K_prev = K_exp(par, hist.sigma_f[hist.n], sigma_f_0, ds, rho_tot, rho_tot_0)
-    K_new = K_exp(par, sigma_f_s, sigma_f_0, ds, rho_tot, rho_tot_0)
+    K_prev = par.removal.K(hist.sigma_f[hist.n], sigma_f_0, ds, rho_tot, rho_tot_0)
+    K_new = par.removal.K(sigma_f_s, sigma_f_0, ds, rho_tot, rho_tot_0)
     return hist.K_cumu[hist.n] + 0.5 * (K_prev + K_new)
 
 
@@ -412,70 +248,12 @@ def q_calc(hist, K_cumu_s, k):
 
 
 @jit
-def rho_calc_from_sigma_f(par, hist, sigma_f_s, ds, rho_tot, rho_tot_0,
-                          eps=SIGMA_F_EPS):
-    """rho^j(s) = rho^j(s-1) exp[(k_sigma_+ - k_sigma_-)/T^j int_{s-1}^s rel dtau]   (Eq. 1 + 11 + 13)"""
+def rho_calc_from_sigma_f(par, hist, sigma_f_s, ds, rho_tot, rho_tot_0):
+    """rho^j(s) = rho^j(s-1) exp[int_{s-1}^s (m^j/rho^j - K_-^j) dtau]   (Eq. 1, trapezoid)"""
     sigma_f_0 = hist.sigma_f_0
-    rho_prev = hist.rho[hist.n]
-    sigma_frac_prev = sigma_f_rel(hist.sigma_f[hist.n], sigma_f_0,
-                                  rho_tot, rho_tot_0, eps)
-    sigma_frac_new = sigma_f_rel(sigma_f_s, sigma_f_0, rho_tot, rho_tot_0, eps)
-    rate = (par.k_sigma_plus - par.k_sigma_minus) / T_steps(par, ds)
-    return rho_prev * jnp.exp(rate / 2.0 * (sigma_frac_prev + sigma_frac_new))
-
-
-@jit
-def m_j_calc(par, rho_s, sigma_f_s, sigma_f_0, ds, rho_tot, rho_tot_0,
-             eps=SIGMA_F_EPS):
-    """m^j(s) = (rho^j(s)/T^j)(1 + k_sigma_+ rel)   (Eq. 11)"""
-    rel = sigma_f_rel(sigma_f_s, sigma_f_0, rho_tot, rho_tot_0, eps)
-    return (rho_s / T_steps(par, ds)) * (1 + par.k_sigma_plus * rel)
-
-
-def prestress_stress_snapshot(g_axial, elastin_kwargs, fiber_specs):
-    """sigma(F=I) = rho_0^elas sigma(G^elas) + sum_i rho_0^i sigma(G^i)"""
-    C10, K, rho0_e = elastin_kwargs['C10'], elastin_kwargs['K'], elastin_kwargs['rho_0']
-    elastin_material = NeoHookean(C10=C10, K=K)
-    G_e = jnp.diag(jnp.array([1.0 / jnp.sqrt(g_axial), g_axial, 1.0 / jnp.sqrt(g_axial)]))
-    sigma = rho0_e * elastin_material.sigma(G_e)
-
-    for spec in fiber_specs:
-        M = jnp.asarray(spec['M'])
-        M = M / jnp.linalg.norm(M)
-        material = Fung(spec['k1'], spec['k2'], M)
-        P = jnp.outer(M, M)
-        g = spec['g']
-        G_f = g * P + (1.0 / jnp.sqrt(g)) * (jnp.eye(3) - P)
-        sigma = sigma + spec['rho_0'] * material.sigma(G_f)
-
-    return sigma
-
-
-def solve_prestress_g(target, elastin_kwargs, fiber_specs, axis=1, lo=1.0, hi=5.0, iters=60):
-    """Bisection on elastin g so that sigma(F=I)[axis,axis] = target."""
-    f_lo = float(prestress_stress_snapshot(lo, elastin_kwargs, fiber_specs)[axis, axis])
-    f_hi = float(prestress_stress_snapshot(hi, elastin_kwargs, fiber_specs)[axis, axis])
-    if (f_lo - target) * (f_hi - target) > 0:
-        raise RuntimeError(f"target {target} not bracketed: f({lo})={f_lo}, f({hi})={f_hi}")
-    for _ in range(iters):
-        mid = 0.5 * (lo + hi)
-        f_mid = float(prestress_stress_snapshot(mid, elastin_kwargs, fiber_specs)[axis, axis])
-        if (f_mid - target) * (f_lo - target) <= 0:
-            hi = mid
-        else:
-            lo, f_lo = mid, f_mid
-    return mid
-
-
-@jit
-def Psi_j_tot_calc(par, hist, m_s, K_cumu_s, mix_hist):
-    """Psi^j(s) = int m^j(tau) q^j(s,tau) W^j(F_e^j(s,tau)) dtau   (Eq. 3, 35)"""
-    k = mix_hist.n
-    m_full = hist.m.at[k].set(m_s)
-    q_values = q_calc(hist, K_cumu_s, k)
-    F_e_history = F_e_calc(mix_hist.F, mix_hist.Fg, mix_hist.R, par.G, k)
-    W_values = jax.vmap(par.material.Psi)(F_e_history)
-    return jnp.trapezoid(m_full * q_values * W_values, step_axis(k, mix_hist.n_max))
+    net = lambda sf: (par.production.m(1.0, sf, sigma_f_0, ds, rho_tot, rho_tot_0)
+                      - par.removal.K(sf, sigma_f_0, ds, rho_tot, rho_tot_0))
+    return hist.rho[hist.n] * jnp.exp(0.5 * (net(hist.sigma_f[hist.n]) + net(sigma_f_s)))
 
 
 @jit
@@ -528,7 +306,7 @@ def solve_sigma_f_newton(par, hist, mix_hist, J_g, ds, rho_tot, rho_tot_0,
 
     def eval_state(sigma_f_s):
         rho_s = rho_calc_from_sigma_f(par, hist, sigma_f_s, ds, rho_tot, rho_tot_0)
-        m_s = m_j_calc(par, rho_s, sigma_f_s, sigma_f_0, ds, rho_tot, rho_tot_0)
+        m_s = par.production.m(rho_s, sigma_f_s, sigma_f_0, ds, rho_tot, rho_tot_0)
         K_cumu_s = K_cumu_calc(par, hist, sigma_f_s, ds, rho_tot, rho_tot_0)
         w = cohort_weights(hist, m_s, K_cumu_s, k)
         sigma_f_new = jnp.trapezoid(w * tr_values, axis) / (J * rho_s)
