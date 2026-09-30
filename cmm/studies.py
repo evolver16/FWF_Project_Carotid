@@ -1,4 +1,6 @@
-"""Studies: python studies.py maes | sweep | compare [MODEL CASE] | verify | fem | fe | cylinder | artery [MODE] | grad | vessel | bending | local_growth | incompressible | tet10"""
+"""Studies: python studies.py maes | sweep | compare [MODEL CASE] | verify | fem | fe | cylinder | artery [MODE] | grad | vessel | bending | local_growth | turnover | incompressible | tet10
+
+key=value arguments set keyword parameters, e.g. python studies.py turnover p_gr=0.012 T=50"""
 
 import argparse
 import ast
