@@ -1,6 +1,7 @@
 """Studies: python studies.py maes | sweep | compare [MODEL CASE] | verify | fem | fe | cylinder | artery [MODE] | grad | vessel | bending | local_growth | incompressible | tet10"""
 
 import argparse
+import ast
 import csv
 import pathlib
 import time
@@ -542,10 +543,11 @@ def cylinder(r_i=5.0, t=1.3, L=0.22, C10=0.305, K=6.1):
 # ---------- FE M3: arterial G&R, Maes & Famaey (2023) sec. 2.7 / Fig. 4 ----------
 
 def artery_par(**kw):
-    """Model E on the artery: elastin (C10, K), fibers (k1, k2, k_plus, g), axial prestretch g_ax, pressures"""
+    """Model E on the artery: elastin (C10, K), fibers (k1, k2, k_plus, k_minus, g, turnover T in days),
+    axial prestretch g_ax, pressures"""
     from setups import FIBER, MATRIX_DE
-    par = dict(C10=MATRIX_DE["C10"], K=MATRIX_DE["K"], k1=FIBER["k1"], k2=FIBER["k2"], k_plus=0.1,
-               g=FIBER["g"], g_ax=1.2, p_hom=0.010, p_gr=0.015)
+    par = dict(C10=MATRIX_DE["C10"], K=MATRIX_DE["K"], k1=FIBER["k1"], k2=FIBER["k2"], k_plus=0.1, k_minus=0.0,
+               T=setups.T_DAYS, g=FIBER["g"], g_ax=1.2, p_hom=0.010, p_gr=0.015)
     return {k: jnp.asarray(v, dtype=float) for k, v in {**par, **kw}.items()}
 
 
@@ -562,8 +564,8 @@ def artery_states(G_e, Qloc, par, mode, ds=10.0, elastin="compressible"):
         mat = hcmm.NeoHookean(par["C10"], par["K"]) if elastin == "compressible" else hcmm.NeoHookeanInc(par["C10"])
         cs = [hcmm.constituent(mat, T=jnp.inf, rho_0=MATRIX_DE["rho_0"],
                                k_sigma_plus=0.0, k_sigma_minus=0.0, G=Ge, sigma_pre_mode=mode)]
-        cs += [hcmm.constituent(hcmm.Fung(par["k1"], par["k2"], M), T=setups.T_DAYS, rho_0=FIBER["rho_0"],
-                                k_sigma_plus=par["k_plus"], k_sigma_minus=0.0, G=G_fiber(par["g"], M),
+        cs += [hcmm.constituent(hcmm.Fung(par["k1"], par["k2"], M), T=par["T"], rho_0=FIBER["rho_0"],
+                                k_sigma_plus=par["k_plus"], k_sigma_minus=par["k_minus"], G=G_fiber(par["g"], M),
                                 sigma_pre_mode=mode) for M in dirs]
         return hcmm.mixture(cs, ds=ds, ag=e_r)
 
@@ -587,9 +589,9 @@ def wall_area(m, u):
 
 def artery_simulate(m, sysm, Qloc, par, mode="deposition", n_steps=100, bc=None, measure=None,
                     pre_tol=1e-6, pre_iter=60, anderson=5, tol=1e-10, log=None, final=False,
-                    elastin="compressible", checkpoint=None, record=None, bc_gr=None, insult=None):
+                    elastin="compressible", checkpoint=None, record=None, bc_gr=None, insult=None, ds=10.0):
     """Prestress G_elas <- F G_elas at p_hom until u = 0 (Maes UMAT_DEP; Anderson-accelerated, 0 = plain),
-    G&R at p_gr -> measure(u) per step (default lambda_theta(inner), wall area), reverse-differentiable in par;
+    G&R at p_gr, steps of ds days -> measure(u) per step (default lambda_theta(inner), wall area), reverse-differentiable in par;
     final: also (u, states) at the end; record(k, u, states): after prestress (k = 0) and step k (forward only);
     bc_gr: G&R BCs per step instead of bc(p_gr); insult(states) -> states: applied once after the prestress"""
     import fem
@@ -603,7 +605,7 @@ def artery_simulate(m, sysm, Qloc, par, mode="deposition", n_steps=100, bc=None,
     zero = jnp.zeros(sysm.n_dof)
     xs, fs = [], []
     for it in range(1, pre_iter + 1):
-        states = artery_states(G_e, Qloc, par, mode, elastin=elastin)
+        states = artery_states(G_e, Qloc, par, mode, ds=ds, elastin=elastin)
         u = sysm.equilibrium(states, bc(par["p_hom"]), zero, tol)
         du = float(np.abs(sysm.last_u).max())
         if log and (it % 5 == 0 or du < pre_tol):
@@ -1062,6 +1064,80 @@ def local_growth(n_steps=200, delta=0.3, n=(3, 24, 40), L=40.0, w_z=4.0, w_theta
     txt.write_text("\n".join(lines) + "\n")
 
 
+def turnover(days=2000.0, n_steps=200, n=(4, 30, 1), name="turnover", **par_kw):
+    """Pressure step p_hom -> p_gr held constant, uniform quarter cylinder: widening = elastic part (equilibrium at
+    p_gr before any turnover) + turnover part (the rest).  par_kw: any artery_par key (p_gr, T, k_plus, k_minus, ...)"""
+    import fem
+    import mesh as meshlib
+    from tensor3 import det3
+    lines = []
+
+    def log(text):
+        print(text, flush=True)
+        lines.append(text)
+
+    txt, pvd, csv_path, fig = outputs("turnover", *(f"{name}{s}" for s in (".txt", ".pvd", ".csv", ".png")))
+    par = artery_par(**par_kw)
+    ds = days / n_steps
+    m = meshlib.quarter_cylinder(n=n)
+    sysm = fem.System(m, setups.hcmm, pressure_faces=m.faces[(0, -1)])
+    Qj = jnp.asarray(meshlib.cylinder_basis(fem.gauss_points(m.X, m.conn)))
+    bc = lambda p: cylinder_bc(m, p)
+    radii = lambda u: (5.0 + float(radial_u(m, u, -1)), 6.3 + float(radial_u(m, u, 1)))
+    w = np.asarray(sysm.wdet)
+    hist, rho0, elastic = [], [], {}
+    series = meshlib.VTKSeries(pvd)
+
+    def record(k, u, states):
+        """after the commit of step k; k = 0 also: elastic response at p_gr with the prestressed state"""
+        st = sysm.commit(u, states) if k else states
+        rho = [np.asarray(c.rho) for c in st.constituents]
+        if not k:
+            rho0.extend(rho)
+            elastic["r_in"], elastic["r_out"] = radii(sysm.equilibrium(states, bc(par["p_gr"]), u))
+        col, col0 = sum(rho[1:]), sum(rho0[1:])
+        s_rel = np.asarray(st.constituents[1].sigma_f / st.constituents[1].sigma_f_pre)
+        r_in, r_out = radii(u)
+        hist.append(dict(day=ds * k, r_in=r_in, h=r_out - r_in, collagen=float(np.sum(w * col) / np.sum(w * col0)),
+                         sigma_circ_rel=float(np.sum(w * s_rel) / w.sum())))
+        series.write(ds * k, m.X, m.conn, *sysm.fields(u, states, dict(
+            J_g=det3(st.F_g), rho_rel_collagen=col / col0, sigma_circ_rel=s_rel)))
+
+    log(f"quarter cylinder r_i 5, t 1.3 mm: {m.n_elem} hex8, {sysm.n_dof} dofs, HCMM model E")
+    log("parameters: " + "  ".join(f"{k} {float(v):.4g}" for k, v in par.items()))
+    log(f"pressure {float(par['p_hom']) * 1e3:.1f} -> {float(par['p_gr']) * 1e3:.1f} kPa, held for {days:.0f} days, "
+        f"{n_steps} steps of {ds:.3g} days (ds/T {ds / float(par['T']):.3f})")
+    t0 = time.time()
+    artery_simulate(m, sysm, Qj, par, n_steps=n_steps, bc=bc, log=log, record=record,
+                    measure=lambda u: (jnp.zeros(()),), ds=ds)
+    log(f"  done in {time.time() - t0:.1f}s, ParaView: {pvd.name} ({len(series.entries)} time steps)")
+
+    r0, h0 = hist[0]["r_in"], hist[0]["h"]
+    el = elastic["r_in"] / r0 - 1
+    log(f"\nelastic widening at {float(par['p_gr']) * 1e3:.1f} kPa (no turnover): inner radius {100 * el:+.2f} %, "
+        f"wall thickness {100 * ((elastic['r_out'] - elastic['r_in']) / h0 - 1):+.2f} %")
+    log("\n    day   inner radius: total   elastic   turnover   wall thickness   collagen mass   circ. collagen "
+        "stress / set point")
+    for k in sorted({int(round(f * n_steps)) for f in (0, 0.005, 0.05, 0.1, 0.25, 0.5, 0.75, 1)}):
+        r = hist[k]
+        tot = r["r_in"] / r0 - 1
+        log(f"  {r['day']:5.0f}   {100 * tot:+17.2f} % {100 * el * (k > 0):+8.2f} % {100 * (tot - el) * (k > 0):+8.2f} %"
+            f"   {100 * (r['h'] / h0 - 1):+12.2f} %   {100 * (r['collagen'] - 1):+11.2f} %      {r['sigma_circ_rel']:.4f}")
+
+    write_csv([r | dict(r_in_elastic=elastic["r_in"] if r["day"] else r0) for r in hist], csv_path)
+    t = np.array([r["day"] for r in hist])
+    r_in = np.array([r["r_in"] for r in hist]) / r0 - 1
+    plotting.panels([dict(t=t[1:], series={"total": 100 * r_in[1:], "elastic": np.full(len(t) - 1, 100 * el),
+                                           "turnover": 100 * (r_in[1:] - el)},
+                          title="Inner radius change", ylabel="%"),
+                     dict(t=t, series={"wall thickness": 100 * (np.array([r["h"] for r in hist]) / h0 - 1),
+                                       "collagen mass": 100 * (np.array([r["collagen"] for r in hist]) - 1)},
+                          title="Wall", ylabel="%"),
+                     dict(t=t, series={"circ. collagen": np.array([r["sigma_circ_rel"] for r in hist])},
+                          title="Collagen stress / set point", ylabel="(-)")], fig)
+    txt.write_text("\n".join(lines) + "\n")
+
+
 # ---------- FE M7: near-incompressibility, F-bar and hybrid (Q1/P0) elements ----------
 
 def cylinder_exact_inc(p, A, B, mu):
@@ -1323,8 +1399,18 @@ def tet10(steps=100):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("study", choices=["maes", "sweep", "compare", "verify", "fem", "fe", "cylinder", "artery", "grad", "vessel", "bending", "local_growth", "incompressible", "tet10"])
-    ap.add_argument("args", nargs="*", help="compare: MODEL CASE, artery: MODE, vessel: hex8|tet10")
+    ap.add_argument("study", choices=["maes", "sweep", "compare", "verify", "fem", "fe", "cylinder", "artery", "grad", "vessel", "bending", "local_growth", "turnover", "incompressible", "tet10"])
+    ap.add_argument("args", nargs="*", help="positional, or key=value for keyword arguments (turnover: T=30 relax=0.3; "
+                                            "any artery_par key)")
     a = ap.parse_args()
+
+    def value(v):
+        try:
+            return ast.literal_eval(v)
+        except (ValueError, SyntaxError):
+            return v
+
+    pos = [v for v in a.args if "=" not in v]
+    kw = {k: value(v) for k, v in (s.split("=", 1) for s in a.args if "=" in s)}
     RESULTS.mkdir(parents=True, exist_ok=True)
-    globals()[a.study](*a.args)
+    globals()[a.study](*pos, **kw)
