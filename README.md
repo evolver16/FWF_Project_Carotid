@@ -9,22 +9,31 @@ Gradients of any result with respect to the model parameters come from the adjoi
 
 ```
 fem/            FE framework, independent of the G&R models
-  core.py         assembly, Newton, time loop (System); hex8/tet10, standard/F-bar/hybrid elements, PARDISO/SuperLU
-  mesh.py         generators (box, quarter cylinder, half tube, bent stenotic tube), Abaqus .inp / gmsh .msh, ParaView .vtu/.pvd
-  elements.py     shape functions, Gauss rules;  tensor3.py  3x3 det/inv
+  core.py         assembly, Newton, time loop (System); hex8/tet10, standard/F-bar/hybrid elements, PARDISO/SuperLU;
+                  buckling: arc_length (load path through limit points), stability (tangent eigenvalues),
+                  pseudo-transient relaxation as automatic fallback when Newton fails (snaps in G&R steps)
+  mesh.py         generators (box, quarter cylinder, half tube, bent stenotic tube), Abaqus .inp / gmsh .msh, ParaView
+  elements.py     shape functions, Gauss rules
+  tensor3.py      3x3 det, inverse, polar rotation;  pytree.py  registration of model state classes
 materials/      constitutive laws, one file each (Fung, NeoHookean, NeoHookeanInc), shared by fem, hcmm and fcmm
 cmm/            constrained mixture models and studies
-  hcmm/           core (constituent, mixture, commit), growth (F_g), production, removal
+  hcmm/           core (constituent, mixture, sigma_solver, commit), growth (F_g), production, removal
   fcmm/           same structure, cohort histories; independent of hcmm
-  setups.py       Maes & Famaey Table 1/2 models, builders
-  studies.py      all studies (python studies.py <study>)
+  setups.py       Maes & Famaey Table 1/2 models, constituent specs, builders
+  studies/        python -m studies <study>; groups material, fe_gr, artery, vessel (table below)
   jobs/           Slurm scripts for VSC-5
   results/        outputs, described in results/result.md
-verification/   material_point.py (0D reference, Maes U/S/F cases), fem_analytic.py (FE vs closed-form solutions)
+verification/   python -m verification.<module>; outputs in verification/results/
+  material_point.py  0D reference for the Maes U/S/F cases
+  fem_analytic.py    FE vs homogeneous closed-form solutions, patch test
+  fem_tube.py        thick-walled tube vs Lame / finite-strain solutions, element formulations, hex8 vs tet10
+  mesh_io.py         .inp / .msh round trips
+  buckling.py        Euler column, shallow arch snap-through: arc length, stability, relaxation
 ```
 
 Model interface used by `fem.System` and `material_point` at every integration point:
-`sigma, aux = model.sigma_solver(state, F)`, `state = model.commit(state, F, aux)`.
+`sigma, aux = model.sigma_solver(state, F)`, `state = model.commit(state, F, aux)`, optional `J_target(state)`.
+The model is a module (`hcmm`, `fcmm`), the state its mixture per Gauss point.
 `fem.System(mesh)` without a model uses the state as a plain material (no G&R).
 
 ## Install
@@ -43,20 +52,37 @@ On VSC-5 load `python/3.12.8-gcc-12.2.0-4y5tbpr` first; rerun `pip install -e .`
 
 ```bash
 cd cmm
-python studies.py fe                                   # a study; list: python studies.py -h
-python studies.py turnover p_gr=0.012 k_plus=0.3 days=3000 name=p12   # key=value parameters
-python -m verification.fem_analytic                    # FE vs uniaxial / equibiaxial / simple shear / dilatation
-sbatch jobs/run.sh turnover p_gr=0.012                 # on the cluster (set -A in the script)
+python -m studies pressure_step                              # a study; list: python -m studies -h
+python -m studies pressure_step p_gr=0.012 k_plus=0.3 days=3000 name=p12   # key=value parameters
+sbatch jobs/run.sh pressure_step p_gr=0.012                  # on the cluster (set -A in the script)
+cd .. && python -m verification.fem_tube                     # FE verification, from the repository root
 ```
 
-| Study | Content |
+Outputs: `cmm/results/<group>/<study>/`.
+
+| Group | Study | Content |
+|---|---|---|
+| material | `exact_solution` | HCMM / FCMM vs the exact constrained mixture solution at constant F |
+| material | `maes_benchmark` | Maes & Famaey models A–E, cases U/S/F (Fig. 2) |
+| material | `parameter_sweep` | HCMM–FCMM gap over prestretch, gain and step size |
+| material | `case_comparison` | one model / case, HCMM vs FCMM over time (plot) |
+| material | `fe_readiness` | batching, objectivity, tangent and gradients of the models for the FE code |
+| fe_gr | `fe_vs_material_point` | HCMM patch test, single (hybrid) elements vs the material point, adjoint |
+| fe_gr | `element_formulations` | artery G&R with standard / F-bar / hybrid / tet10, tet10 adjoint with inclined supports |
+| artery | `artery_gr` | G&R of a quarter cylinder (Maes & Famaey Fig. 4) |
+| artery | `artery_gradients` | adjoint gradients vs finite differences, parameter identification, cost |
+| artery | `pressure_step` | pressure step held constant: elastic vs turnover part of the widening |
+| artery | `pressure_buckling` | pressure buckling of a G&R state with G&R frozen: critical pressure, post-buckling path |
+| vessel | `stenotic_vessel` | bent stenotic vessel from an .inp mesh, Laplace wall basis, ParaView output, adjoint |
+| vessel | `bending_redistribution` | mass redistribution in a bent tube (end rotation) |
+| vessel | `setpoint_patch` | lowered collagen set point in a patch: growth-only displacement |
+
+| Verification | Content |
 |---|---|
-| `verify`, `maes`, `sweep`, `compare`, `fem` | material point: HCMM vs FCMM vs exact solution, Maes Fig. 2, FE readiness |
-| `fe`, `cylinder`, `incompressible`, `tet10` | FE verification: patch test, Lamé, locking, tet10, adjoint vs finite differences |
-| `artery`, `grad` | G&R on a quarter cylinder, gradients and parameter identification |
-| `vessel` | bent stenotic vessel from an .inp mesh, ParaView output, adjoint |
-| `bending`, `local_growth` | mass redistribution under bending, growth-only displacement |
-| `turnover` | pressure step: elastic vs turnover part of the widening |
+| `fem_analytic` | uniaxial / equibiaxial (hybrid), simple shear, dilatation, patch test; hex8 and tet10 |
+| `fem_tube` | Lamé convergence, nonlinear refinement, standard / F-bar / hybrid, finite-strain incompressible tube, tet10 |
+| `mesh_io` | Abaqus .inp, gmsh .msh 4.1 / 2.2 round trips |
+| `buckling` | Euler column (stability), shallow arch (arc length vs displacement control, relaxation) |
 
 Results and their interpretation: [cmm/results/result.md](cmm/results/result.md).
 

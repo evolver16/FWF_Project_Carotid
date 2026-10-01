@@ -1,11 +1,11 @@
-"""Deposition stretches, prestress, builders and the Maes & Famaey (2023) Table 1/2 models."""
+"""Maes & Famaey (2023) Table 1/2 models: constituent specs, deposition stretches, prestress, FCMM / HCMM builders."""
 
 import pathlib
 from dataclasses import dataclass
+from functools import partial
 
 import jax
 
-jax.config.update("jax_enable_x64", True)
 jax.config.update("jax_compilation_cache_dir", str(pathlib.Path(__file__).parent / "compiled"))
 jax.config.update("jax_persistent_cache_min_entry_size_bytes", -1)
 jax.config.update("jax_persistent_cache_min_compile_time_secs", 0)
@@ -21,11 +21,12 @@ DRIVEN, FREE = material_point.DRIVEN_AXIS, material_point.FREE_AXIS
 T_DAYS = 101.0
 
 
+# ---------- constituent specs and deposition stretches ----------
+
 @dataclass
 class Spec:
-    """One constituent, with matching FCMM and HCMM materials."""
-    mat_f: object
-    mat_h: object
+    """One constituent: material (shared by FCMM and HCMM), deposition stretch, mass, turnover"""
+    mat: object
     G: jnp.ndarray
     rho_0: float
     k_plus: float = 0.0
@@ -45,17 +46,7 @@ def G_fiber(g, M):
     return g * P + (1.0 / jnp.sqrt(g)) * (jnp.eye(3) - P)
 
 
-def neo_hookean(C10, K=None):
-    """(FCMM, HCMM) matrix material, shared; K=None -> incompressible (Eq. 32)"""
-    mat = materials.NeoHookeanInc(C10) if K is None else materials.NeoHookean(C10, K)
-    return mat, mat
-
-
-def fung(k1, k2, M):
-    """(FCMM, HCMM) fiber material, shared"""
-    mat = materials.Fung(k1, k2, jnp.asarray(M))
-    return mat, mat
-
+# ---------- builders ----------
 
 def burn_in(mix, n_steps):
     """Fill the FCMM cohort history at F = I with gains off."""
@@ -76,29 +67,28 @@ def build_fcmm(specs, ds, ag=None):
     n_max = fcmm.window_for(T_DAYS, ds) + 2
     cs = []
     for s in specs:
-        par = fcmm.params(s.mat_f, s.G, *(fcmm.maes(s.T, s.k_plus) if s.remodels else (None, None)))
-        cs.append(fcmm.constituent.allocate(par, s.rho_0, s.mat_f.sigma_f(s.mat_f.sigma(s.G)),
-                                            n_max, ds))
+        par = fcmm.params(s.mat, s.G, *(fcmm.maes(s.T, s.k_plus) if s.remodels else (None, None)))
+        cs.append(fcmm.constituent.allocate(par, s.rho_0, s.mat.sigma_f(s.mat.sigma(s.G)), n_max, ds))
     mix = fcmm.mixture.allocate(cs, jnp.eye(3), ds, n_max, fcmm.Isotropic() if ag is None else fcmm.Anisotropic(ag))
     return burn_in(mix, n_max)
 
 
 def build_hcmm(specs, ds, ag=None, mode="deposition"):
-    rho_tot_0 = sum(s.rho_0 for s in specs)
-    cs = [hcmm.constituent(s.mat_h, s.rho_0, *(hcmm.maes(s.T, s.k_plus) if s.remodels else (None, None)), G=s.G,
-                           phi=s.rho_0 / rho_tot_0, sigma_pre_mode=mode)
+    cs = [hcmm.constituent(s.mat, s.rho_0, *(hcmm.maes(s.T, s.k_plus) if s.remodels else (None, None)), G=s.G,
+                           sigma_pre_mode=mode)
           for s in specs]
     return hcmm.mixture(cs, ds=ds, growth=hcmm.Isotropic() if ag is None else hcmm.Anisotropic(ag))
 
 
 VARIANTS = {
-    "FCMM": (lambda sp, ds, ag: build_fcmm(sp, ds, ag), fcmm),
-    "HCMM dep": (lambda sp, ds, ag: build_hcmm(sp, ds, ag, "deposition"), hcmm),
-    "HCMM init": (lambda sp, ds, ag: build_hcmm(sp, ds, ag, "initial"), hcmm),
+    "FCMM": (build_fcmm, fcmm),
+    "HCMM dep": (partial(build_hcmm, mode="deposition"), hcmm),
+    "HCMM init": (partial(build_hcmm, mode="initial"), hcmm),
 }
 
 
-# Maes & Famaey (2023) Table 1/2, code axes (Z, Y, X)
+# ---------- Maes & Famaey (2023) Table 1/2, code axes (Z, Y, X) ----------
+
 ALPHA = jnp.pi / 8
 AG_X = jnp.array([0.0, 0.0, 1.0])
 FIBER_DIRS = [(0.0, 1.0, 0.0), (1.0, 0.0, 0.0),
@@ -117,20 +107,25 @@ MODELS = {
 TARGETS = {"U": 1.5, "S": 0.120, "F": 300.0}
 
 
+def matrix_material(C10, K=None):
+    """neo-Hookean matrix, K = None: incompressible (Eq. 32)"""
+    return materials.NeoHookeanInc(C10) if K is None else materials.NeoHookean(C10, K)
+
+
 def bc_for(model, case):
     return material_point.BC(case, TARGETS[case], hybrid=MODELS[model]["inc"])
 
 
-def prestress_G(mat_f, rho_e, fibers, inc, target=0.100):
+def prestress_G(mat, rho_e, fibers, inc, target=0.100):
     """G^elas with sigma_yy = target, sigma_xx = 0 at F = I   (sec. 2.5)
 
     inc: G = diag(g^-1/2, g, g^-1/2), sigma - p I with p = sigma_xx.
     """
-    sig_fib = sum((s.rho_0 * s.mat_f.sigma(s.G) for s in fibers), jnp.zeros((3, 3)))
+    sig_fib = sum((s.rho_0 * s.mat.sigma(s.G) for s in fibers), jnp.zeros((3, 3)))
     G_of = (lambda x: G_matrix(x[0], 1.0 / jnp.sqrt(x[0]))) if inc else (lambda x: G_matrix(x[0], x[1]))
 
     def r(x):
-        s = rho_e * mat_f.sigma(G_of(x)) + sig_fib
+        s = rho_e * mat.sigma(G_of(x)) + sig_fib
         if inc:
             return jnp.array([s[DRIVEN, DRIVEN] - s[FREE, FREE] - target])
         return jnp.array([s[DRIVEN, DRIVEN] - target, s[FREE, FREE]])
@@ -148,8 +143,8 @@ def maes_specs(model, case):
     if m["fibers"]:
         for M in FIBER_DIRS:
             G = jnp.eye(3) if case == "U" else G_fiber(FIBER["g"], M)
-            fibers.append(Spec(*fung(FIBER["k1"], FIBER["k2"], M), G, FIBER["rho_0"], m["k_fiber"]))
-    mat = m["matrix"]
-    mat_f, mat_h = neo_hookean(mat["C10"], None if m["inc"] else mat["K"])
-    G_e = jnp.eye(3) if case == "U" else prestress_G(mat_f, mat["rho_0"], fibers, m["inc"])
-    return [Spec(mat_f, mat_h, G_e, mat["rho_0"], m["k_matrix"], m["matrix_remodels"])] + fibers
+            fiber = materials.Fung(FIBER["k1"], FIBER["k2"], jnp.asarray(M))
+            fibers.append(Spec(fiber, G, FIBER["rho_0"], m["k_fiber"]))
+    mat = matrix_material(m["matrix"]["C10"], None if m["inc"] else m["matrix"]["K"])
+    G_e = jnp.eye(3) if case == "U" else prestress_G(mat, m["matrix"]["rho_0"], fibers, m["inc"])
+    return [Spec(mat, G_e, m["matrix"]["rho_0"], m["k_matrix"], m["matrix_remodels"])] + fibers

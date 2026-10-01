@@ -2,7 +2,7 @@
 
 import jax.numpy as jnp
 
-from hcmm.core import pytree
+from fem.pytree import pytree
 
 
 @pytree(())

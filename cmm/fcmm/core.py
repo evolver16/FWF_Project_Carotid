@@ -11,34 +11,8 @@ Solver interface: sigma_tot, aux = sigma_solver(state, F); state = commit(state,
 import jax
 import jax.numpy as jnp
 from jax import jit
-from fem.tensor3 import det3, inv3
-
-
-def pytree(data, static=()):
-    """Register a class as pytree: data attributes are leaves, static ones aux data; adds replace(**fields)"""
-    def wrap(cls):
-        def flatten(obj):
-            return tuple(getattr(obj, k) for k in data), tuple(getattr(obj, k) for k in static)
-
-        def unflatten(aux, children):
-            obj = cls.__new__(cls)
-            for k, v in zip(data, children):
-                setattr(obj, k, v)
-            for k, v in zip(static, aux):
-                setattr(obj, k, v)
-            return obj
-
-        def replace(self, **fields):
-            children, aux = flatten(self)
-            obj = unflatten(aux, children)
-            for k, v in fields.items():
-                setattr(obj, k, v)
-            return obj
-
-        jax.tree_util.register_pytree_node(cls, flatten, unflatten)
-        cls.replace = replace
-        return cls
-    return wrap
+from fem.pytree import pytree
+from fem.tensor3 import det3, inv3, polar_rotation
 
 
 @jit
@@ -46,12 +20,6 @@ def F_e_calc(F, F_g, R, G, n):
     """F_e^j(s,tau) = F(s) F_g(s)^-1 [F(tau) F_g(tau)^-1]^-1 R(tau) G^j   (Eq. 5, deposited in the rotated frame)"""
     inner = F @ inv3(F_g)
     return F[n] @ inv3(F_g[n]) @ inv3(inner) @ R @ G
-
-
-@jit
-def polar_rotation(F, n_iter=12):
-    """F = R U,  R_{k+1} = (R_k + R_k^-T)/2 from R_0 = F, smooth at repeated singular values"""
-    return jax.lax.fori_loop(0, n_iter, lambda _, R: 0.5 * (R + inv3(R).T), F)
 
 
 def step_axis(n, n_max):

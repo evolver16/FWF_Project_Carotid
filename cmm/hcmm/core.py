@@ -11,34 +11,8 @@ Solver interface: sigma_tot, aux = sigma_solver(state, F); state = commit(state,
 import jax
 import jax.numpy as jnp
 from jax import jit
-from fem.tensor3 import det3, inv3
-
-
-def pytree(data, static=()):
-    """Register a class as pytree: data attributes are leaves, static ones aux data; adds replace(**fields)"""
-    def wrap(cls):
-        def flatten(obj):
-            return tuple(getattr(obj, k) for k in data), tuple(getattr(obj, k) for k in static)
-
-        def unflatten(aux, children):
-            obj = cls.__new__(cls)
-            for k, v in zip(data, children):
-                setattr(obj, k, v)
-            for k, v in zip(static, aux):
-                setattr(obj, k, v)
-            return obj
-
-        def replace(self, **fields):
-            children, aux = flatten(self)
-            obj = unflatten(aux, children)
-            for k, v in fields.items():
-                setattr(obj, k, v)
-            return obj
-
-        jax.tree_util.register_pytree_node(cls, flatten, unflatten)
-        cls.replace = replace
-        return cls
-    return wrap
+from fem.pytree import pytree
+from fem.tensor3 import det3, inv3, polar_rotation
 
 
 @jit
@@ -47,16 +21,10 @@ def F_e_calc(F, F_g, F_r):
     return F @ inv3(F_g) @ inv3(F_r)
 
 
-@jit
-def polar_rotation(F, n_iter=12):
-    """F = R U,  R_{k+1} = (R_k + R_k^-T)/2 from R_0 = F, smooth at repeated singular values"""
-    return jax.lax.fori_loop(0, n_iter, lambda _, R: 0.5 * (R + inv3(R).T), F)
-
-
-@pytree(("material", "production", "removal", "rho", "F_r", "sigma_pre", "sigma_f_pre", "sigma", "sigma_f", "phi",
-         "rho_dot_plus"), static=("sigma_pre_mode",))
+@pytree(("material", "production", "removal", "rho", "F_r", "sigma_pre", "sigma_f_pre", "sigma_f", "phi"),
+        static=("sigma_pre_mode",))
 class constituent:
-    def __init__(self, material, rho_0, production=None, removal=None, G=None, sigma_pre=None, F_r=None, phi=1.0,
+    def __init__(self, material, rho_0, production=None, removal=None, G=None, sigma_pre=None, F_r=None,
                  sigma_pre_mode="deposition"):
         """production/removal: laws from hcmm.production / hcmm.removal (None: no turnover, e.g. elastin).
         sigma_pre_mode: "deposition" (F_e -> G, Cyron/CMM) or "initial" (Maes Eq. 17)."""
@@ -69,7 +37,6 @@ class constituent:
         self.rho = rho_0
 
         self.sigma_pre = material.sigma(G) if sigma_pre is None else sigma_pre
-        self.sigma = self.sigma_pre
         self.sigma_f_pre = material.sigma_f(self.sigma_pre)
         self.sigma_f = self.sigma_f_pre
 
@@ -80,8 +47,7 @@ class constituent:
         else:
             self.F_r = jnp.eye(3)
 
-        self.phi = jnp.asarray(phi)
-        self.rho_dot_plus = jnp.zeros(())
+        self.phi = jnp.asarray(1.0)
 
     @property
     def turnover(self):
@@ -114,7 +80,7 @@ def sigma_f_rel(c, sigma_f, rho_tot, rho_tot_0, eps=1e-9):
 
 
 @jit
-def mixture_sigma_solver(mixt, F):
+def sigma_solver(mixt, F):
     """sigma_tot = sum_j phi^j sigma^j = sum_j (rho^j/J) sigma_mat^j(F_e^j)   (Eq. 17, 27)"""
     F_g = mixt.F_g
     J = det3(F)
@@ -138,7 +104,7 @@ def constituent_update(c, F_e, sigma_s, R, ds, J, rho_tot, rho_tot_0):
     """
     sigma_f_s = c.material.sigma_f(sigma_s) / J
     if not c.turnover:
-        return c.rho, c.F_r, jnp.zeros_like(c.rho_dot_plus), sigma_f_s
+        return c.rho, c.F_r, sigma_f_s
     sigma_pre_s = R @ c.sigma_pre @ R.T
 
     zero = jnp.zeros_like(c.rho)
@@ -150,10 +116,7 @@ def constituent_update(c, F_e, sigma_s, R, ds, J, rho_tot, rho_tot_0):
     sigma_rate_euler = (rho_dot_plus / c.rho) * (rho_tot * sigma_s / J
                                                  - rho_pre * sigma_pre_s)
     F_r_s = c.material.F_r(F_e, J, c, sigma_rate_euler)
-    return rho_s, F_r_s, rho_dot_plus, sigma_f_s
-
-
-sigma_solver = mixture_sigma_solver
+    return rho_s, F_r_s, sigma_f_s
 
 
 def J_target(mixt):
@@ -169,9 +132,7 @@ def commit(mixt, F, aux):
     updates = [constituent_update(c, F_e, sigma_s, R, mixt.ds, J, mixt.rho_tot, mixt.rho_tot_0)
                for c, (F_e, sigma_s) in zip(mixt.constituents, aux)]
     rho_tot_s = sum(u[0] for u in updates)
-    constituents = [c.replace(rho=rho_s, F_r=F_r_s, rho_dot_plus=rho_dot_plus,
-                              phi=rho_s / rho_tot_s, sigma=sigma_s, sigma_f=sigma_f_s)
-                    for c, (rho_s, F_r_s, rho_dot_plus, sigma_f_s), (_, sigma_s)
-                    in zip(mixt.constituents, updates, aux)]
+    constituents = [c.replace(rho=rho_s, F_r=F_r_s, phi=rho_s / rho_tot_s, sigma_f=sigma_f_s)
+                    for c, (rho_s, F_r_s, sigma_f_s) in zip(mixt.constituents, updates)]
     return mixt.replace(constituents=constituents, rho_tot=rho_tot_s,
                         F_g=mixt.growth.F_g(rho_tot_s / mixt.rho_tot_0))

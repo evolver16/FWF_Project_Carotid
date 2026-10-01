@@ -4,9 +4,10 @@
     equibiaxial  incompressible, hybrid   F = diag(lam, lam, lam^-2)          sigma_11 = sigma_22 = 2 C10 (lam^2 - lam^-4)
     simple shear compressible             F = I + g e1(x)e2                   sigma = 2 C10 (B - I1/3 I)
     dilatation   compressible             F = a I                             sigma = K (a^3 - 1) I
+    patch test   compressible             general F0                          sigma = sigma(F0) of the material
 
-uniaxial/equibiaxial: symmetry planes + prescribed end faces, lateral faces free; shear/dilatation: u = (F - I) X on the
-whole boundary.  Run: python -m verification.fem_analytic
+uniaxial/equibiaxial: symmetry planes + prescribed end faces, lateral faces free; shear/dilatation/patch test:
+u = (F - I) X on the whole boundary.  Run: python -m verification.fem_analytic
 """
 
 import pathlib
@@ -75,6 +76,9 @@ def cases():
         F = a * np.eye(3)
         yield (f"dilatation   a={a:<6}", comp, F, K * (a ** 3 - 1) * np.eye(3),
                lambda m, F=F: bc_boundary(m, F), ("standard", "fbar"))
+    F = np.array([[1.08, 0.05, -0.02], [0.03, 0.95, 0.04], [-0.01, 0.02, 1.03]])
+    yield ("patch test   general F0", comp, F, np.asarray(comp.sigma(jnp.asarray(F))) / np.linalg.det(F),
+           lambda m: bc_boundary(m, F), ("standard", "fbar"))
 
 
 def main(tol=1e-8):

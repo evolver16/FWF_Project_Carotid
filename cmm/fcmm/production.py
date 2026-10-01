@@ -2,7 +2,8 @@
 
 import jax.numpy as jnp
 
-from fcmm.core import pytree, sigma_f_rel
+from fem.pytree import pytree
+from fcmm.core import sigma_f_rel
 
 
 @pytree(("T", "k"))

@@ -107,12 +107,6 @@ def boundary_faces(m):
     return elems, face, outward(m.X, m.conn, elems, faces[b])
 
 
-def faces_on(m, node_set):
-    """Outward boundary faces with all nodes in node_set"""
-    _, _, faces = boundary_faces(m)
-    return faces[np.all(np.isin(faces, node_set), axis=1)]
-
-
 def _ids(tokens):
     return [int(t) for t in tokens if t.strip()]
 

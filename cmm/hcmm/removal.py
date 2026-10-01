@@ -1,6 +1,7 @@
 """Removal laws: increment(c, sigma_f, ds, rho_tot, rho_tot_0) -> rho_dot_- ds (<= 0) of constituent c"""
 
-from hcmm.core import pytree, sigma_f_rel
+from fem.pytree import pytree
+from hcmm.core import sigma_f_rel
 
 
 @pytree(("T", "k"))

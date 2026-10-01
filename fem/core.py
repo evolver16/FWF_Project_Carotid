@@ -90,18 +90,6 @@ def broadcast_state(state, n_el, n_gp=8):
     return jax.tree.map(lambda x: jnp.broadcast_to(jnp.asarray(x), (n_el, n_gp) + jnp.shape(x)), state)
 
 
-def save_state(path, states, u):
-    """Restart file: leaves of the state pytree and u (.npz)"""
-    np.savez(path, *[np.asarray(x) for x in jax.tree.leaves(states)], u=np.asarray(u))
-
-
-def load_state(path, like):
-    """(states, u) from save_state; like: any state pytree of the same structure (e.g. the initial one)"""
-    with np.load(path) as f:
-        leaves = [jnp.asarray(f[f"arr_{i}"]) for i in range(len(f.files) - 1)]
-        return jax.tree.unflatten(jax.tree.structure(like), leaves), jnp.asarray(f["u"])
-
-
 @dataclass
 class BC:
     """Dirichlet dofs/values, dead nodal forces, follower pressure p on the pressure faces,
@@ -366,7 +354,7 @@ class System:
         self.linear = LinearSolver(ordering="COLAMD" if self.n_p else "MMD_AT_PLUS_A")
         self.last_u, self.last_iterations = None, 0
         self.last_p = np.zeros(self.n_p)
-        self._bc_last, self.cutbacks = None, 0
+        self._bc_last, self.cutbacks, self.relaxations = None, 0, 0
         self._patterns, self._passthrough, self._cons = {}, {}, {}
 
     def _Fhat(self, F, F0):
@@ -554,27 +542,41 @@ class System:
         """Newton on the free unknowns x = (u, element pressures) -> (x, n_iter)
 
         converged: |r_u| < tol max|r_u(u0)|, |r_q| < tol V_e, or |du| <= 1e-13 L
-        failed Newton: load continuation from the last converged BC with cutback
+        failed Newton: load continuation from the last converged BC with cutback, then pseudo-transient relaxation
         """
         try:
             x, it = self._newton(u0, states, bc, tol, max_iter)
         except RuntimeError:
-            x, it = self._continuation(u0, states, bc, tol, max_iter)
+            try:
+                x, it = self._continuation(u0, states, bc, tol, max_iter)
+            except RuntimeError:
+                x, it = self._ptc(u0, states, bc, tol)
         self._bc_last = bc
         return x, it
+
+    def _blend(self, bc0, bc1):
+        """bc(s) = (1 - s) bc0 + s bc1 in prescribed values, dead forces and pressure"""
+        f = lambda bc: np.zeros(self.n_dof) if bc.f_dead is None else np.asarray(bc.f_dead, dtype=float)
+        v0, v1, f0, f1 = np.asarray(bc0.values, dtype=float), np.asarray(bc1.values, dtype=float), f(bc0), f(bc1)
+        return lambda s: replace(bc1, values=(1 - s) * v0 + s * v1, f_dead=(1 - s) * f0 + s * f1,
+                                 p=(1 - s) * float(bc0.p) + s * float(bc1.p))
+
+    @staticmethod
+    def _same_support(a, b):
+        same = lambda a, b: (a is None and b is None) or (a is not None and b is not None and all(
+            np.array_equal(x, y) for x, y in zip(a, b)))
+        return np.array_equal(a.fixed, b.fixed) and same(a.slip, b.slip)
 
     def _continuation(self, u0, states, bc, tol, max_iter, min_step=2.0 ** -10):
         """Newton along bc(s) = (1 - s) bc_last + s bc, s: 0 -> 1, increment halved on failure, doubled on success"""
         start = self._bc_last
-        same = lambda a, b: (a is None and b is None) or (a is not None and b is not None and all(
-            np.array_equal(x, y) for x, y in zip(a, b)))
-        if start is None or not np.array_equal(start.fixed, bc.fixed) or not same(start.slip, bc.slip):
+        if start is None or not self._same_support(start, bc):
             start = replace(bc, values=np.zeros(len(bc.fixed)), f_dead=None, p=0.0)
-        zero = np.zeros(self.n_dof)
-        f0 = zero if start.f_dead is None else np.asarray(start.f_dead)
-        f1 = zero if bc.f_dead is None else np.asarray(bc.f_dead)
-        blend = lambda s: replace(bc, values=(1 - s) * np.asarray(start.values) + s * np.asarray(bc.values),
-                                  f_dead=(1 - s) * f0 + s * f1, p=(1 - s) * float(start.p) + s * float(bc.p))
+        f = lambda b: None if b.f_dead is None else np.asarray(b.f_dead)
+        if (np.array_equal(start.values, bc.values) and float(start.p) == float(bc.p)
+                and np.array_equal(f(start), f(bc))):
+            raise RuntimeError("load unchanged, no continuation")
+        blend = self._blend(start, bc)
         s, h, x, total = 0.0, 0.5, np.array(u0, dtype=float), 0
         while s < 1.0:
             step = min(h, 1.0 - s)
@@ -616,6 +618,145 @@ class System:
             raise RuntimeError(f"FE Newton did not converge, |r| = {err:.2e}")
         self.last_p = x[self.n_dof:].copy()
         return x, it
+
+    def _ptc(self, u0, states, bc, tol, max_iter=500, eta0=1.0):
+        """Pseudo-transient continuation (damped relaxation, e.g. through a snap where Newton from u0 fails):
+
+            (K + eta D) dx = -r,   D = |diag K|;   accepted step: eta x0.3 (-> Newton),
+            |r| grown tenfold or non-finite: step rejected, eta x10
+        """
+        cons = self._constraints(bc)
+        x = cons.project(np.concatenate([np.array(u0, dtype=float), self.last_p]))
+        f_dead = self._f_dead(bc)
+        res = lambda x: np.asarray(self.residual(jnp.asarray(x), states, bc.p, f_dead))
+        r = res(x)
+        if not np.isfinite(r).all():
+            raise RuntimeError("FE relaxation: non-finite residual at the start")
+        s_u = max(np.abs(r[:self.n_dof]).max(), np.abs(np.asarray(f_dead)).max(), 1e-12)
+        scale = cons.restrict_scale(np.concatenate([np.full(self.n_dof, s_u), self._p_scale]))
+        err = np.abs(cons.restrict(r) / scale).max()
+        eta = eta0
+        for it in range(1, max_iter + 1):
+            if err < tol:
+                break
+            K = self._K_red(x, states, bc.p, cons)
+            dx = cons.prolong(self.linear((K + eta * sp.diags(np.abs(K.diagonal()))).tocsc(), cons.restrict(r)))
+            x_new = x - dx
+            r_new = res(x_new)
+            err_new = np.abs(cons.restrict(r_new) / scale).max() if np.isfinite(r_new).all() else np.inf
+            if not err_new < 10 * err:
+                eta *= 10
+                if eta > 1e12:
+                    raise RuntimeError(f"FE relaxation stalled, |r| = {err:.2e}")
+                continue
+            eta *= 0.3
+            x, r, err = x_new, r_new, err_new
+            if eta < 1e-10 and np.abs(dx[:self.n_dof]).max() <= 1e-13 * self.length:
+                break
+        else:
+            raise RuntimeError(f"FE relaxation did not converge, |r| = {err:.2e}")
+        self.relaxations += 1
+        self.last_p = x[self.n_dof:].copy()
+        return x, it
+
+    def arc_length(self, states, bc0, bc1, u0=None, n_steps=20, max_steps=500, lam_end=1.0, target_iter=5,
+                   tol=1e-9, max_iter=15, on_step=None):
+        """Load path r(x, lam) = 0 for bc(lam) = (1 - lam) bc0 + lam bc1 from lam = 0 until lam_end is crossed,
+        through limit points (Crisfield, cylindrical) -> [(lam, u)]; not differentiable, states fixed.
+
+            K dy_r = -r,  K dy_l = -dr/dlam,  dy = dy_r + dlam dy_l
+            |Du + du|^2 = dl^2  (displacement unknowns)  -> quadratic in dlam, root closest to the last direction
+            dl adapted by sqrt(target_iter / iterations); predictor sign from the previous increment
+        """
+        if not self._same_support(bc0, bc1):
+            raise ValueError("arc_length: bc0 and bc1 must fix the same dofs")
+        blend = self._blend(bc0, bc1)
+        cons, cons1 = self._constraints(bc0), self._constraints(bc1)
+        f0, f1 = np.asarray(blend(0.0).f_dead), np.asarray(blend(1.0).f_dead)
+        d_xp, d_p, d_f = cons1.x_p - cons.x_p, float(bc1.p) - float(bc0.p), f1 - f0
+        if not hasattr(self, "_residual_dir"):
+            self._residual_dir = jax.jit(lambda x, s, p, f, dx, dp, df: jax.jvp(
+                lambda x, p, f: self._residual(x, s, p, f), (x, p, f), (dx, dp, df))[1])
+        x, _ = self._newton(np.zeros(self.n_dof) if u0 is None else u0, states, bc0, tol, 30)
+        y, lam = cons.restrict(x - cons.x_p), 0.0
+        w = cons.restrict_scale(np.concatenate([np.ones(self.n_dof), np.zeros(self.n_p)])) > 0.5
+        norm = lambda v: np.linalg.norm(v[w])
+        x_of = lambda y, lam: cons.x_p + lam * d_xp + cons.prolong(y)
+
+        def r_rl(y, lam):
+            x = jnp.asarray(x_of(y, lam))
+            p, f = jnp.asarray(bc0.p + lam * d_p, dtype=float), jnp.asarray(f0 + lam * d_f)
+            r = np.asarray(self.residual(x, states, p, f))
+            rl = np.asarray(self._residual_dir(x, states, p, f, jnp.asarray(d_xp), jnp.asarray(d_p, dtype=float),
+                                               jnp.asarray(d_f)))
+            return cons.restrict(r), cons.restrict(rl)
+
+        K_of = lambda y, lam: self._K_red(x_of(y, lam), states, bc0.p + lam * d_p, cons)
+        _, rl = r_rl(y, lam)
+        s_u = max(np.abs(rl[w]).max(), 1e-12)
+        scale = cons.restrict_scale(np.concatenate([np.full(self.n_dof, s_u), self._p_scale]))
+        dl = norm(self.linear(K_of(y, lam), rl)) * lam_end / n_steps
+        dl_min, dl_max = 1e-6 * dl, 10 * dl
+        prev, path = None, [(lam, x_of(y, lam)[:self.n_dof])]
+        for _ in range(max_steps):
+            _, rl = r_rl(y, lam)
+            dyl = -self.linear(K_of(y, lam), rl)
+            dlam = dl / max(norm(dyl), 1e-300)
+            if (np.sign(lam_end) if prev is None else np.sign(prev[w] @ dyl[w])) < 0:
+                dlam = -dlam
+            Dy, Dlam, it, ok = dlam * dyl, dlam, 0, False
+            for it in range(1, max_iter + 1):
+                r, rl = r_rl(y + Dy, lam + Dlam)
+                err = np.abs(r / scale).max() if np.isfinite(r).all() else np.inf
+                if err < tol:
+                    ok = True
+                    break
+                if err > 1e8:
+                    break
+                K = K_of(y + Dy, lam + Dlam)
+                a, b = Dy - self.linear(K, r), -self.linear(K, rl)
+                c1, c2, c3 = b[w] @ b[w], 2 * b[w] @ a[w], a[w] @ a[w] - dl ** 2
+                disc = c2 ** 2 - 4 * c1 * c3
+                if disc < 0:
+                    break
+                roots = [(-c2 + sg * np.sqrt(disc)) / (2 * c1) for sg in (1, -1)]
+                Dy_new = [a + d * b for d in roots]
+                k = int(np.argmax([v[w] @ Dy[w] for v in Dy_new]))
+                Dy, Dlam = Dy_new[k], Dlam + roots[k]
+            if not ok:
+                dl /= 2
+                if dl < dl_min:
+                    raise RuntimeError(f"arc length failed at lam = {lam:.4g}, dl = {dl:.1e}")
+                continue
+            crossed = (lam - lam_end) * (lam + Dlam - lam_end) <= 0 and Dlam != 0 and lam != lam_end
+            y, lam, prev = y + Dy, lam + Dlam, Dy
+            if crossed:
+                s = (lam_end - (lam - Dlam)) / Dlam
+                x, _ = self._newton(x_of(y - (1 - s) * Dy, lam_end)[:self.n_dof], states, blend(lam_end), tol, 30)
+                path.append((lam_end, x[:self.n_dof]))
+                break
+            x = x_of(y, lam)
+            path.append((lam, x[:self.n_dof]))
+            if on_step:
+                on_step(lam, x[:self.n_dof])
+            dl = float(np.clip(dl * np.sqrt(target_iter / max(it, 1)), dl / 2, min(2 * dl, dl_max)))
+        self.last_p = x[self.n_dof:].copy()
+        return path
+
+    def stability(self, u, states, bc, k=4):
+        """k eigenvalues mu nearest to 0 of Z^T K Z v = mu B v (B: 1 on displacements, 0 on element pressures),
+        ascending -> (mu, modes (k, n_dof)); mu < 0: unstable, mu crossing 0: bifurcation or limit point"""
+        cons = self._constraints(bc)
+        x = cons.project(np.concatenate([np.asarray(u, dtype=float), self.last_p]))
+        K = self._K_red(x, states, bc.p, cons).tocsc()
+        lu = spla.splu(K)
+        op = spla.LinearOperator(K.shape, matvec=lu.solve, dtype=float)
+        B = None if not self.n_p else sp.diags(
+            (cons.restrict_scale(np.concatenate([np.ones(self.n_dof), np.zeros(self.n_p)])) > 0.5).astype(float))
+        mu, V = spla.eigs(K, k=k, M=B, sigma=0.0, OPinv=op)
+        order = np.argsort(mu.real)
+        modes = np.stack([cons.prolong(V[:, i].real)[:self.n_dof] for i in order])
+        return mu.real[order], modes / np.abs(modes).max(axis=1, keepdims=True)
 
     def solve(self, u0, states, bc, tol=1e-10, max_iter=30):
         """Newton -> (u, n_iter); hybrid element pressures in last_p"""

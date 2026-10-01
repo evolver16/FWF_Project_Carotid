@@ -21,13 +21,9 @@ class NeoHookeanInc:
         return cls(*children)
 
     @jit
-    def Psi(self, F):
-        """W^elas = C10 (tr(F^T F) - 3)   (Eq. 32)"""
-        return self.C10 * (jnp.trace(F.T @ F) - 3)
-
-    @jit
     def sigma(self, F):
-        """sigma = 2 C10 (B - I1/3 I), B = F F^T; pressure added by the solver   (Eq. 33)"""
+        """W = C10 (tr(F^T F) - 3)   ->   sigma = 2 C10 (B - I1/3 I),  B = F F^T   (Eq. 32, 33)
+        pressure added by the solver"""
         B = F @ F.T
         return 2 * self.C10 * (B - jnp.trace(B) / 3 * jnp.eye(3))
 

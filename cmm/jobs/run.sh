@@ -16,4 +16,4 @@ export MKL_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export MPLCONFIGDIR=${TMPDIR:-/tmp}
 
 cd $SLURM_SUBMIT_DIR
-python studies.py "$@"
+python -m studies "$@"

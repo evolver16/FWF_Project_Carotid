@@ -1,11 +1,11 @@
 """Homogenized constrained mixture model (HCMM), Maes & Famaey (2023) sec. 2.2.
 
-core: constituent, mixture, commit;  growth: F_g laws;  production / removal: turnover laws;  materials: shared library materials/
+core: constituent, mixture, sigma_solver, commit;  growth: F_g laws;  production / removal: turnover laws;
+materials: shared library materials/ (passed in via the constituents)
 """
 
-from hcmm.core import constituent, mixture, sigma_solver, commit, J_target, F_e_calc, polar_rotation
+from hcmm.core import constituent, mixture, sigma_solver, commit, J_target
 from hcmm.growth import Isotropic, Anisotropic
-from materials import Fung, NeoHookean, NeoHookeanInc
 from hcmm.production import MaesProduction
 from hcmm.removal import MaesRemoval
 
