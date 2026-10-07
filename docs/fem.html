@@ -1,0 +1,535 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FE Code Guide</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js"
+        onload="renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+<style>
+:root {
+  --bg: #fbfaf7; --panel: #ffffff; --text: #1f2328; --muted: #5d6670; --line: #e3e0d8;
+  --accent: #1f6f8b; --accent-soft: #e5f1f5; --warn: #9a5b00; --warn-soft: #fbf0dc;
+  --ok: #2f7a3e; --ok-soft: #e4f3e7; --bad: #a33a2a; --bad-soft: #f8e5e1; --code: #f3f1ec;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #15181c; --panel: #1c2026; --text: #e4e6e9; --muted: #9aa3ad; --line: #2e343c;
+    --accent: #6cb6d0; --accent-soft: #1b2e36; --warn: #e2a74f; --warn-soft: #33281a;
+    --ok: #7cc68a; --ok-soft: #1c2e21; --bad: #e6826f; --bad-soft: #3a211d; --code: #23282f;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #15181c; --panel: #1c2026; --text: #e4e6e9; --muted: #9aa3ad; --line: #2e343c;
+  --accent: #6cb6d0; --accent-soft: #1b2e36; --warn: #e2a74f; --warn-soft: #33281a;
+  --ok: #7cc68a; --ok-soft: #1c2e21; --bad: #e6826f; --bad-soft: #3a211d; --code: #23282f;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 16px/1.65 "Source Sans 3", "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+.layout { display: grid; grid-template-columns: 250px minmax(0, 1fr); max-width: 1200px; margin: 0 auto; }
+nav.toc {
+  position: sticky; top: 0; align-self: start; height: 100vh; overflow-y: auto;
+  padding: 28px 16px 28px 20px; border-right: 1px solid var(--line); font-size: 14px;
+}
+nav.toc .title { font-weight: 700; margin-bottom: 10px; }
+nav.toc a { display: block; color: var(--muted); text-decoration: none; padding: 3px 0; }
+nav.toc a:hover { color: var(--accent); }
+main { padding: 32px 40px 80px; min-width: 0; }
+h1 { font-size: 2rem; margin: 0 0 6px; line-height: 1.2; }
+h2 { font-size: 1.45rem; margin: 56px 0 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+h3 { font-size: 1.1rem; margin: 28px 0 8px; }
+p, li { max-width: 78ch; }
+.lead { color: var(--muted); font-size: 1.05rem; max-width: 78ch; }
+code { font: 0.88em/1.4 "JetBrains Mono", "Fira Code", Consolas, monospace; background: var(--code);
+       padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+pre { background: var(--code); padding: 14px 16px; border-radius: 8px; overflow-x: auto; font-size: 0.85rem; }
+pre code { background: none; padding: 0; }
+a { color: var(--accent); }
+.katex-display { overflow-x: auto; overflow-y: hidden; padding: 4px 0; }
+.box { border-left: 4px solid var(--accent); background: var(--accent-soft); padding: 12px 16px;
+       border-radius: 0 8px 8px 0; margin: 16px 0; max-width: 82ch; }
+.box.why { border-color: var(--accent); }
+.box.warn { border-color: var(--warn); background: var(--warn-soft); }
+.box.ok { border-color: var(--ok); background: var(--ok-soft); }
+.box > :first-child { margin-top: 0; } .box > :last-child { margin-bottom: 0; }
+.box .tag { font-weight: 700; font-size: 0.8rem; letter-spacing: .04em; text-transform: uppercase; display: block; margin-bottom: 4px; }
+.table-wrap { overflow-x: auto; margin: 14px 0; }
+table { border-collapse: collapse; font-size: 0.92rem; min-width: 480px; background: var(--panel); }
+th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; vertical-align: top; }
+th { background: var(--code); font-weight: 600; }
+td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+td.good { color: var(--ok); font-weight: 600; } td.bad { color: var(--bad); font-weight: 600; }
+.flow { display: flex; flex-wrap: wrap; gap: 8px; align-items: stretch; margin: 18px 0; }
+.flow .step { flex: 1 1 150px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; font-size: 0.9rem; }
+.flow .step b { display: block; color: var(--accent); margin-bottom: 2px; }
+.flow .arrow { align-self: center; color: var(--muted); font-size: 1.2rem; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin: 14px 0; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; }
+.card h4 { margin: 0 0 6px; font-size: 1rem; }
+.card p, .card ul { margin: 6px 0; font-size: 0.93rem; }
+.meta { color: var(--muted); font-size: 0.9rem; }
+@media (max-width: 860px) {
+  .layout { display: block; }
+  nav.toc { position: static; height: auto; border-right: none; border-bottom: 1px solid var(--line); padding: 16px; }
+  nav.toc a { display: inline-block; margin-right: 12px; }
+  main { padding: 20px 16px 60px; }
+  h1 { font-size: 1.6rem; }
+}
+</style>
+</head>
+<body>
+<div class="layout">
+<nav class="toc">
+  <div class="title">FE code guide</div>
+  <a href="#overview">1. Overview</a>
+  <a href="#jax">2. Why JAX</a>
+  <a href="#kinematics">3. Formulation</a>
+  <a href="#elements">4. Elements</a>
+  <a href="#locking">5. Locking &amp; formulations</a>
+  <a href="#hybrid">6. Hybrid element</a>
+  <a href="#tangent">7. Tangent</a>
+  <a href="#loads">8. Loads &amp; constraints</a>
+  <a href="#assembly">9. Assembly</a>
+  <a href="#linear">10. Linear solver</a>
+  <a href="#newton">11. Nonlinear solver</a>
+  <a href="#buckling">12. Buckling</a>
+  <a href="#gr">13. G&amp;R time loop</a>
+  <a href="#adjoint">14. Adjoint</a>
+  <a href="#geometry">15. Geometry tools</a>
+  <a href="#verification">16. Verification</a>
+  <a href="#limits">17. Limitations</a>
+</nav>
+
+<main>
+<h1>The FE code: structure and design choices</h1>
+<p class="lead">How <code>fem/</code> solves quasi-static, finite-strain mechanics with growth &amp; remodeling (G&amp;R)
+materials, and why it is built this way. Each section gives the formula, where it is in the code,
+and the reason for the choice. Where a choice was settled by a test, the numbers are included.</p>
+<p class="meta">Units: mm, MPa, days. Files: <code>fem/core.py</code> (System, solvers), <code>fem/elements.py</code>,
+<code>fem/mesh.py</code>, <code>fem/tensor3.py</code>, <code>fem/pytree.py</code>. Verification in <code>verification/</code>.</p>
+
+<!-- ============================================================ -->
+<h2 id="overview">1. Overview</h2>
+<p>The FE code knows nothing about growth and remodeling. It needs only one thing from each integration point:
+the Cauchy stress for a given deformation gradient. The G&amp;R model (<code>hcmm</code>, <code>hcmm.core_implicit</code>,
+<code>fcmm</code>) is plugged in as a module with three functions:</p>
+<pre><code>sigma, aux = model.sigma_solver(state, F)   # pure: stress at a trial F, state not changed
+state      = model.commit(state, F, aux)    # once per step, on the converged F
+J_target(state)                             # optional, hybrid element (default 1)</code></pre>
+<p>Without a model, <code>System(mesh)</code> uses <code>Elastic</code>: the state at a Gauss point <em>is</em> a material,
+and \(\sigma = \texttt{material.sigma}(F)/J\).</p>
+
+<div class="flow">
+  <div class="step"><b>Mesh</b>hex8 / tet10, node and face sets, generated or read from .inp / .msh</div>
+  <div class="arrow">→</div>
+  <div class="step"><b>System</b>precomputes \(\partial N/\partial X\), Gauss weights, sparse pattern</div>
+  <div class="arrow">→</div>
+  <div class="step"><b>equilibrium</b>Newton on \(r(x)=0\); fallbacks; custom adjoint</div>
+  <div class="arrow">→</div>
+  <div class="step"><b>commit</b>model updates its state on the converged F</div>
+  <div class="arrow">→</div>
+  <div class="step"><b>run</b>repeat per G&amp;R step; checkpointed reverse pass</div>
+</div>
+
+<div class="box why"><span class="tag">Why this split</span>
+<p>The split mirrors an Abaqus UMAT: the stress goes into equilibrium, and the state variables (STATEV) are written once
+the increment has converged. Newton evaluates the stress at many trial \(F\), so <code>sigma_solver</code> must not
+change the state. Otherwise a rejected iterate would leave growth behind. Keeping the FE side independent of G&amp;R means:</p>
+<ul>
+<li>the same FE code runs HCMM, FCMM, the implicit HCMM and plain materials;</li>
+<li>the FE code is verified against closed-form mechanics alone (section 16), before G&amp;R is added;</li>
+<li>the single-point driver <code>verification/material_point.py</code> uses the exact same interface. This allows the
+FE result on one element to be checked against the material point (agreement \(\le 4\times10^{-11}\)).</li>
+</ul></div>
+
+<!-- ============================================================ -->
+<h2 id="jax">2. Why JAX</h2>
+<div class="grid2">
+  <div class="card"><h4>Exact tangents for free</h4><p>The consistent tangent of a G&amp;R material is long and error-prone
+  to derive by hand. This is especially true for the implicit HCMM, where the stress depends on \(F\) through an inner Newton solve.
+  Forward AD gives it exactly, so the outer Newton converges quadratically.</p></div>
+  <div class="card"><h4>Gradients through the whole simulation</h4><p>The project's goal is to identify parameters
+  from patient data. Reverse-mode AD plus a custom adjoint at each equilibrium (section 14) gives
+  \(\mathrm{d}(\text{result})/\mathrm{d}(\text{all parameters})\) through prestress and hundreds of G&amp;R steps.</p></div>
+  <div class="card"><h4>Vectorized Gauss points</h4><p><code>vmap</code> over Gauss points and <code>lax.map</code> over
+  element batches turn per-point model code into vectorized kernels. The model is written for one point only.</p></div>
+  <div class="card"><h4>State as pytrees</h4><p>The mixture state per Gauss point is a registered pytree
+  (<code>fem/pytree.py</code>). Its leaves get the leading axes <code>(n_el, n_gp)</code> (<code>broadcast_state</code>),
+  so jit, vmap and grad all work on it directly.</p></div>
+</div>
+<div class="box warn"><span class="tag">float64 is required</span>
+<p><code>fem/__init__.py</code> enables <code>jax_enable_x64</code>. In float32 the residual chatters at about \(\pm4\times10^{-7}\),
+so tolerances of \(10^{-10}\) can never be met, and the adjoint loses its digits.</p></div>
+<p>The split between JAX and NumPy/SciPy is deliberate. Everything per element or per Gauss point (stresses, tangents,
+residuals) is JAX. Sparse assembly, the linear solver and the Newton control logic are NumPy/SciPy, because sparse
+direct solvers do not exist in JAX and the control logic has data-dependent branches.</p>
+
+<!-- ============================================================ -->
+<h2 id="kinematics">3. Formulation: total Lagrangian</h2>
+<p>Everything is integrated over the reference configuration. With the shape-function gradients computed once
+for the reference mesh:</p>
+$$F = I + \sum_a u_a \otimes \frac{\partial N_a}{\partial X},\qquad
+P = J\,\big(\sigma(\hat F) - q\,I\big)\,F^{-T},\qquad
+f^{\text{int}}_{ai} = \sum_g w_g\, P_{iJ}\,\frac{\partial N_a}{\partial X_J}$$
+<p>Here \(w_g = w_g^{\text{ref}}\det(\partial X/\partial \xi)\) (<code>geometry</code>). \(\hat F\) is the deformation
+gradient the material sees (\(=F\) except with F-bar), and \(q\) is the element pressure of the hybrid element (otherwise 0).
+The residual is \(r = f^{\text{int}} - f^{\text{pressure}}(u) - f^{\text{dead}}\) (<code>_residual</code>).</p>
+
+<div class="box why"><span class="tag">Why total Lagrangian</span>
+<ul>
+<li><b>G&amp;R state lives on material points.</b> \(\rho\), \(F_r\) and \(F_g\) belong to a piece of tissue, not to a point
+in space. In a total Lagrangian code, Gauss point \(g\) of element \(e\) is always the same tissue.</li>
+<li><b>Precompute once.</b> \(\partial N/\partial X\) and \(w_g\) are computed once in <code>System.__init__</code>, and a
+negative \(\det(\partial X/\partial\xi)\) is rejected there. No geometry is recomputed per iteration.</li>
+<li><b>Prestress fits naturally.</b> The imaged geometry is the loaded in-vivo state. It becomes the reference
+configuration, and a deposition stretch \(G\) inside the material makes it an equilibrium at \(u=0\) (section 15).</li>
+</ul></div>
+
+<div class="box why"><span class="tag">Why the model returns Cauchy stress</span>
+<p>The constrained mixture rule is written in Cauchy stress, \(\sigma = \sum_j (\rho^j/J)\,\sigma^j(F_e^j)\), and the UMATs
+also return Cauchy stress. The FE code does the pull-back \(P = J\sigma F^{-T}\) itself, so models never deal with
+first Piola stresses.</p></div>
+
+<!-- ============================================================ -->
+<h2 id="elements">4. Elements</h2>
+<div class="table-wrap"><table>
+<tr><th>element</th><th>interpolation</th><th>Gauss rule</th><th>pressure face</th><th>used for</th></tr>
+<tr><td>hex8</td><td>trilinear</td><td>2×2×2 (full)</td><td>quad4, 2×2</td><td>structured tubes, cylinders, bent / stenotic tubes</td></tr>
+<tr><td>tet10</td><td>quadratic</td><td>4-point</td><td>tri6, 6-point</td><td>meshes from imaging (carotid bifurcation), gmsh / Abaqus imports</td></tr>
+</table></div>
+<p>Defined in <code>fem/elements.py</code> with shape functions, derivatives, Gauss rules, Abaqus face numbering
+(for element-based <code>*Surface</code> in .inp files) and VTK cell types. Apart from picking the face type, <code>fem/core.py</code>
+does not branch on the element type: it uses only <code>element_for(n_nodes)</code> and the arrays that returns.</p>
+
+<div class="box why"><span class="tag">Why these two</span>
+<ul>
+<li><b>hex8</b> is the most efficient element on structured tube meshes: few nodes, and a clean mesh through the wall thickness.
+Full 2×2×2 integration avoids hourglass modes. Volumetric locking is handled by the element formulation instead
+(sections 5–6), not by reduced integration, which would need hourglass control.</li>
+<li><b>tet10, not tet4.</b> Real carotid geometries come from image segmentation and are meshed with tetrahedra.
+tet4 has constant strain, is far too stiff in bending and locks badly when nearly incompressible. tet10 is quadratic
+and converges faster than hex8 on the tube (error ratio about 7 per refinement vs about 4, section 16). It also pairs
+with a constant pressure into a stable P2/P0 hybrid element.</li>
+<li><b>Curved edges.</b> In the structured generator the tet10 midside nodes are mapped from index space, so element edges
+follow the curved wall.</li>
+</ul></div>
+
+<!-- ============================================================ -->
+<h2 id="locking">5. Volumetric locking and the three formulations</h2>
+<p>Arterial tissue is nearly incompressible, with bulk modulus \(K \gg \mu\). With low-order elements, the displacement
+field cannot deform at constant volume at every Gauss point. The element becomes far too stiff: it <em>locks</em>.
+<code>System(..., element=...)</code> offers three formulations:</p>
+
+<div class="grid2">
+<div class="card"><h4><code>"standard"</code></h4>
+<p>\(\hat F = F\). Correct for compressible materials and the reference for patch tests. Locks as \(K/\mu\) grows.</p></div>
+<div class="card"><h4><code>"fbar"</code> (de Souza Neto et al. 1996)</h4>
+$$\hat F = \Big(\frac{J_0}{J}\Big)^{1/3} F,\quad J_0 = \det F(\text{centroid})$$
+<p>The volume change is taken at the element centre, so each element has one volumetric constraint instead of eight.
+Displacement-only, and works with any compressible material.</p></div>
+<div class="card"><h4><code>"hybrid"</code> (Q1/P0, P2/P0)</h4>
+$$\sigma_{\text{tot}} = \sigma(F) - q\,I,\quad \int_{\Omega_e}(J - J_{\text{target}})\,\mathrm{d}V = 0$$
+<p>One extra pressure unknown \(q\) per element enforces the volume <em>exactly</em> in the element average.
+The material returns only the deviatoric part.</p></div>
+</div>
+
+<h3>Evidence (thick-walled tube, <code>verification/fem_tube.py</code>)</h3>
+<p>Relative error of the inner radial displacement for three hex8 meshes (refinement ×2 each).
+Small pressure is compared with Lamé at \(K/\mu = 10^4\). Finite pressure 0.1 MPa is compared with the exact incompressible solution
+\(a/A = 1.442477\).</p>
+<div class="table-wrap"><table>
+<tr><th></th><th colspan="3">small pressure vs Lamé</th><th colspan="3">finite pressure, incompressible</th></tr>
+<tr><th>formulation</th><th>coarse</th><th>mid</th><th>fine</th><th>coarse</th><th>mid</th><th>fine</th></tr>
+<tr><td>standard</td><td class="num bad">92 %</td><td class="num bad">74 %</td><td class="num bad">42 %</td><td class="num bad">96 %</td><td class="num bad">83 %</td><td class="num bad">47 %</td></tr>
+<tr><td>fbar</td><td class="num">0.29 %</td><td class="num">0.070 %</td><td class="num good">0.014 %</td><td class="num">0.52 %</td><td class="num">0.12 %</td><td class="num good">0.018 %</td></tr>
+<tr><td>hybrid</td><td class="num">0.29 %</td><td class="num">0.070 %</td><td class="num good">0.014 %</td><td class="num">0.47 %</td><td class="num">0.12 %</td><td class="num good">0.030 %</td></tr>
+</table></div>
+
+<h3>Evidence in G&amp;R (<code>studies element_formulations</code>, artery, \(\lambda_\theta(1000\,\text{d})\))</h3>
+<div class="table-wrap"><table>
+<tr><th>mesh</th><th>standard K/C10 = 20</th><th>standard 1e3</th><th>fbar 1e2</th><th>fbar 1e3</th><th>hybrid, incompressible</th></tr>
+<tr><td>(2,15,1)</td><td class="num">1.182459</td><td class="num bad">1.118348 (locked)</td><td class="num">1.176521</td><td class="num bad">Newton fails</td><td class="num">1.172814</td></tr>
+<tr><td>(8,60,4)</td><td class="num">1.184032</td><td class="num">—</td><td class="num">1.175603</td><td class="num">—</td><td class="num">1.173133</td></tr>
+</table></div>
+<p>From coarse to fine, hybrid moves by \(3\times10^{-4}\) and fbar by \(9\times10^{-4}\).</p>
+
+<div class="box warn"><span class="tag">Why F-bar is not the default</span>
+<p>In a single load step F-bar is as accurate as hybrid. In long G&amp;R runs with \(K/\mu \gtrsim 10^3\), however, it develops
+hourglass-type modes and Newton eventually fails. The cause is that the volumetric part of the stress is controlled only by
+the centroid \(J_0\), and there is no hourglass stabilization. F-bar also still needs a finite \(K\): large \(K\) makes the
+system ill-conditioned and \(K\) is a fake parameter. Hybrid removes \(K\) altogether.</p></div>
+
+<div class="box ok"><span class="tag">Decision</span>
+<p><b>Use <code>hybrid</code> with <code>NeoHookeanInc</code> elastin for arterial G&amp;R.</b> Use <code>standard</code> only
+for compressible tests, and <code>fbar</code> only for moderately compressible materials in short runs.</p></div>
+
+<!-- ============================================================ -->
+<h2 id="hybrid">6. The hybrid element in detail</h2>
+<h3>Unknowns and equations</h3>
+<p>The unknown vector is \(x = (u, q)\), with one \(q_e\) per element appended after the displacement dofs
+(<code>n_x = n_dof + n_elem</code>, <code>_split</code>). Per element:</p>
+$$r_u = \sum_g w_g\, J\,(\sigma - q I)\,F^{-T} : \nabla_X N,\qquad
+r_q = -\sum_g w_g\,\big(J - J_{\text{target}}(\text{state})\big)$$
+$$K_e = \begin{pmatrix} K_{uu} & K_{uq}\\ K_{uq}^T & 0\end{pmatrix},\qquad
+K_{uq} = -\sum_g w_g\, J F^{-T} : \nabla_X N$$
+
+<h3>Why \(J_{\text{target}}\) and not \(J = 1\)</h3>
+<p>This is the central point of combining the hybrid element with G&amp;R. Growth adds or removes mass, so the tissue
+volume changes with \(F_g\). Remodeling (\(\det F_r = 1\)) and the incompressible elastic response (\(\det F_e = 1\)) do not change the volume, so</p>
+$$J = \det F_e\,\det F_r\,\det F_g = \det F_g \quad\Rightarrow\quad J_{\text{target}} = \det F_g = \frac{\rho_{\text{tot}}}{\rho_{\text{tot}}(0)}\ \ (\text{Eq. 6/7})$$
+<p>The model provides it (<code>hcmm.J_target(mixt) = det3(mixt.F_g)</code>), and the FE code calls it per Gauss point
+(<code>jax.vmap(self.J_target)</code>). Without a model, it defaults to 1. With \(J=1\), a growing incompressible wall
+could not thicken, and the pressure \(q\) would absorb the growth as a spurious hydrostatic stress.</p>
+
+<h3>Design choices</h3>
+<ul>
+<li><b>Constant pressure per element (P0).</b> This is the simplest pressure space. For tet10 (P2/P0) it is inf-sup stable.
+For hex8 (Q1/P0) it is the classic mean-dilatation element (Abaqus C3D8H). It is not strictly LBB-stable, but in practice
+it converges at the same rate as F-bar (table above) and shows no pressure checkerboarding on the tube meshes.</li>
+<li><b>Pressure kept as a global unknown, not condensed.</b> With an incompressible material, \(K_{qq} = 0\) (there is no
+volumetric energy). Static condensation needs \(K_{qq}^{-1}\), so \(q\) stays a Lagrange multiplier. The price is a saddle-point
+system with a zero diagonal block. That decides the linear solver (section 10).</li>
+<li><b>The material returns only the deviatoric stress.</b> <code>NeoHookeanInc.sigma</code> is \(2C_{10}(B - \tfrac{I_1}{3}I)\),
+and the pressure is "added by the solver". Exported total stresses (<code>fields</code>) subtract \(q_e I\) again, using
+<code>last_p</code>.</li>
+<li><b>Scaled pressure residual.</b> \(r_q\) has units of volume. Newton checks \(|r_q| &lt; \text{tol}\cdot V_e\)
+(<code>_p_scale</code> = element volume) instead of mixing it with forces.</li>
+<li><b>Warm start.</b> The converged pressures are stored in <code>last_p</code> and used as the initial guess for the next solve.
+In a G&amp;R step the pressure field changes little, so Newton starts close to the solution.</li>
+<li><b>Generality.</b> The same code builds Q1/P0 and P2/P0, because <code>q</code> enters only through \(J\) and
+\(F^{-T}\) at the Gauss points.</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="tangent">7. Element tangent by automatic differentiation</h2>
+<p>The tangent is <em>consistent</em> (the exact derivative of the discrete residual), so Newton converges quadratically.
+It is computed in two stages per Gauss point (<code>_elem_tangent</code>):</p>
+$$\mathbb C = \frac{\partial \sigma}{\partial \hat F}\Big|_{\hat F} \ \ (\texttt{jacfwd}\text{ of the model}),\qquad
+P(F, F_0) = \det F\,\Big(\sigma + \mathbb C : (\hat F(F,F_0) - \hat F) - qI\Big)\,F^{-T}$$
+$$K_{aibk} = \sum_g w_g\,\frac{\partial N_a}{\partial X_J}\Big[\frac{\partial P_{iJ}}{\partial F_{kL}}\frac{\partial N_b}{\partial X_L}
++ \frac{\partial P_{iJ}}{\partial F_{0,kL}}\frac{\partial N^0_b}{\partial X_L}\Big]$$
+<p>The second term exists only for F-bar (\(F_0\) is the centroid deformation gradient).</p>
+
+<div class="box why"><span class="tag">Why two stages instead of jacfwd of the element residual</span>
+<ul>
+<li><b>Cost.</b> The material call is the expensive part. For the implicit HCMM it contains a Newton solve over \((z,\rho)\)
+for all constituents. Differentiating the whole element residual would push 24 (hex8) or 30 (tet10) tangent directions
+through 8 material calls. Two stages need only 9 directions (\(\hat F\) is 3×3) per Gauss point, and the remaining
+geometric part (\(\det\), \(F^{-1}\), F-bar scaling) is cheap.</li>
+<li><b>Exactness is kept.</b> \(P\) is built from the <em>linearization</em> of \(\sigma\) about \(\hat F\). Its derivative at that
+point equals the true derivative, so nothing is approximated.</li>
+<li><b>F-bar for free.</b> Writing \(P\) as a function of \((F, F_0)\) gives the extra centroid coupling of F-bar
+automatically. There is no separate hand-written F-bar tangent.</li>
+<li><b>Hybrid block by hand.</b> \(K_{uq}\) is just \(-\int J F^{-T}:\nabla N\), so it is written out directly
+(<code>kuq</code>) and reused as \(K_{qu}^T\).</li>
+</ul></div>
+<p>The follower-pressure tangent of the faces is another <code>jacfwd</code> (<code>_tangent</code>). It is not
+symmetric (section 8).</p>
+
+<!-- ============================================================ -->
+<h2 id="loads">8. Loads and boundary conditions</h2>
+<h3>Follower pressure</h3>
+$$f_a = -p\sum_g w_g\,N_a\,\Big(\frac{\partial x}{\partial\eta_1}\times\frac{\partial x}{\partial\eta_2}\Big)$$
+<p>The pressure acts on the <em>deformed</em> lumen surface (<code>_face_force</code>), as blood pressure does. At 10–15 kPa
+the wall stretches by 15–25 %, so a dead load would be noticeably wrong. The load stiffness this adds is not
+symmetric. That is one reason the global system is solved as non-symmetric. Faces are oriented outward when the mesh is
+built (<code>mesh.outward</code>), so the sign is consistent for any import.</p>
+
+<h3>Dirichlet, dead forces, slip</h3>
+<p><code>BC(fixed, values, f_dead, p, slip)</code>. Slip conditions \(u\cdot n = 0\) (inclined supports, symmetry planes
+not aligned with the axes) are handled by a null-space basis (<code>Constraints</code>):</p>
+$$x = x_p + Z\,y,\qquad \text{solve}\ \ Z^T K Z\,\delta y = -Z^T r$$
+<p>For every constrained node, the rows of fixed dofs (\(e_k\)) and slip normals (\(n\)) form a small matrix \(C\).
+\(Z\) spans its null space (SVD), and \(x_p = C^+ v\). Without slip conditions, \(Z\) is just a selection of the free dofs.
+In that case the code skips the matrix product and assembles directly into the pattern of the free dofs.</p>
+<div class="box why"><span class="tag">Why a null space and not a penalty or Lagrange multipliers</span>
+<p>A penalty spoils the conditioning and is only approximate. Lagrange multipliers would add another saddle-point block on top
+of the hybrid one. The null-space method is exact, keeps the system as small as possible, and works equally for
+the adjoint (same \(Z\), transposed solve). It was needed for a tet10 cylinder rotated out of the coordinate axes
+(<code>element_formulations</code>, adjoint verified there).</p></div>
+
+<!-- ============================================================ -->
+<h2 id="assembly">9. Assembly</h2>
+<ul>
+<li><b>Element loop.</b> <code>jax.lax.map(..., batch_size=128)</code> over elements, with <code>vmap</code> over Gauss points inside.
+The batch size limits memory: a G&amp;R model under <code>jacfwd</code> creates large intermediates per Gauss point, so
+evaluating all elements at once can run out of memory on fine meshes, while one at a time would be slow.</li>
+<li><b>Sparse pattern cached.</b> The row and column indices of all element entries are built once
+(<code>_rows</code>, <code>_cols</code>). For each set of free dofs, <code>_pattern</code> computes the CSC structure and the map from element
+entries to non-zeros once. Each Newton iteration then only does one <code>np.bincount</code> over the tangent values. No
+COO→CSC conversion and no re-sorting happen per iteration.</li>
+<li><b>Residual assembly</b> is a scatter-add (<code>.at[conn].add</code>) inside the jitted residual.</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="linear">10. Linear solver</h2>
+<p>The global matrix is <b>non-symmetric</b> (follower pressure, F-bar) and, with the hybrid element, <b>indefinite with a zero
+diagonal block</b>. That rules out Cholesky and CG. The code uses a sparse LU (<code>LinearSolver</code>):</p>
+<div class="grid2">
+<div class="card"><h4>MKL PARDISO (default)</h4>
+<ul>
+<li><code>mtype=11</code> (real non-symmetric), METIS nested dissection;</li>
+<li><b>scaling + weighted matching</b> (<code>iparm[10], iparm[12]</code>): moves large entries onto the diagonal, which is needed for the
+zero \(K_{qq}\) block;</li>
+<li>pivot perturbation \(10^{-13}\);</li>
+<li>symbolic analysis reused while the sparsity pattern is the same;</li>
+<li>multithreaded only from 20k unknowns on (below that, thread overhead dominates); <code>KMP_BLOCKTIME=0</code> so idle MKL
+threads do not spin and slow JAX.</li>
+</ul></div>
+<div class="card"><h4>SciPy SuperLU (fallback)</h4>
+<ul>
+<li>used when <code>pypardiso</code> is not installed;</li>
+<li>ordering <code>COLAMD</code> for hybrid systems, <code>MMD_AT_PLUS_A</code> otherwise. The symmetric ordering assumes usable diagonal
+pivots, which the zero pressure block does not provide;</li>
+<li>serial.</li>
+</ul></div>
+</div>
+
+<h3>LU reuse: GMRES preconditioned with the previous factorization</h3>
+<p>Within a Newton loop, and between G&amp;R steps, \(K\) changes only a little. The solver therefore first runs right-preconditioned
+GMRES with the <em>last</em> LU as preconditioner. It refactorizes immediately if GMRES does not reach the tolerance. If GMRES converged
+but needed more than 5 iterations, the old LU has become a poor preconditioner, so it is dropped and the next solve refactorizes. The result is accepted only if
+\(\|Ax-b\| \le 10\cdot\text{tol}\,\|b\|\) with tol \(=10^{-12}\). A converged Newton therefore stays quadratic, and the adjoint stays exact.</p>
+<div class="box why"><span class="tag">Why</span>
+<p>The factorization is by far the most expensive linear-algebra step. A GMRES iteration costs one sparse mat-vec plus a pair of triangular solves.
+The same factorization also serves the transposed adjoint solve (<code>trans="T"</code>). Measured on vessel G&amp;R end to end,
+compared with plain SuperLU: 12k dofs 1.2× faster (linear part 1.9×), 60k dofs 1.5× (linear 2.6×), a single factorization 23× at 79k.
+What remains is mostly JAX material/tangent evaluation.</p></div>
+
+<!-- ============================================================ -->
+<h2 id="newton">11. Nonlinear solver: Newton and its fallbacks</h2>
+<p><code>_solve</code> tries three strategies in order. Each is more robust and more expensive than the one before:</p>
+<div class="flow">
+  <div class="step"><b>1. Newton</b>full steps; converged when \(\max|r_u|/s_u &lt; 10^{-10}\) and \(|r_q|/V_e &lt; 10^{-10}\), or the step is below \(10^{-13}L\)</div>
+  <div class="arrow">→</div>
+  <div class="step"><b>2. Load continuation</b>\(bc(s) = (1-s)\,bc_{\text{last}} + s\,bc\); halve the increment on failure, double on success</div>
+  <div class="arrow">→</div>
+  <div class="step"><b>3. Pseudo-transient continuation</b>\((K + \eta\,|\mathrm{diag}\,K|)\,\delta x = -r\), \(\eta\times0.3\) per accepted step, \(\times10\) on rejection</div>
+</div>
+<ul>
+<li><b>Residual scale.</b> \(s_u\) is the larger of the first residual and the dead forces. The criterion is therefore relative to the load.
+The pressure dofs are scaled by element volume, and in slip mode the scales are mapped through \(|Z|\) (<code>restrict_scale</code>).</li>
+<li><b>Divergence detection.</b> A non-finite residual, or one above \(10^8\), raises immediately and passes to the next stage.</li>
+</ul>
+<div class="box why"><span class="tag">Why pseudo-transient continuation</span>
+<p>In a G&amp;R step the <em>load does not change</em>; the material state does. When the wall snaps (buckling during growth),
+load continuation cannot help, because there is no load path to follow ("load unchanged, no continuation"). PTC adds artificial
+damping that is reduced towards zero. It stops only when the residual meets the same tolerance as Newton, i.e. at an exact equilibrium.
+The adjoint therefore needs no change. Verified on the shallow arch: from the limit state, Newton fails and relaxation reaches the arc-length end state to
+\(6\times10^{-12}\) in 20 iterations.</p></div>
+
+<!-- ============================================================ -->
+<h2 id="buckling">12. Buckling tools</h2>
+<ul>
+<li><b><code>arc_length(states, bc0, bc1)</code>.</b> Crisfield's cylindrical arc length along \(bc(\lambda) = (1-\lambda)bc_0 + \lambda bc_1\),
+through limit points. The constraint \(|\Delta u|^2 = \Delta l^2\) uses only <em>displacement</em> unknowns. Hybrid pressures have different
+units and would distort the arc. \(\partial r/\partial\lambda\) comes from one <code>jvp</code>. The step size adapts as
+\(\sqrt{\text{target}/\text{iterations}}\). The G&amp;R state is frozen, and the method is not differentiable.</li>
+<li><b><code>stability(u, states, bc)</code>.</b> Eigenvalues nearest 0 of \(Z^TKZ\,v = \mu\,B\,v\) by shift-invert. \(B\) is 1 on displacements
+and 0 on pressures, so the pressure multipliers produce no spurious eigenvalues. \(\mu &lt; 0\) means unstable.</li>
+</ul>
+<div class="box why"><span class="tag">Why</span>
+<p>Tortuosity and kinking of arteries are a buckling phenomenon under pressure and axial load, and a G&amp;R state can lose stability.
+A perfect tube stays on the unstable symmetric branch under Newton. The tools give the critical load and the mode, which can then be
+added as an imperfection. Verified: Euler column within 1.5 % (discretization and shear), arch arc length equal to displacement control
+to \(9\times10^{-10}\).</p></div>
+
+<!-- ============================================================ -->
+<h2 id="gr">13. The G&amp;R time loop</h2>
+$$\text{for each step: }\quad u_{n+1} = \texttt{equilibrium}(\text{state}_n, bc_{n+1}),\qquad \text{state}_{n+1} = \texttt{commit}(\text{state}_n, F(u_{n+1}))$$
+<ul>
+<li><b>Explicit HCMM (<code>hcmm.core</code>).</b> <code>sigma_solver</code> evaluates the stress with the old \(\rho\), \(F_r\) and \(F_g\).
+<code>commit</code> then applies the Euler update of \(\rho\) and \(F_r\) on the converged \(F\). This is the same order as the UMAT
+(stress with the old \(F_r^{-1}\), then the update). Equilibrium sees a purely elastic material, which is cheap (≈ 0.1–0.2 µs stress, 1.5–3 µs tangent per Gauss point).</li>
+<li><b>Implicit HCMM (<code>hcmm.core_implicit</code>).</b> <code>sigma_solver</code> itself solves for \((z^j, \rho^j)\) at step \(n+1\) for the trial \(F\).
+The stress is therefore the backward-Euler G&amp;R response, and <code>commit</code> only stores the result. The FE code does not change:
+its <code>jacfwd</code> of <code>sigma_solver</code> differentiates through the final Newton step of the inner solve, which gives the
+implicit-function-theorem tangent \(\mathrm d x/\mathrm dF = -J^{-1}\partial r/\partial F\). Cost per Gauss point ≈ 24–36 µs stress and 40–49 µs tangent.</li>
+<li><b><code>commit</code> pass-through.</b> Leaves the model does not change (material parameters, fiber directions, \(\sigma_{\text{pre}}\))
+are detected once from the jaxpr. They keep their input buffers instead of being copied every step. <code>jax.checkpoint</code> on the
+commit keeps the reverse pass from storing its intermediates.</li>
+</ul>
+<div class="box why"><span class="tag">Why staggered (equilibrium, then commit) and not monolithic</span>
+<p>The G&amp;R state is local to each Gauss point. Solving it inside the material call (implicit) or after equilibrium (explicit)
+keeps the global system the size of the mechanics only. A monolithic global system with \(\rho\) and \(F_r\) as unknowns at every Gauss point
+would multiply the system size without adding accuracy.</p></div>
+
+<!-- ============================================================ -->
+<h2 id="adjoint">14. Adjoint: gradients through the simulation</h2>
+<p><code>equilibrium</code> is a <code>jax.custom_vjp</code>. The forward pass is the full Newton solve (with all fallbacks).
+The backward pass does not differentiate through the Newton iterations. It uses the converged state:</p>
+$$(Z^TKZ)^T\,y = Z^T\bar u,\qquad \lambda = Z\,y,\qquad
+\overline{\text{state}} = -\lambda\cdot\frac{\partial r}{\partial\,\text{state}},\qquad \bar p = -\lambda\cdot\frac{\partial r}{\partial p}$$
+<p>The two products \(\lambda\cdot\partial r/\partial(\cdot)\) are one <code>jax.vjp</code> of the residual (<code>residual_vjp</code>).</p>
+<div class="box why"><span class="tag">Why</span>
+<ul>
+<li><b>Exact and cheap.</b> One transposed linear solve per step, reusing the LU. Differentiating through the Newton iterations would store
+every iterate and give the derivative of the <em>iteration</em>, not of the solution.</li>
+<li><b>Independent of how the solution was found.</b> Continuation and PTC do not affect the gradient, because only \(r(x^*)=0\) matters.</li>
+<li><b>Memory over many steps.</b> <code>run(..., checkpoint=k)</code> wraps blocks of \(k\) steps in a <code>custom_vjp</code> that recomputes
+the block in the reverse pass. Only every \(k\)-th state is stored, so memory scales as \(n/k\) instead of \(n\).</li>
+</ul></div>
+<p>Results: adjoint vs central finite differences \(10^{-9}\) to \(10^{-11}\) (hex8, tet10 hybrid with inclined supports, hybrid box).
+On the artery (8,60,4), 100 steps: forward 36 s; value plus 9-parameter gradient 83 s, against about 640 s for finite differences.
+Identifying \((k_1, k_+)\) from \(\lambda_\theta(t)\) recovers the true values (loss \(3\times10^{-23}\)).</p>
+
+<!-- ============================================================ -->
+<h2 id="geometry">15. Geometry tools for real vessels</h2>
+<h3>Wall basis from two Laplace problems (<code>wall_basis</code>)</h3>
+$$\nabla^2\phi_r = 0,\ \phi_r|_{\text{inner}}=0,\ \phi_r|_{\text{outer}}=1;\qquad
+\nabla^2\phi_z = 0,\ \phi_z|_{\text{inlets}}=0,\ \phi_z|_{\text{outlets}}=1$$
+$$e_r = \frac{\nabla\phi_r}{|\nabla\phi_r|},\quad e_z = \frac{\nabla\phi_z - (\nabla\phi_z\cdot e_r)e_r}{|\cdot|},\quad e_\theta = e_z\times e_r$$
+<p>Fiber directions (\(e_\theta\), \(e_z\), \(\pm\alpha\)) and the growth direction \(e_r\) need a local wall frame at every Gauss point.
+A segmented carotid has no analytic cylindrical coordinates. Two scalar Laplace solves on the same mesh and elements give a smooth frame
+on any geometry, including bends and bifurcations. On the bent stenotic tube, the G&amp;R result with the Laplace frame differs from the
+analytic frame by \(10^{-5}\).</p>
+
+<h3>Prestress (in <code>studies/artery.py</code>, using <code>fem.anderson</code>)</h3>
+<p>The imaged geometry is already loaded. The elastin deposition stretch is updated, \(G \leftarrow F\,G\), until the mesh is in
+equilibrium at \(u = 0\) under the homeostatic pressure (Maes UMAT_DEP). Plain fixed-point iteration converges slowly, so it is
+Anderson-accelerated (type II, depth 5). On the bent stenotic tube this takes 23 iterations. The loop runs through
+<code>equilibrium</code>, so gradients pass through the prestress as well.</p>
+
+<h3>Mesh I/O and output</h3>
+<p>Structured generators (box, quarter cylinder, half tube, bent stenotic tube), Abaqus <code>.inp</code> (C3D8*, C3D10*, node sets,
+element sets, element-based surfaces) and gmsh <code>.msh</code> 2.2 / 4.1 read and write. Faces are reoriented outward on import.
+Output is VTK <code>.vtu</code> plus <code>.pvd</code> time series for ParaView (<code>VTKSeries</code>), with Gauss-point fields averaged to
+nodes and elements (<code>fields</code>, <code>to_nodes</code>).</p>
+
+<!-- ============================================================ -->
+<h2 id="verification">16. Verification summary</h2>
+<div class="table-wrap"><table>
+<tr><th>test</th><th>what it checks</th><th>result</th></tr>
+<tr><td>patch tests, homogeneous deformations (<code>fem_analytic</code>)</td><td>uniaxial, equibiaxial (hybrid), shear, dilatation, general \(F_0\); distorted hex8 and tet10</td><td class="good">exact to 1e-10 … 1e-16</td></tr>
+<tr><td>Lamé tube (<code>fem_tube</code> 1, 5)</td><td>convergence order, pressure, symmetry BCs</td><td>hex8 ratio ≈ 4 (O(h²)), tet10 ≈ 7</td></tr>
+<tr><td>formulations (<code>fem_tube</code> 3, 4)</td><td>locking at \(K/\mu = 10^4\), incompressible finite strain</td><td>standard locks 42–96 %; fbar and hybrid converge</td></tr>
+<tr><td>tet10 hybrid P2/P0 (<code>fem_tube</code> 6)</td><td>incompressible finite pressure</td><td>4.4e-5 on the finest mesh</td></tr>
+<tr><td>buckling</td><td>Euler column, arch snap-through, relaxation</td><td>1.5 % (discretization), 9e-10, 6e-12</td></tr>
+<tr><td>FE vs material point (<code>fe_vs_material_point</code>)</td><td>one (hybrid) hex8 with G&amp;R vs the 0D solver</td><td>≤ 4e-11</td></tr>
+<tr><td>artery G&amp;R (<code>element_formulations</code>)</td><td>hex8 vs tet10, Laplace vs analytic basis</td><td>1e-4, 1e-5</td></tr>
+<tr><td>adjoint</td><td>vs central FD</td><td>1e-9 … 1e-11</td></tr>
+</table></div>
+<p>Run them from the repository root: <code>python -m verification.fem_tube</code>, <code>.fem_analytic</code>, <code>.buckling</code>,
+<code>.mesh_io</code>. Logs are in <code>verification/results/</code>.</p>
+
+<!-- ============================================================ -->
+<h2 id="limits">17. Known limitations</h2>
+<ul>
+<li><b>F-bar has no hourglass stabilization.</b> It is unusable for \(K/\mu \gtrsim 10^3\) in long G&amp;R runs. Hybrid is the answer, so this was not pursued.</li>
+<li><b>Q1/P0 is not LBB-stable in theory.</b> No pressure modes have been seen on the tube meshes. On badly shaped or highly constrained hex meshes,
+check \(q\) for checkerboarding, or use tet10 (P2/P0).</li>
+<li><b>Quasi-static only.</b> There is no inertia, no fluid coupling and no wall-shear stimulus. The pressure is constant per phase.</li>
+<li><b>The FCMM does not run in the FE code</b> (memory for the per-Gauss-point cohort history).</li>
+<li><b>Arc length and stability freeze the G&amp;R state</b> and are not differentiable.</li>
+<li><b>Cost</b> is dominated by the JAX material and tangent evaluation, especially with the implicit HCMM, not by the linear solver.</li>
+</ul>
+</main>
+</div>
+</body>
+</html>

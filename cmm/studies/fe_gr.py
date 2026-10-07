@@ -178,3 +178,52 @@ def element_formulations(steps=100):
             f"{'PASS' if err < 1e-5 else 'FAIL'}")
 
     log.save(outputs("fe_gr/element_formulations", "element_formulations.txt")[0])
+
+
+# ---------- solution verification: mesh and time step convergence of the artery G&R (GCI) ----------
+
+def solution_verification(days=1000.0):
+    """Discretization error of lambda_theta(end) and wall area(end), artery model E, Roache / Celik (2008):
+
+        p = log((f3 - f2) / (f2 - f1)) / log r,   f_ext = f1 + (f1 - f2) / (r^p - 1),
+        GCI = 1.25 |f1 - f2| / |f1| / (r^p - 1),   asymptotic range: GCI_23 / (r^p GCI_12) ~ 1
+    (f1 finest, r = 2); meshes (n_r, n_theta, 1) (plane strain, axially uniform), steps ds = 40 ... 5 days"""
+    log = Log()
+
+    def gci(label, f):
+        f3, f2, f1 = f[-3:]
+        p = np.log(abs((f3 - f2) / (f2 - f1))) / np.log(2.0)
+        ext = f1 + (f1 - f2) / (2 ** p - 1)
+        g12 = 1.25 * abs((f1 - f2) / f1) / (2 ** p - 1)
+        g23 = 1.25 * abs((f2 - f3) / f2) / (2 ** p - 1)
+        log(f"    {label:13s} " + "  ".join(f"{v:.7f}" for v in f) + f"   order {p:.2f}  extrapolated {ext:.7f}"
+            f"  GCI_fine {100 * g12:.3f} %  asymptotic {g23 / (2 ** p * g12):.3f}")
+
+    for element, elastin in (("standard", "compressible"), ("hybrid", "incompressible")):
+        log(f"1) mesh refinement, {element} ({elastin} elastin), ds = 10 d, {days:g} days")
+        ends = []
+        for n in ((2, 15, 1), (4, 30, 1), (8, 60, 1), (16, 120, 1)):
+            m, sysm, Qloc = artery_mesh(n, element)
+            t0 = time.time()
+            lam, area = artery_simulate(m, sysm, Qloc, artery_par(), n_steps=int(days / 10), elastin=elastin)
+            ends.append((float(lam[-1]), float(area[-1])))
+            log(f"    n={n}  lambda_theta {ends[-1][0]:.7f}  area {ends[-1][1]:.6f} mm^2  ({time.time() - t0:.0f}s)")
+        gci("lambda_theta", [e[0] for e in ends])
+        gci("area", [e[1] for e in ends])
+
+    log(f"\n2) time step refinement, standard, mesh (4, 30, 1), {days:g} days (explicit HCMM: order 1 expected)")
+    ends = []
+    m, sysm, Qloc = artery_mesh((4, 30, 1))
+    for ds in (40.0, 20.0, 10.0, 5.0, 2.5):
+        t0 = time.time()
+        lam, area = artery_simulate(m, sysm, Qloc, artery_par(), n_steps=int(days / ds), ds=ds)
+        ends.append((float(lam[-1]), float(area[-1])))
+        log(f"    ds={ds:4.1f} d  lambda_theta {ends[-1][0]:.7f}  area {ends[-1][1]:.6f} mm^2  ({time.time() - t0:.0f}s)")
+    gci("lambda_theta", [e[0] for e in ends])
+    gci("area", [e[1] for e in ends])
+    f = np.array([e[0] for e in ends])
+    ext = f[-1] + (f[-1] - f[-2]) / (2 ** np.log2((f[-3] - f[-2]) / (f[-2] - f[-1])) - 1)
+    log("    lambda_theta error vs extrapolation: " + "  ".join(f"ds={ds:g}: {abs(v / ext - 1):.1e}"
+                                                         for ds, v in zip((40, 20, 10, 5, 2.5), f)))
+
+    log.save(outputs("fe_gr/solution_verification", "solution_verification.txt")[0])

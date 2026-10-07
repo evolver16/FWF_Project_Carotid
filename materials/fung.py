@@ -65,9 +65,11 @@ class Fung:
 
     @jit
     def sigma(self, F):
-        """sigma = (dW/dF) F^T = 2 (dW/dI4) (F M)(x)(F M)   (Eq. 29)"""
-        dW_dF = jax.grad(self.Psi_F)(F)
-        return dW_dF @ F.T
+        """sigma = (dW/dF) F^T = 2 (dW/dI4) (F M)(x)(F M),  dW/dI4 = k1 (I4 - 1) exp(k2 (I4 - 1)^2) if I4 > 1   (Eq. 29)"""
+        FM = F @ self.M
+        e = jnp.dot(FM, FM) - 1.0
+        dW_dI4 = jnp.where(e > 0.0, self.k1 * e * jnp.exp(self.k2 * e ** 2), 0.0)
+        return 2.0 * dW_dI4 * jnp.outer(FM, FM)
 
     @staticmethod
     @jit

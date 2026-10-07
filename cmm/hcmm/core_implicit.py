@@ -21,7 +21,6 @@ import jax
 import jax.numpy as jnp
 from jax import jit
 from jax.flatten_util import ravel_pytree
-from jax.scipy.linalg import expm
 from fem.pytree import pytree
 from fem.tensor3 import det3, inv3, polar_rotation
 
@@ -94,26 +93,26 @@ class mixture:
         self.F_g = growth.F_g(self.rho_tot / self.rho_tot_0)
 
 
-def sigma_f_rel(c, sigma_f, rho_tot, rho_tot_0, eps=1e-9):
-    """rel = [rho_tot sigma_f(s) - rho_tot(0) sigma_f(0)] / [rho_tot(0) sigma_f(0)]   (Eq. 24)
-
-    Denominator dropped when sigma_f(0) = 0.
-    """
-    ref = rho_tot_0 * c.sigma_f_pre
-    denom = jnp.where(jnp.abs(ref) < eps, 1.0, ref)
-    return (rho_tot * sigma_f - ref) / denom
-
-
 def flow_basis(c):
     """directions B_i in which F_r may change: 5 deviatoric, or the material's own (Fung: dev(M(x)M))"""
     return getattr(c.material, "flow_basis", DEV_BASIS)
 
 
 def F_r_new(c, z):
-    """F_r(n+1) = exp(z_i B_i) F_r(n), closed form if the material provides flow_exp   (Eq. 28)"""
+    """F_r(n+1) = exp(Z) F_r(n),  Z = z_i B_i   (Eq. 28)
+    closed form if the material provides flow_exp, else exp(Z) = [sum_k=0..12 (Z/16)^k / k!]^16
+    """
     if hasattr(c.material, "flow_exp"):
         return c.material.flow_exp(z) @ c.F_r
-    return expm(jnp.tensordot(z, flow_basis(c), 1)) @ c.F_r
+    A = jnp.tensordot(z, flow_basis(c), 1) / 16.0
+    exp_Z = jnp.eye(3)
+    term = jnp.eye(3)
+    for k in range(1, 13):
+        term = term @ A / k
+        exp_Z = exp_Z + term
+    for _ in range(4):
+        exp_Z = exp_Z @ exp_Z
+    return exp_Z @ c.F_r
 
 
 def mismatch(c, F, F_g, sigma_ref, z):
@@ -129,7 +128,9 @@ Step = namedtuple("Step", "F F_g R J rho_tot rho_tot_0 ds")
 
 @jit
 def sigma_solver(mixt, F):
-    """growth and remodeling of all constituents for this F, then sigma_tot = sum_j (rho^j/J) sigma^j, the inner solve guesses a rho and z, which are the per constituent changes need to calculate backward euler"""
+    """Newton on x = (z^j, rho^j) of all constituents, then sigma_tot = sum_j (rho^j/J) sigma^j   (Eq. 17, 27)
+    x = x* - J(x*)^-1 r(x*, F),  x*, J frozen:  dx/dF = -J^-1 dr/dF   (implicit function theorem)
+    """
     R = polar_rotation(F)
     J = det3(F)
 
@@ -156,36 +157,46 @@ def sigma_solver(mixt, F):
             offset += n + 1
     rho_columns = np.array(rho_columns, dtype=int)
 
-    def residual(x):
+    def residual(x, mixt, F, R, J):
         states = constituent_states(mixt, F, R, J, unflatten(x), slack)
         return ravel_pytree([s.residual for s in states])[0]
 
-    def jacobian(x):
-        """z^a only enters the residual of a, rho^b enters all of them through F_g"""
-        def residual_of_rho(rho):
-            return residual(x.at[rho_columns].set(rho))
-
-        jac = jnp.zeros((x.size, x.size)).at[:, rho_columns].set(jax.jacfwd(residual_of_rho)(x[rho_columns]))
+    def jacobian(x, mixt, F, R, J):
+        """z^a only enters the residual of a, rho^b (b != a) only through rho_tot (F_g, turnover law):
+        per constituent d r^a / d(z^a, rho^a, rho_others),  d r^a / d rho^b = d r^a / d rho_others
+        """
         unknowns = unflatten(x)
-        step = growth_step(mixt, F, R, J, unknowns)
+        rho_tot = growth_step(mixt, F, R, J, unknowns).rho_tot
+        coupled = len(blocks) > 1
+        jac = jnp.zeros((x.size, x.size))
         rows = iter(blocks)
         for c, u, s in zip(mixt.constituents, unknowns, slack):
             if u is None:
                 continue
+            n = u[0].shape[0]
+            rho_others = rho_tot - u[1]
 
-            def own_residual(z):
-                return constituent_state(c, (z, u[1]), step, s).residual
+            def own_residual(v):
+                rho_tot_v = v[n] + (v[n + 1] if coupled else rho_others)
+                step = Step(F=F, F_g=mixt.growth.F_g(rho_tot_v / mixt.rho_tot_0), R=R, J=J,
+                            rho_tot=rho_tot_v, rho_tot_0=mixt.rho_tot_0, ds=mixt.ds)
+                return constituent_state(c, (v[:n], v[n]), step, s).residual
 
+            v = jnp.concatenate([u[0], u[1][None]] + ([rho_others[None]] if coupled else []))
+            d = jax.jacfwd(own_residual)(v)
             block = next(rows)
-            jac = jac.at[np.ix_(block, block[:-1])].set(jax.jacfwd(own_residual)(u[0]))
+            jac = jac.at[np.ix_(block, block)].set(d[:, :n + 1])
+            if coupled:
+                others = np.setdiff1d(rho_columns, block[-1])
+                jac = jac.at[np.ix_(block, others)].set(jnp.broadcast_to(d[:, n + 1:], (n + 1, others.size)))
         return jac
-
-    def solve(f, x):
-        return newton(f, jacobian, x)
 
     solution = guess
     if flat_guess.size:
-        solution = unflatten(jax.lax.custom_root(residual, flat_guess, solve, tangent_solve))
+        frozen = jax.lax.stop_gradient((mixt, F, R, J))
+        x = newton(residual, jacobian, jax.lax.stop_gradient(flat_guess), frozen)
+        x = x - jnp.linalg.solve(jacobian(x, *frozen), residual(x, mixt, F, R, J))
+        solution = unflatten(x)
 
     states = constituent_states(mixt, F, R, J, solution, slack)
 
@@ -245,23 +256,21 @@ def constituent_state(c, unknowns, step, slack):
     return ConstituentState(rho, F_r, sigma, sigma_f, jnp.append(remodeling, growth))
 
 
-def newton(residual, jacobian, x, tol=1e-12, max_iter=25):
-    """x <- x - J(x)^-1 r(x) until the relative step is below tol"""
+def newton(residual, jacobian, x, args, tol=1e-8, max_iter=25):
+    """x <- x - J(x)^-1 r(x) until max |r| < tol (1 + max |r(x_0)|)"""
     def step(state):
-        x, _, it = state
-        dx = -jnp.linalg.solve(jacobian(x), residual(x))
-        return x + dx, jnp.max(jnp.abs(dx)) / (1.0 + jnp.max(jnp.abs(x))), it + 1
+        x, r, it = state
+        x = x - jnp.linalg.solve(jacobian(x, *args), r)
+        return x, residual(x, *args), it + 1
+
+    r = residual(x, *args)
+    tol = tol * (1.0 + jnp.max(jnp.abs(r)))
 
     def not_converged(state):
-        _, rel_step, it = state
-        return (rel_step > tol) & (it < max_iter)
+        _, r, it = state
+        return (jnp.max(jnp.abs(r)) > tol) & (it < max_iter)
 
-    return jax.lax.while_loop(not_converged, step, (x, jnp.asarray(jnp.inf, x.dtype), 0))[0]
-
-
-def tangent_solve(residual_linear, rhs):
-    """implicit-function derivative of the root: (dr/dx)^-1 rhs"""
-    return jnp.linalg.solve(jax.jacobian(residual_linear)(rhs), rhs)
+    return jax.lax.while_loop(not_converged, step, (x, r, 0))[0]
 
 
 def J_target(mixt):

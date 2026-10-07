@@ -31,9 +31,11 @@ class NeoHookean:
 
     @jit
     def sigma(self, F):
-        """sigma = (dW/dF) F^T   (Eq. 29)"""
-        dW_dF = jax.grad(self.Psi)(F)
-        return dW_dF @ F.T
+        """sigma = (dW/dF) F^T = C10 J^(-2/3) (2 B - 2/3 tr(B) I) + K (J - 1) J I,  B = F F^T   (Eq. 29)"""
+        B = F @ F.T
+        J = det3(F)
+        return (self.C10 * J ** (-2.0 / 3.0) * (2.0 * B - 2.0 / 3.0 * jnp.trace(B) * jnp.eye(3))
+                + self.K * (J - 1.0) * J * jnp.eye(3))
 
     @staticmethod
     @jit
