@@ -17,6 +17,16 @@ class Fung:
     def P(self):
         return jnp.outer(self.M, self.M)
 
+    @property
+    def flow_basis(self):
+        """Z = z dev(M(x)M): remodeling along the fiber only (hcmm.core_implicit)"""
+        return (self.P - jnp.eye(3) / 3)[None]
+
+    @jit
+    def flow_exp(self, z):
+        """exp(z dev(M(x)M)) = e^(2z/3) M(x)M + e^(-z/3) (I - M(x)M):  lam_r(n+1) = lam_r(n) e^(2z/3)"""
+        return jnp.exp(2.0 * z[0] / 3.0) * self.P + jnp.exp(-z[0] / 3.0) * (jnp.eye(3) - self.P)
+
     def tree_flatten(self):
         return (self.k1, self.k2, self.M), None
 

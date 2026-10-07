@@ -1,0 +1,799 @@
+<mxfile host="app.diagrams.net">
+  <diagram id="mindmap" name="Overview">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1240" pageHeight="980" math="1" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="hcmm" value="&lt;b&gt;Homogenized CMM&lt;/b&gt;&lt;br&gt;(Cyron et al. 2016)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=20;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="30" y="430" width="210" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="mot" value="&lt;b&gt;Motivation&lt;/b&gt;: CMM stores the whole history \(\mathbf F(\tau)\)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=20;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="280" y="20" width="240" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="e_mot" style="edgeStyle=entityRelationEdgeStyle;curved=1;endArrow=none;html=1;strokeWidth=2;strokeColor=#9673a6;" edge="1" parent="1" source="hcmm" target="mot">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="hom" value="&lt;b&gt;Temporal homogenization&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=20;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="280" y="125" width="240" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="e_hom" style="edgeStyle=entityRelationEdgeStyle;curved=1;endArrow=none;html=1;strokeWidth=2;strokeColor=#9673a6;" edge="1" parent="1" source="hcmm" target="hom">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="hom1" value="per increment \(\tau\): \(\mathbf F = \mathbf F_e^{(\tau)}\mathbf F_{gr}^{(\tau)}\), \(\mathbf F_{gr}^{(\tau)} = \mathbf G^{-1}\mathbf F(\tau)\)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=20;fillColor=#f4eef7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="560" y="80" width="320" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="e_hom1" style="edgeStyle=entityRelationEdgeStyle;curved=1;endArrow=none;html=1;strokeWidth=2;strokeColor=#9673a6;" edge="1" parent="1" source="hom" target="hom1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="hom2" value="one \(\mathbf F_{gr}^j = \mathbf F_r^j\mathbf F_g\) per constituent instead of per increment" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=20;fillColor=#f4eef7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="560" y="135" width="320" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="e_hom2" style="edgeStyle=entityRelationEdgeStyle;curved=1;endArrow=none;html=1;strokeWidth=2;strokeColor=#9673a6;" edge="1" parent="1" source="hom" target="hom2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="hom3" value="assumption: turnover keeps \(W^j\), changes only the mean stress-free configuration" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=20;fillColor=#f4eef7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="560" y="190" width="320" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="e_hom3" style="edgeStyle=entityRelationEdgeStyle;curved=1;endArrow=none;html=1;strokeWidth=2;strokeColor=#9673a6;" edge="1" parent="1" source="hom" target="hom3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="kin" value="&lt;b&gt;Kinematics&lt;/b&gt; \(\mathbf F_e^j = \mathbf F\,\mathbf F_g^{-1}(\mathbf F_r^j)^{-1}\)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=20;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="280" y="265" width="240" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="e_kin" style="edgeStyle=entityRelationEdgeStyle;curved=1;endArrow=none;html=1;strokeWidth=2;strokeColor=#9673a6;" edge="1" parent="1" source="hcmm" target="kin">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="laws" value="&lt;b&gt;Evolution laws&lt;/b&gt; (per constituent \(j\))" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=20;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="280" y="410" width="240" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="e_laws" style="edgeStyle=entityRelationEdgeStyle;curved=1;endArrow=none;html=1;strokeWidth=2;strokeColor=#9673a6;" edge="1" parent="1" source="hcmm" target="laws">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="prod" value="Production \(\dot\rho_+^j(\boldsymbol\sigma^j)\)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=20;fillColor=#f4eef7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="560" y="325" width="320" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="e_prod" style="edgeStyle=entityRelationEdgeStyle;curved=1;endArrow=none;html=1;strokeWidth=2;strokeColor=#9673a6;" edge="1" parent="1" source="laws" target="prod">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="rem" value="Removal \(\dot\rho_-^j(\boldsymbol\sigma^j)\), e.g. \(-\rho^j/T^j\)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=20;fillColor=#f4eef7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="560" y="375" width="320" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="e_rem" style="edgeStyle=entityRelationEdgeStyle;curved=1;endArrow=none;html=1;strokeWidth=2;strokeColor=#9673a6;" edge="1" parent="1" source="laws" target="rem">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="grow" value="Growth \(\mathbf F_g(\rho_{tot}/\rho_{tot,0})\): rotation-free, \(\det\mathbf F_g = J_g\), isotropic or along \(\mathbf a\), no own ODE" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=20;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="560" y="425" width="320" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="e_grow" style="edgeStyle=entityRelationEdgeStyle;curved=1;endArrow=none;html=1;strokeWidth=2;strokeColor=#d79b00;" edge="1" parent="1" source="laws" target="grow">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <UserObject label="Remodeling: \(\dot{\boldsymbol\sigma}_r^j = -\frac{\dot\rho_+^j}{\rho^j}(\boldsymbol\sigma^j - \boldsymbol\sigma_{pre}^j) = -\frac{\partial\boldsymbol\sigma^j}{\partial\mathbf F_e}:(\mathbf F_e\mathbf L_r^j)\) → \(\mathbf F_r^j\)" link="data:page/id,turnover" id="remod">
+          <mxCell style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=20;fillColor=#f4eef7;strokeColor=#9673a6;" vertex="1" parent="1">
+            <mxGeometry x="560" y="490" width="320" height="55" as="geometry" />
+          </mxCell>
+        </UserObject>
+        <mxCell id="e_remod" style="edgeStyle=entityRelationEdgeStyle;curved=1;endArrow=none;html=1;strokeWidth=2;strokeColor=#9673a6;" edge="1" parent="1" source="laws" target="remod">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="pre" value="&lt;b&gt;Prestress&lt;/b&gt; \(\boldsymbol\sigma_{pre}^j\) from \(\mathbf G^j\)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=20;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="280" y="585" width="240" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="e_pre" style="edgeStyle=entityRelationEdgeStyle;curved=1;endArrow=none;html=1;strokeWidth=2;strokeColor=#9673a6;" edge="1" parent="1" source="hcmm" target="pre">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="pdep" value="deposition: \(\frac{J_g}{J}\mathbf R\boldsymbol\sigma^j(0)\mathbf R^T\) (\(\mathbf F_e \to \mathbf G\), as CMM)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=20;fillColor=#f4eef7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="560" y="560" width="320" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="e_pdep" style="edgeStyle=entityRelationEdgeStyle;curved=1;endArrow=none;html=1;strokeWidth=2;strokeColor=#9673a6;" edge="1" parent="1" source="pre" target="pdep">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="pini" value="initial (Maes Eq. 17): \(\mathbf R\boldsymbol\sigma^j(0)\mathbf R^T\)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=20;fillColor=#f4eef7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="560" y="610" width="320" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="e_pini" style="edgeStyle=entityRelationEdgeStyle;curved=1;endArrow=none;html=1;strokeWidth=2;strokeColor=#9673a6;" edge="1" parent="1" source="pre" target="pini">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="homeo" value="&lt;b&gt;Homeostasis&lt;/b&gt; \(\dot\rho_+^j = -\dot\rho_-^j = \rho^j/T^j\), \(\boldsymbol\sigma^j = \boldsymbol\sigma_{pre}^j\)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=20;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="280" y="670" width="240" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="e_homeo" style="edgeStyle=entityRelationEdgeStyle;curved=1;endArrow=none;html=1;strokeWidth=2;strokeColor=#9673a6;" edge="1" parent="1" source="hcmm" target="homeo">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <UserObject label="&lt;b&gt;Time integration&lt;/b&gt; of \(\mathbf F_r^j\)" link="data:page/id,euler" id="time">
+          <mxCell style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=20;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+            <mxGeometry x="280" y="760" width="240" height="45" as="geometry" />
+          </mxCell>
+        </UserObject>
+        <mxCell id="e_time" style="edgeStyle=entityRelationEdgeStyle;curved=1;endArrow=none;html=1;strokeWidth=2;strokeColor=#9673a6;" edge="1" parent="1" source="hcmm" target="time">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="fwd" value="forward: explicit, one-step lag, \(ds \ll T\)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=20;fillColor=#f4eef7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="560" y="735" width="320" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="e_fwd" style="edgeStyle=entityRelationEdgeStyle;curved=1;endArrow=none;html=1;strokeWidth=2;strokeColor=#9673a6;" edge="1" parent="1" source="time" target="fwd">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="bwd" value="backward: local Newton, stable for any \(ds\)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=20;fillColor=#f4eef7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="560" y="785" width="320" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="e_bwd" style="edgeStyle=entityRelationEdgeStyle;curved=1;endArrow=none;html=1;strokeWidth=2;strokeColor=#9673a6;" edge="1" parent="1" source="time" target="bwd">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <UserObject label="&lt;b&gt;Algorithm&lt;/b&gt; (one time step)" link="data:page/id,algorithm" id="algo">
+          <mxCell style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=20;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+            <mxGeometry x="280" y="845" width="240" height="40" as="geometry" />
+          </mxCell>
+        </UserObject>
+        <mxCell id="e_algo" style="edgeStyle=entityRelationEdgeStyle;curved=1;endArrow=none;html=1;strokeWidth=2;strokeColor=#9673a6;" edge="1" parent="1" source="hcmm" target="algo">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="pl" value="Plasticity view (Sempértegui &amp;amp; Avril 2023)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=20;fillColor=#f5f5f5;strokeColor=#999999;fontColor=#666666;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="280" y="905" width="240" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="e_pl" style="edgeStyle=entityRelationEdgeStyle;curved=1;endArrow=none;html=1;strokeWidth=2;strokeColor=#999999;dashed=1;" edge="1" parent="1" source="hcmm" target="pl">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="x_cmm" value="≈ CMM stress = mass average over all cohorts (cmm.drawio)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=12;dashed=1;fillColor=#e6f4f5;strokeColor=#0e8088;fontColor=#0e8088;" vertex="1" parent="1">
+          <mxGeometry x="910" y="20" width="280" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="e_x_cmm" style="curved=1;endArrow=none;html=1;strokeWidth=1.5;dashed=1;strokeColor=#0e8088;" edge="1" parent="1" source="mot" target="x_cmm">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="x_kin" value="≈ same form as \(\mathbf F = \mathbf F_e\mathbf F_g\) (kinematic_growth.drawio)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=12;dashed=1;fillColor=#e6f4f5;strokeColor=#0e8088;fontColor=#0e8088;" vertex="1" parent="1">
+          <mxGeometry x="910" y="80" width="280" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="e_x_kin" style="curved=1;endArrow=none;html=1;strokeWidth=1.5;dashed=1;strokeColor=#0e8088;" edge="1" parent="1" source="hom1" target="x_kin">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="x_pl" value="≈ backward Euler, yield surface = point" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=12;dashed=1;fillColor=#e6f4f5;strokeColor=#0e8088;fontColor=#0e8088;" vertex="1" parent="1">
+          <mxGeometry x="560" y="905" width="320" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="e_x_pl" style="curved=1;endArrow=none;html=1;strokeWidth=1.5;dashed=1;strokeColor=#0e8088;" edge="1" parent="1" source="pl" target="x_pl">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="algorithm" name="Algorithm">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1140" pageHeight="780" math="1" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="t_laws" value="Evolution laws (per constituent \(j\))" style="text;html=1;align=left;verticalAlign=middle;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="10" width="500" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="prod" value="Production \(\dot\rho_+^j(\boldsymbol\sigma^j)\)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=12;align=left;spacingLeft=8;spacingRight=8;fillColor=#f4eef7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="40" y="45" width="230" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="rem" value="Removal \(\dot\rho_-^j(\boldsymbol\sigma^j)\)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=12;align=left;spacingLeft=8;spacingRight=8;fillColor=#f4eef7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="285" y="45" width="230" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="grow" value="Growth \(\mathbf F_g(\rho_{tot}/\rho_{tot,0})\)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=12;align=left;spacingLeft=8;spacingRight=8;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="530" y="45" width="230" height="45" as="geometry" />
+        </mxCell>
+        <UserObject label="Remodeling \(\dot{\boldsymbol\sigma}_r^j = -\frac{\dot\rho_+^j}{\rho^j}(\boldsymbol\sigma^j - \boldsymbol\sigma_{pre}^j) \to \mathbf F_r^j\)" link="data:page/id,turnover" id="remod">
+          <mxCell style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=12;align=left;spacingLeft=8;spacingRight=8;fillColor=#f4eef7;strokeColor=#9673a6;" vertex="1" parent="1">
+            <mxGeometry x="775" y="45" width="330" height="45" as="geometry" />
+          </mxCell>
+        </UserObject>
+        <mxCell id="t_step" value="One time step \(n \to n+1\)" style="text;html=1;align=left;verticalAlign=middle;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="125" width="420" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="s1" value="&lt;b&gt;1.&lt;/b&gt; Global BC at \(n+1\) → trial \(\mathbf F\)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=12;align=left;spacingLeft=8;spacingRight=8;fillColor=#eeeeee;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="60" y="165" width="400" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="s2" value="&lt;b&gt;2.&lt;/b&gt; \(\mathbf F_e^j = \mathbf F\,\mathbf F_g^{-1}\,(\mathbf F_r^{j,n})^{-1}\) with stored \(\mathbf F_g^n\), \(\mathbf F_r^{j,n}\)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=12;align=left;spacingLeft=8;spacingRight=8;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="60" y="235" width="400" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="s3" value="&lt;b&gt;3.&lt;/b&gt; \(\boldsymbol\sigma = \sum_j \frac{\rho^{j,n}}{J}\,\hat{\boldsymbol\sigma}^j(\mathbf F_e^j)\)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=12;align=left;spacingLeft=8;spacingRight=8;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="60" y="310" width="400" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="s4" value="&lt;b&gt;4.&lt;/b&gt; BC / equilibrium fulfilled?" style="rhombus;whiteSpace=wrap;html=1;fontSize=12;fillColor=#eeeeee;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="160" y="380" width="200" height="85" as="geometry" />
+        </mxCell>
+        <mxCell id="s5" value="&lt;b&gt;5.&lt;/b&gt; Mass: \(\rho^{j,n+1} = \rho^j + (\dot\rho_+^j + \dot\rho_-^j)\,ds\)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=12;align=left;spacingLeft=8;spacingRight=8;fillColor=#f4eef7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="60" y="500" width="400" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="s6" value="&lt;b&gt;6.&lt;/b&gt; Prestress \(\boldsymbol\sigma_{pre}^j\) from \(\mathbf G^j\), rotated with \(\mathbf R\)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=12;align=left;spacingLeft=8;spacingRight=8;fillColor=#f4eef7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="60" y="570" width="400" height="45" as="geometry" />
+        </mxCell>
+        <UserObject label="&lt;b&gt;7.&lt;/b&gt; Remodeling: solve Eq. 20 → \(\mathbf F_r^{j,n+1}\)" link="data:page/id,turnover" id="s7">
+          <mxCell style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=12;align=left;spacingLeft=8;spacingRight=8;fillColor=#f4eef7;strokeColor=#9673a6;" vertex="1" parent="1">
+            <mxGeometry x="60" y="640" width="400" height="45" as="geometry" />
+          </mxCell>
+        </UserObject>
+        <mxCell id="s8" value="&lt;b&gt;8.&lt;/b&gt; Growth: \(\mathbf F_g^{n+1}(\rho_{tot}^{n+1})\), \(\phi^j = \rho^j/\rho_{tot}\)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=12;align=left;spacingLeft=8;spacingRight=8;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="60" y="710" width="400" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="b_solve" value="&lt;b&gt;sigma_solver&lt;/b&gt;&lt;br&gt;every Newton iteration,&lt;br&gt;state untouched" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=12;align=left;spacingLeft=6;dashed=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="490" y="235" width="170" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="b_commit" value="&lt;b&gt;commit&lt;/b&gt;&lt;br&gt;once per step,&lt;br&gt;on converged \(\mathbf F\)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=12;align=left;spacingLeft=6;dashed=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="490" y="500" width="170" height="255" as="geometry" />
+        </mxCell>
+        <mxCell id="state" value="&lt;b&gt;Stored state&lt;/b&gt;&lt;br&gt;\(\rho^j\), \(\mathbf F_r^j\), \(\mathbf G^j\), \(\mathbf F_g\)&lt;br&gt;fixed size, no history" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=12;align=left;spacingLeft=6;dashed=1;fillColor=#ffffff;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="700" y="165" width="230" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="n_kin" value="≈ same form as \(\mathbf F = \mathbf F_e\mathbf F_g\) (kinematic_growth.drawio)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=12;align=left;spacingLeft=6;dashed=1;fillColor=#e6f4f5;strokeColor=#0e8088;fontColor=#0e8088;" vertex="1" parent="1">
+          <mxGeometry x="700" y="250" width="300" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="n_pre" value="deposition: \(\frac{J_g}{J}\mathbf R\boldsymbol\sigma^j(0)\mathbf R^T\) (\(\mathbf F_e \to \mathbf G\))&lt;br&gt;initial (Maes Eq. 17): \(\mathbf R\boldsymbol\sigma^j(0)\mathbf R^T\)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=12;align=left;spacingLeft=6;dashed=1;fillColor=#f4eef7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="700" y="560" width="300" height="55" as="geometry" />
+        </mxCell>
+        <UserObject label="forward (as here): 5–7 after convergence, one-step lag&lt;br&gt;backward: 5–7 inside 2–3 (local Newton), stable for any \(ds\)" link="data:page/id,euler" id="n_time">
+          <mxCell style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=12;align=left;spacingLeft=6;dashed=1;fillColor=#f4eef7;strokeColor=#9673a6;" vertex="1" parent="1">
+            <mxGeometry x="700" y="630" width="320" height="55" as="geometry" />
+          </mxCell>
+        </UserObject>
+        <mxCell id="n_cmm" value="≈ mass average as in CMM, without history (cmm.drawio)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=12;align=left;spacingLeft=6;dashed=1;fillColor=#e6f4f5;strokeColor=#0e8088;fontColor=#0e8088;" vertex="1" parent="1">
+          <mxGeometry x="700" y="700" width="300" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="a12" value="" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="s1" target="s2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a23" value="" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="s2" target="s3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a34" value="" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="s3" target="s4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a45" value="yes" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="s4" target="s5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a56" value="" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="s5" target="s6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a67" value="" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="s6" target="s7">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a78" value="" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="s7" target="s8">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a_no" value="no: update \(\mathbf F\)" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;edgeStyle=orthogonalEdgeStyle;exitX=0;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="s4" target="s1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="40" y="422" />
+              <mxPoint x="40" y="187" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="a_next" value="next step" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;edgeStyle=orthogonalEdgeStyle;exitX=0;exitY=0.5;entryX=0;entryY=0.25;strokeColor=#666666;" edge="1" parent="1" source="s8" target="s1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="20" y="732" />
+              <mxPoint x="20" y="176" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="l_kin" value="" style="endArrow=none;html=1;strokeWidth=1;dashed=1;strokeColor=#999999;" edge="1" parent="1" source="s2" target="n_kin">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="l_pre" value="" style="endArrow=none;html=1;strokeWidth=1;dashed=1;strokeColor=#999999;" edge="1" parent="1" source="s6" target="n_pre">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="l_time" value="" style="endArrow=none;html=1;strokeWidth=1;dashed=1;strokeColor=#999999;" edge="1" parent="1" source="s7" target="n_time">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="l_cmm" value="" style="endArrow=none;html=1;strokeWidth=1;dashed=1;strokeColor=#999999;" edge="1" parent="1" source="s7" target="n_cmm">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="flow" name="Flow chart (code)">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1280" pageHeight="1520" math="1" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="t" value="One HCMM step \(n \to n+1\) in code (material_point.step / System.run)" style="text;html=1;align=left;verticalAlign=middle;fontSize=14;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="20" y="5" width="900" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="g_newton" value="solve_F / System.equilibrium: Newton iteration \(i\)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=3;dashed=1;fillColor=none;strokeColor=#999999;align=left;verticalAlign=top;spacingLeft=8;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="280" y="225" width="980" height="420" as="geometry" />
+        </mxCell>
+        <mxCell id="g_commit" value="commit: once per step, on \(\mathbf F_{n+1}\)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=3;dashed=1;fillColor=none;strokeColor=#999999;align=left;verticalAlign=top;spacingLeft=8;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="280" y="805" width="980" height="560" as="geometry" />
+        </mxCell>
+        <mxCell id="g_j" value="constituent_update, per \(j\)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=3;dashed=1;fillColor=none;strokeColor=#999999;align=left;verticalAlign=top;spacingLeft=8;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="760" y="835" width="490" height="420" as="geometry" />
+        </mxCell>
+        <mxCell id="init_c" value="&lt;font face='monospace'&gt;&lt;b&gt;constituent(...)&lt;/b&gt;&lt;/font&gt;&lt;br&gt;\(\mathbf F_r^{j,0} = (\mathbf G^j)^{-1}\), \(\boldsymbol\sigma_{pre}^j = \hat{\boldsymbol\sigma}^j(\mathbf G^j)\), \(\sigma_{f,pre}^j = \mathrm{tr}\,\boldsymbol\sigma_{pre}^j\)" style="ellipse;whiteSpace=wrap;html=1;fontSize=11;spacingLeft=10;spacingRight=10;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="300" y="45" width="380" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="init_m" value="&lt;font face='monospace'&gt;&lt;b&gt;mixture(...)&lt;/b&gt;&lt;/font&gt;&lt;br&gt;\(\rho_{tot,0} = \sum_j\rho^{j,0}\), \(\phi^{j,0} = \rho^{j,0}/\rho_{tot,0}\), \(\mathbf F_g^0 = \mathbf I\)" style="ellipse;whiteSpace=wrap;html=1;fontSize=11;spacingLeft=10;spacingRight=10;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="780" y="45" width="460" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="state" value="&lt;b&gt;state \(S^n\)&lt;/b&gt;&lt;br&gt;per \(j\): \(\rho^{j,n}\), \(\mathbf F_r^{j,n}\), \(\phi^{j,n}\), \(\sigma_f^{j,n}\) | mixture: \(\rho_{tot}^n\), \(\mathbf F_g^n\)&lt;br&gt;fixed: \(\boldsymbol\sigma_{pre}^j\), \(\sigma_{f,pre}^j\), laws" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;fillColor=#ffffff;strokeColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="300" y="140" width="380" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="bc" value="&lt;b&gt;\(\mathrm{BC}_{n+1}\)&lt;/b&gt;&lt;br&gt;stretch / stress / force / pressure" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;fillColor=#ffffff;strokeColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="20" y="140" width="200" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="Fx" value="&lt;font face='monospace'&gt;&lt;b&gt;F_from_x&lt;/b&gt;&lt;/font&gt;&lt;br&gt;\(\mathbf F^{(i)} = \mathbf F(\mathbf x^{(i)}, \mathrm{BC}_{n+1})\), \(\mathbf x^{(0)} = \mathbf x_n\)" style="ellipse;whiteSpace=wrap;html=1;fontSize=11;spacingLeft=10;spacingRight=10;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="300" y="255" width="380" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="sig" value="&lt;font face='monospace'&gt;&lt;b&gt;sigma_solver(\(S^n, \mathbf F^{(i)}\))&lt;/b&gt;&lt;/font&gt;&lt;br&gt;\(\boldsymbol\sigma^{(i)} = \sum_j \frac{\rho^{j,n}}{J^{(i)}}\hat{\boldsymbol\sigma}^j(\mathbf F_e^j)\)" style="ellipse;whiteSpace=wrap;html=1;fontSize=11;spacingLeft=10;spacingRight=10;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="300" y="340" width="380" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="Fe" value="&lt;font face='monospace'&gt;&lt;b&gt;F_e_calc&lt;/b&gt;&lt;/font&gt;&lt;br&gt;\(\mathbf F_e^j = \mathbf F^{(i)}(\mathbf F_g^n)^{-1}(\mathbf F_r^{j,n})^{-1}\)" style="ellipse;whiteSpace=wrap;html=1;fontSize=11;spacingLeft=10;spacingRight=10;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="780" y="310" width="460" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="msig" value="&lt;font face='monospace'&gt;&lt;b&gt;material.sigma&lt;/b&gt;&lt;/font&gt;&lt;br&gt;\(\hat{\boldsymbol\sigma}^j = \frac{\partial W^j}{\partial\mathbf F_e}\mathbf F_e^T\)" style="ellipse;whiteSpace=wrap;html=1;fontSize=11;spacingLeft=10;spacingRight=10;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="780" y="390" width="460" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="res" value="&lt;font face='monospace'&gt;&lt;b&gt;residual_and_jacobian&lt;/b&gt;&lt;/font&gt;&lt;br&gt;\(\mathbf r = \mathbf t(\boldsymbol\sigma^{(i)}) - \mathrm{BC}\), \(\mathbf K = \partial\mathbf r/\partial\mathbf x\) (jacfwd)" style="ellipse;whiteSpace=wrap;html=1;fontSize=11;spacingLeft=10;spacingRight=10;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="300" y="440" width="380" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="dec" value="\(|\mathbf r| &lt; \mathrm{tol}\)?" style="rhombus;whiteSpace=wrap;html=1;fontSize=11;fillColor=#eeeeee;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="400" y="530" width="180" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="upd" value="\(\mathbf x^{(i+1)} = \mathbf x^{(i)} - \mathbf K^{-1}\mathbf r\)" style="ellipse;whiteSpace=wrap;html=1;fontSize=11;spacingLeft=10;spacingRight=10;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="40" y="535" width="210" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="Fn1" value="\(\mathbf F_{n+1} = \mathbf F^{(i)}\), \(\mathbf x_{n+1}\)" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;fillColor=#ffffff;strokeColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="300" y="665" width="380" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="aux" value="&lt;font face='monospace'&gt;&lt;b&gt;sigma_solver(\(S^n, \mathbf F_{n+1}\))&lt;/b&gt;&lt;/font&gt;&lt;br&gt;aux = \(\{\mathbf F_e^j, \hat{\boldsymbol\sigma}^j\}\) = trial state \(\boldsymbol\sigma_{tr}\)" style="ellipse;whiteSpace=wrap;html=1;fontSize=11;spacingLeft=10;spacingRight=10;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="300" y="725" width="380" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="com" value="&lt;font face='monospace'&gt;&lt;b&gt;commit&lt;/b&gt;&lt;/font&gt;&lt;br&gt;\(J = \det\mathbf F_{n+1}\), \(\mathbf R = \mathrm{polar}(\mathbf F_{n+1})\)" style="ellipse;whiteSpace=wrap;html=1;fontSize=11;spacingLeft=10;spacingRight=10;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="300" y="840" width="380" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="cu" value="&lt;font face='monospace'&gt;&lt;b&gt;constituent_update&lt;/b&gt;&lt;/font&gt;&lt;br&gt;→ \(\rho^{j,n+1}\), \(\mathbf F_r^{j,n+1}\), \(\sigma_f^{j,n+1}\)" style="ellipse;whiteSpace=wrap;html=1;fontSize=11;spacingLeft=10;spacingRight=10;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="300" y="1000" width="380" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="gr" value="&lt;font face='monospace'&gt;&lt;b&gt;growth.F_g&lt;/b&gt;&lt;/font&gt;&lt;br&gt;\(\rho_{tot}^{n+1} = \sum_j\rho^{j,n+1}\), \(\phi^{j,n+1} = \rho^{j,n+1}/\rho_{tot}^{n+1}\)&lt;br&gt;\(\mathbf F_g^{n+1} = \mathbf F_g(\rho_{tot}^{n+1}/\rho_{tot,0})\)" style="ellipse;whiteSpace=wrap;html=1;fontSize=11;spacingLeft=10;spacingRight=10;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="300" y="1160" width="380" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="lag" value="\(S^{n+1}\) enters equilibrium only in the next step (one-step lag)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=10;align=left;spacingLeft=6;dashed=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="300" y="1280" width="380" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="b1" value="&lt;font face='monospace'&gt;&lt;b&gt;material.sigma_f&lt;/b&gt;&lt;/font&gt;&lt;br&gt;\(\sigma_f^j = \mathrm{tr}\,\hat{\boldsymbol\sigma}^j / J\)" style="ellipse;whiteSpace=wrap;html=1;fontSize=11;spacingLeft=10;spacingRight=10;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="780" y="865" width="460" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="b2" value="turnover?" style="rhombus;whiteSpace=wrap;html=1;fontSize=11;fillColor=#eeeeee;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="930" y="930" width="160" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="b2n" value="keep \(\rho^{j,n}\), \(\mathbf F_r^{j,n}\)" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;fillColor=#ffffff;strokeColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="1105" y="937" width="135" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="b3" value="&lt;font face='monospace'&gt;&lt;b&gt;production / removal .increment&lt;/b&gt;&lt;/font&gt;&lt;br&gt;\(\Delta\rho_\pm^j = \pm\frac{\rho^{j,n}\Delta s}{T}(1 + k_\pm\,\mathrm{rel})\), rel = sigma_f_rel(\(\sigma_f^j, \rho_{tot}^n\))" style="ellipse;whiteSpace=wrap;html=1;fontSize=11;spacingLeft=10;spacingRight=10;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="780" y="1005" width="460" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="b4" value="\(\rho^{j,n+1} = \rho^{j,n} + \Delta\rho_+^j + \Delta\rho_-^j\)&lt;br&gt;sigma_rate_euler \(= \frac{\Delta\rho_+^j}{\rho^{j,n}}\big(\rho_{tot}^n\hat{\boldsymbol\sigma}^j/J - \rho_{pre}\mathbf R\boldsymbol\sigma_{pre}^j\mathbf R^T\big)\)&lt;br&gt;\(\rho_{pre} = \rho_{tot}^n/J\) (deposition) or \(\rho_{tot,0}\) (initial)" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;fillColor=#ffffff;strokeColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="780" y="1085" width="460" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="b5" value="&lt;font face='monospace'&gt;&lt;b&gt;material.F_r(\(\mathbf F_e^j, J, c\), sigma_rate_euler)&lt;/b&gt;&lt;/font&gt;&lt;br&gt;→ \(\mathbf F_r^{j,n+1}\): Fung Eq. 41 analytic | NeoHookean Eq. 43 one linear solve | NeoHookeanInc Newton" style="ellipse;whiteSpace=wrap;html=1;fontSize=11;spacingLeft=10;spacingRight=10;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="780" y="1170" width="460" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="Sn1" value="&lt;b&gt;state \(S^{n+1}\)&lt;/b&gt;" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;fillColor=#ffffff;strokeColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="300" y="1390" width="380" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="lg_d" value="driver" style="ellipse;whiteSpace=wrap;html=1;fontSize=11;spacingLeft=10;spacingRight=10;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="300" y="1460" width="110" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="lg_c" value="hcmm/core.py" style="ellipse;whiteSpace=wrap;html=1;fontSize=11;spacingLeft=10;spacingRight=10;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="420" y="1460" width="120" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="lg_m" value="materials/" style="ellipse;whiteSpace=wrap;html=1;fontSize=11;spacingLeft=10;spacingRight=10;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="550" y="1460" width="110" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="lg_l" value="production / removal / growth" style="ellipse;whiteSpace=wrap;html=1;fontSize=11;spacingLeft=10;spacingRight=10;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="670" y="1460" width="200" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="lg_x" value="data / state" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;fillColor=#ffffff;strokeColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="880" y="1465" width="100" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="e_ic" value="" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="init_c" target="init_m">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_ms" value="\(n = 0\)" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;edgeStyle=orthogonalEdgeStyle;exitX=0.5;exitY=1;entryX=1;entryY=0.5;" edge="1" parent="1" source="init_m" target="state">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_sF" value="\(S^n\)" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="state" target="Fx">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_bc" value="" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;edgeStyle=orthogonalEdgeStyle;exitX=0.5;exitY=1;entryX=0;entryY=0.3;" edge="1" parent="1" source="bc" target="Fx">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="120" y="273" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_Fs" value="" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="Fx" target="sig">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_sr" value="" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="sig" target="res">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_rd" value="" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="res" target="dec">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_du" value="no" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="dec" target="upd">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_uF" value="" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;edgeStyle=orthogonalEdgeStyle;exitX=0.5;exitY=0;entryX=0;entryY=0.7;" edge="1" parent="1" source="upd" target="Fx">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="145" y="297" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_dF" value="yes" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="dec" target="Fn1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_Fa" value="" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="Fn1" target="aux">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_ac" value="" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="aux" target="com">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_cc" value="" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="com" target="cu">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_cg" value="" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="cu" target="gr">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_gS" value="" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="gr" target="Sn1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_next" value="\(n \leftarrow n+1\)" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;edgeStyle=orthogonalEdgeStyle;exitX=0;exitY=0.5;entryX=0.5;entryY=0;strokeColor=#666666;" edge="1" parent="1" source="Sn1" target="state">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="10" y="1410" />
+              <mxPoint x="10" y="125" />
+              <mxPoint x="490" y="125" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_Fm" value="" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="Fe" target="msig">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_12" value="" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="b1" target="b2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_2n" value="no" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="b2" target="b2n">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_23" value="yes" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="b2" target="b3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_34" value="" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="b3" target="b4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_45" value="" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="b4" target="b5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="d_sF" value="" style="endArrow=none;html=1;strokeWidth=1;dashed=1;strokeColor=#999999;" edge="1" parent="1" source="sig" target="Fe">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="d_sm" value="" style="endArrow=none;html=1;strokeWidth=1;dashed=1;strokeColor=#999999;" edge="1" parent="1" source="sig" target="msig">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="d_cu" value="" style="endArrow=none;html=1;strokeWidth=1;dashed=1;strokeColor=#999999;" edge="1" parent="1" source="cu" target="g_j">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="sigma_flow" name="sigma_solver">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1000" pageHeight="730" math="1" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="t" value="sigma_solver(\(S^n, \mathbf F^{(i)}\)): inputs at \(t_{n+1}\) vs \(t_n\)" style="text;html=1;align=left;verticalAlign=middle;fontSize=14;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="20" y="5" width="700" height="30" as="geometry" />
+        </mxCell>
+        <UserObject label="\(\mathbf F^{(i)}\)&lt;br&gt;&lt;i&gt;\(t_{n+1}\), iter \(i\)&lt;/i&gt;" link="data:page/id,flow" id="i_F">
+          <mxCell style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+            <mxGeometry x="40" y="45" width="170" height="55" as="geometry" />
+          </mxCell>
+        </UserObject>
+        <mxCell id="i_Fg" value="\(\mathbf F_g^n\)&lt;br&gt;&lt;i&gt;\(t_n\)&lt;/i&gt;" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="230" y="45" width="170" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="i_Fr" value="\(\mathbf F_r^{j,n}\)&lt;br&gt;&lt;i&gt;\(t_n\)&lt;/i&gt;" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="420" y="45" width="170" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="i_par" value="material params&lt;br&gt;\(C_{10}, K\) | \(k_1, k_2, \mathbf M\)&lt;br&gt;&lt;i&gt;constant&lt;/i&gt;" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;fillColor=#f5f5f5;strokeColor=#999999;" vertex="1" parent="1">
+          <mxGeometry x="610" y="45" width="160" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="i_rho" value="\(\rho^{j,n}\)&lt;br&gt;&lt;i&gt;\(t_n\)&lt;/i&gt;" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="800" y="45" width="170" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="g_j" value="for each constituent \(j\)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=3;dashed=1;fillColor=none;strokeColor=#999999;align=left;verticalAlign=top;spacingLeft=8;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="20" y="120" width="960" height="430" as="geometry" />
+        </mxCell>
+        <mxCell id="Fe" value="&lt;font face='monospace'&gt;&lt;b&gt;F_e_calc&lt;/b&gt;&lt;/font&gt;&lt;br&gt;\(\mathbf F_e^j = \mathbf F^{(i)}\,(\mathbf F_g^n)^{-1}\,(\mathbf F_r^{j,n})^{-1}\)" style="ellipse;whiteSpace=wrap;html=1;fontSize=11;spacingLeft=10;spacingRight=10;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="140" y="150" width="400" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="o_Fe" value="\(\mathbf F_e^j\)&lt;br&gt;&lt;i&gt;mixed \(t_{n+1}\) / \(t_n\)&lt;/i&gt;" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="240" y="235" width="200" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="msig" value="&lt;font face='monospace'&gt;&lt;b&gt;material.sigma(\(\mathbf F_e^j\))&lt;/b&gt;&lt;/font&gt;&lt;br&gt;\(\hat{\boldsymbol\sigma}^j = \frac{\partial W^j}{\partial\mathbf F_e}\mathbf F_e^T\)&lt;br&gt;only input: \(\mathbf F_e^j\) (+ params)" style="ellipse;whiteSpace=wrap;html=1;fontSize=11;spacingLeft=10;spacingRight=10;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="140" y="305" width="400" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="o_sig" value="\(\hat{\boldsymbol\sigma}^j\)&lt;br&gt;&lt;i&gt;mixed \(t_{n+1}\) / \(t_n\)&lt;/i&gt;" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="240" y="400" width="200" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="i_J" value="\(J^{(i)} = \det\mathbf F^{(i)}\)&lt;br&gt;&lt;i&gt;\(t_{n+1}\)&lt;/i&gt;" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="600" y="410" width="180" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="acc" value="&lt;font face='monospace'&gt;&lt;b&gt;sum&lt;/b&gt;&lt;/font&gt;&lt;br&gt;\(\boldsymbol\sigma^{(i)} \mathrel{+}= \frac{\rho^{j,n}}{J^{(i)}}\hat{\boldsymbol\sigma}^j\)" style="ellipse;whiteSpace=wrap;html=1;fontSize=11;spacingLeft=10;spacingRight=10;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="140" y="470" width="400" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="out" value="return \(\boldsymbol\sigma^{(i)}\), aux = \(\{\mathbf F_e^j, \hat{\boldsymbol\sigma}^j\}\)" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="140" y="580" width="400" height="45" as="geometry" />
+        </mxCell>
+        <UserObject label="&lt;b&gt;\(t_{n+1}\)&lt;/b&gt;: \(\mathbf F^{(i)}\), \(J^{(i)}\)&lt;br&gt;&lt;b&gt;\(t_n\)&lt;/b&gt; (lagged): \(\mathbf F_g^n\), \(\mathbf F_r^{j,n}\) (via \(\mathbf F_e\)), \(\rho^{j,n}\) (weight)&lt;br&gt;backward Euler: these three at \(t_{n+1}\), solved inside" link="data:page/id,euler" id="note">
+          <mxCell style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;align=left;spacingLeft=6;dashed=1;fillColor=#ffffff;strokeColor=#666666;" vertex="1" parent="1">
+            <mxGeometry x="600" y="575" width="370" height="70" as="geometry" />
+          </mxCell>
+        </UserObject>
+        <mxCell id="lg_c" value="\(t_{n+1}\) (current)" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="40" y="680" width="120" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="lg_l" value="\(t_n\) (lagged)" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="170" y="680" width="120" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="lg_m" value="mixed" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="300" y="680" width="100" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="lg_k" value="constant" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;fillColor=#f5f5f5;strokeColor=#999999;" vertex="1" parent="1">
+          <mxGeometry x="410" y="680" width="100" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="e_F" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="i_F" target="Fe">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_Fg" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="i_Fg" target="Fe">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_Fr" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="i_Fr" target="Fe">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_Fe" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="Fe" target="o_Fe">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_Fes" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="o_Fe" target="msig">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_par" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;edgeStyle=orthogonalEdgeStyle;exitX=0.5;exitY=1;entryX=1;entryY=0.5;" edge="1" parent="1" source="i_par" target="msig">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_ms" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="msig" target="o_sig">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_sa" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="o_sig" target="acc">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_J" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="i_J" target="acc">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_rho" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;edgeStyle=orthogonalEdgeStyle;exitX=0.5;exitY=1;entryX=1;entryY=0.5;" edge="1" parent="1" source="i_rho" target="acc">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_FJ" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;edgeStyle=orthogonalEdgeStyle;exitX=0;exitY=0.5;entryX=0.5;entryY=1;dashed=1;strokeColor=#82b366;" edge="1" parent="1" source="i_F" target="i_J">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="30" y="72" />
+              <mxPoint x="30" y="560" />
+              <mxPoint x="690" y="560" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_out" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="acc" target="out">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="turnover" name="Turnover stress">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="700" math="1" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="t" value="&lt;b&gt;HCMM: change of the Cauchy stress of a constituent by mass turnover&lt;/b&gt; during \(ds\), with \(\mathbf F\) and \(\mathbf F_g\) fixed" style="text;html=1;align=left;verticalAlign=middle;fontSize=16;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1000" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="deg" value="degraded \(-\dot\varrho_-\,ds\)&lt;br&gt;at stress \(\boldsymbol\sigma\)" style="rounded=0;whiteSpace=wrap;html=1;fontSize=13;fillColor=#f5f5f5;strokeColor=#999999;dashed=1;fontColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="60" y="110" width="220" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="sur" value="surviving \(\varrho + \dot\varrho_-\,ds\)&lt;br&gt;at stress \(\boldsymbol\sigma\)" style="rounded=0;whiteSpace=wrap;html=1;fontSize=13;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="60" y="170" width="220" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="l_old" value="&lt;b&gt;constituent at \(s\)&lt;/b&gt;&lt;br&gt;mass \(\varrho\), stress \(\boldsymbol\sigma\)" style="text;html=1;align=center;verticalAlign=top;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="60" y="340" width="220" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="plus" value="+" style="text;html=1;align=center;verticalAlign=middle;fontSize=28;" vertex="1" parent="1">
+          <mxGeometry x="300" y="225" width="40" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="new" value="deposited \(\dot\varrho_+\,ds\)&lt;br&gt;at prestress \(\boldsymbol\sigma_{pre}\)" style="rounded=0;whiteSpace=wrap;html=1;fontSize=13;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="360" y="240" width="200" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="l_new" value="&lt;b&gt;new mass&lt;/b&gt;" style="text;html=1;align=center;verticalAlign=top;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="360" y="340" width="200" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="res" value="mass \(\varrho + \dot\varrho\,ds\)&lt;br&gt;&lt;br&gt;stress = mass average&lt;br&gt;\(\boldsymbol\sigma(s+ds)\)" style="rounded=0;whiteSpace=wrap;html=1;fontSize=13;fillColor=#efe6f4;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="700" y="150" width="260" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="l_res" value="&lt;b&gt;constituent at \(s + ds\)&lt;/b&gt;" style="text;html=1;align=center;verticalAlign=top;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="700" y="340" width="260" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="eq" value="\(\boldsymbol\sigma(s+ds) = \dfrac{\boldsymbol\sigma_{pre}\,\dot\varrho_{+}ds + \boldsymbol\sigma\,(\varrho + \dot\varrho_{-}ds)}{\varrho + \dot\varrho\,ds}\),  \(\dot\varrho = \dot\varrho_+ + \dot\varrho_-\)&lt;br&gt;&lt;br&gt;\(\dot{\boldsymbol\sigma}_r\,ds = \boldsymbol\sigma(s+ds) - \boldsymbol\sigma = \dfrac{\dot\varrho_+ ds}{\varrho + \dot\varrho\,ds}(\boldsymbol\sigma_{pre} - \boldsymbol\sigma)\)  →  \(\dot{\boldsymbol\sigma}_r = -\dfrac{\dot\varrho_+}{\varrho}(\boldsymbol\sigma - \boldsymbol\sigma_{pre}) = -\left(\dfrac{\dot\varrho}{\varrho} + \dfrac{1}{T}\right)(\boldsymbol\sigma - \boldsymbol\sigma_{pre})\)  for \(\dot\varrho_- = -\varrho/T\)&lt;br&gt;&lt;br&gt;The \(\dot\varrho\,ds\) in the denominator vanishes only in the rate limit \(ds \to 0\); it does not have to be dropped: kept, \(\boldsymbol\sigma(s+ds)\) is the exact mass average and stays between \(\boldsymbol\sigma\) and \(\boldsymbol\sigma_{pre}\) for any \(ds\) (implicit form, Sempértegui &amp;amp; Avril 2023); dropped, the explicit step can overshoot for \(ds \gtrsim T\).&lt;br&gt;&lt;br&gt;&lt;b&gt;Assumptions:&lt;/b&gt; \(\mathbf F\), \(\mathbf F_g\) fixed during \(ds\); all mass increments of a constituent have the same density; its stress is the mass average over its increments; turnover changes only the average stress-free configuration, not the strain energy function." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;align=left;spacingLeft=12;spacingRight=12;fontSize=13;arcSize=6;" vertex="1" parent="1">
+          <mxGeometry x="40" y="420" width="940" height="220" as="geometry" />
+        </mxCell>
+        <mxCell id="a_sur" value="" style="endArrow=classic;html=1;strokeWidth=2;strokeColor=#9673a6;fontSize=13;fontColor=#9673a6;labelBackgroundColor=#ffffff;exitX=1;exitY=0.3;entryX=0;entryY=0.35;" edge="1" parent="1" source="sur" target="res">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a_new" value="mass average" style="endArrow=classic;html=1;strokeWidth=2;strokeColor=#9673a6;fontSize=13;fontColor=#9673a6;labelBackgroundColor=#ffffff;entryX=0;entryY=0.75;" edge="1" parent="1" source="new" target="res">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="euler" name="Forward vs backward Euler">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1240" pageHeight="1200" math="1" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="&lt;b&gt;HCMM time integration of the remodeling: forward vs backward Euler&lt;/b&gt;" style="text;html=1;align=left;verticalAlign=middle;fontSize=17;" vertex="1" parent="1">
+          <mxGeometry x="40" y="15" width="1160" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="h_f" value="&lt;b&gt;Forward (explicit, staggered)&lt;/b&gt; – Maes 2023 / current code" style="text;html=1;align=left;verticalAlign=bottom;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="40" y="70" width="560" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="f0" value="&lt;b&gt;1.&lt;/b&gt; Stress evaluation (every Newton iteration): \(\mathbf F_e = \mathbf F\,\mathbf F_g^{-1}\,(\mathbf F_r^n)^{-1}\) with the stored \(\mathbf F_r^n\) → \(\boldsymbol\sigma\), tangent at fixed \(\mathbf F_r^n\)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=10;align=left;spacingLeft=8;spacingRight=8;fillColor=#f4eef7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="40" y="110" width="560" height="85" as="geometry" />
+        </mxCell>
+        <mxCell id="f1" value="&lt;b&gt;2.&lt;/b&gt; Equilibrium converged at \(\mathbf F^{n+1}\) → commit" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=10;align=left;spacingLeft=8;spacingRight=8;fillColor=#f4eef7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="40" y="220" width="560" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="a_f1" value="" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="f0" target="f1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="f2" value="&lt;b&gt;3.&lt;/b&gt; \(\dot\varrho_+\) from \(\boldsymbol\sigma(\mathbf F^{n+1}, \mathbf F_r^n)\)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=10;align=left;spacingLeft=8;spacingRight=8;fillColor=#f4eef7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="40" y="310" width="560" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="a_f2" value="" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="f1" target="f2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="f3" value="&lt;b&gt;4.&lt;/b&gt; Linearized Eq. 20: \(\frac{\partial\boldsymbol\sigma}{\partial\mathbf F_e}:(\mathbf F_e\mathbf L_r) = \frac{\dot\varrho_+}{\varrho}(\boldsymbol\sigma - \boldsymbol\sigma_{pre})\);  \(\mathbf F_r^{n+1} = \mathbf F_r^n + \mathbf L_r\mathbf F_r^n\,ds\)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=10;align=left;spacingLeft=8;spacingRight=8;fillColor=#f4eef7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="40" y="400" width="560" height="85" as="geometry" />
+        </mxCell>
+        <mxCell id="a_f3" value="" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="f2" target="f3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="f4" value="&lt;b&gt;5.&lt;/b&gt; \(\mathbf F_r^{n+1}\) enters the equilibrium only in the next step (one-step lag)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=10;align=left;spacingLeft=8;spacingRight=8;fillColor=#f4eef7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="40" y="510" width="560" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="a_f4" value="" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="f3" target="f4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="h_b" value="&lt;b&gt;Backward (implicit, return mapping)&lt;/b&gt; – Sempértegui &amp;amp; Avril 2023" style="text;html=1;align=left;verticalAlign=bottom;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="640" y="70" width="560" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="b0" value="&lt;b&gt;1.&lt;/b&gt; Stress evaluation (every Newton iteration): trial \(\boldsymbol\sigma_{tr} = \hat{\boldsymbol\sigma}(\mathbf F\,\mathbf F_g^{-1}(\mathbf F_r^n)^{-1})\)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=10;align=left;spacingLeft=8;spacingRight=8;fillColor=#e6f4f5;strokeColor=#0e8088;" vertex="1" parent="1">
+          <mxGeometry x="640" y="110" width="560" height="85" as="geometry" />
+        </mxCell>
+        <mxCell id="b1" value="&lt;b&gt;2.&lt;/b&gt; \(\Delta\varrho_+ = \varrho\,\frac{ds}{T}(1 + k_+\,\mathrm{rel}(\boldsymbol\sigma_{tr}))\)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=10;align=left;spacingLeft=8;spacingRight=8;fillColor=#e6f4f5;strokeColor=#0e8088;" vertex="1" parent="1">
+          <mxGeometry x="640" y="220" width="560" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="a_b1" value="" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="b0" target="b1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="b2" value="&lt;b&gt;3.&lt;/b&gt; Target (exact mass average): \(\boldsymbol\sigma^{n+1} = \dfrac{\varrho\,\boldsymbol\sigma_{tr} + \Delta\varrho_+\,\boldsymbol\sigma_{pre}}{\varrho + \Delta\varrho_+}\)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=10;align=left;spacingLeft=8;spacingRight=8;fillColor=#e6f4f5;strokeColor=#0e8088;" vertex="1" parent="1">
+          <mxGeometry x="640" y="310" width="560" height="85" as="geometry" />
+        </mxCell>
+        <mxCell id="a_b2" value="" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="b1" target="b2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="b3" value="&lt;b&gt;4.&lt;/b&gt; Local Newton: \(\hat{\boldsymbol\sigma}(\mathbf F\,\mathbf F_g^{-1}(\mathbf F_r^{n+1})^{-1}) = \boldsymbol\sigma^{n+1}\)&lt;br&gt;6 sym. components (compressible) | 5 dev + \(\det\mathbf F_r = 1\) (incompressible) | scalar \(\lambda_r\) (fiber)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=10;align=left;spacingLeft=8;spacingRight=8;fillColor=#e6f4f5;strokeColor=#0e8088;" vertex="1" parent="1">
+          <mxGeometry x="640" y="420" width="560" height="85" as="geometry" />
+        </mxCell>
+        <mxCell id="a_b3" value="" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="b2" target="b3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="b4" value="&lt;b&gt;5.&lt;/b&gt; \(\boldsymbol\sigma\), tangent incl. \(\partial\mathbf F_r/\partial\mathbf F\) (implicit diff., custom_root) → equilibrium; commit only stores \(\mathbf F_r^{n+1}\), \(\varrho^{n+1}\)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=10;align=left;spacingLeft=8;spacingRight=8;fillColor=#e6f4f5;strokeColor=#0e8088;" vertex="1" parent="1">
+          <mxGeometry x="640" y="530" width="560" height="85" as="geometry" />
+        </mxCell>
+        <mxCell id="a_b4" value="" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="b3" target="b4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="note" value="&lt;b&gt;Update of the stress&lt;/b&gt; \(\dot{\boldsymbol\sigma} = -\frac{\dot\varrho_+}{\varrho}(\boldsymbol\sigma - \boldsymbol\sigma_{pre})\) at fixed \(\mathbf F\), \(\mathbf F_g\):&lt;br&gt;forward: \(\boldsymbol\sigma^{n+1} = \boldsymbol\sigma^n + ds\,\dot{\boldsymbol\sigma}(\boldsymbol\sigma^n) = (1-w)\,\boldsymbol\sigma^n + w\,\boldsymbol\sigma_{pre}\), \(w = \dot\varrho_+ds/\varrho\) (\(= ds/T\) in homeostasis) can exceed 1 → overshoot past \(\boldsymbol\sigma_{pre}\)&lt;br&gt;backward: \(\boldsymbol\sigma^{n+1} = \boldsymbol\sigma^n + ds\,\dot{\boldsymbol\sigma}(\boldsymbol\sigma^{n+1})\) → \(w = \Delta\varrho_+/(\varrho + \Delta\varrho_+) \in [0,1]\): always between \(\boldsymbol\sigma^n\) and \(\boldsymbol\sigma_{pre}\), unconditionally stable&lt;br&gt;&lt;br&gt;&lt;b&gt;Forward:&lt;/b&gt; cheap (one linear solve per step and constituent), but first order with one-step lag, error ≈ \(ds/(2T)\) (0.9 % at \(ds = 10\), \(T = 101\) in analytical_check) plus the linearization error of Eq. 20; needs \(ds \ll T\).&lt;br&gt;&lt;b&gt;Backward:&lt;/b&gt; nonlinear stress equation solved exactly, no overshoot, same timing as FCMM (current cohort deposited at \(s\)) → removes the first-step offset; costs a local Newton per equilibrium iteration and the tangent must include \(\partial\mathbf F_r/\partial\mathbf F\).&lt;br&gt;&lt;b&gt;In both:&lt;/b&gt; \(\varrho\) and \(\mathbf F_g\) kept lagged; making them implicit couples all constituents through \(\mathbf F_g\) (Sempértegui &amp;amp; Avril 2023, App. C–E)." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;align=left;spacingLeft=12;spacingRight=12;fontSize=12;arcSize=6;" vertex="1" parent="1">
+          <mxGeometry x="40" y="640" width="1160" height="260" as="geometry" />
+        </mxCell>
+        <mxCell id="deriv" value="&lt;b&gt;Derivation of \(\boldsymbol\sigma(t_{n+1})\)&lt;/b&gt; (Sempértegui &amp;amp; Avril 2023, App. A, Eq. A.1 / 18)&lt;br&gt;&lt;b&gt;1.&lt;/b&gt; Turnover at fixed \(\mathbf F\), \(\mathbf F_g\) (Cyron Eq. 11/14): \(\dot{\boldsymbol\sigma} = -\frac{\dot\rho_+}{\rho}(\boldsymbol\sigma - \boldsymbol\sigma_{pre})\)&lt;br&gt;&lt;b&gt;2.&lt;/b&gt; Backward Euler, right side at \(t_{n+1}\), \(\Delta\rho_+ = \Delta t\,\dot\rho_+\): \(\boldsymbol\sigma_{n+1} - \boldsymbol\sigma_{tr} = -\frac{\Delta\rho_+}{\rho_{k+1}}(\boldsymbol\sigma_{n+1} - \boldsymbol\sigma_{pre})\)&lt;br&gt;&lt;b&gt;3.&lt;/b&gt; Collect \(\boldsymbol\sigma_{n+1}\): \(\boldsymbol\sigma_{n+1}(\rho_{k+1} + \Delta\rho_+) = \rho_{k+1}\,\boldsymbol\sigma_{tr} + \Delta\rho_+\,\boldsymbol\sigma_{pre}\)&lt;br&gt;&lt;b&gt;4.&lt;/b&gt; \(\boldsymbol\sigma_{n+1} = \frac{\Delta\rho_+}{\rho_{k+1} + \Delta\rho_+}\,\boldsymbol\sigma_{pre} + \frac{\rho_{k+1}}{\rho_{k+1} + \Delta\rho_+}\,\boldsymbol\sigma_{tr}\)  = Cyron's mass average with the denominator kept&lt;br&gt;\(\boldsymbol\sigma_{tr} = \hat{\boldsymbol\sigma}(\mathbf F_{n+1}\mathbf F_g^{-1}(\mathbf F_r^n)^{-1})\): after growth, before remodeling; \(\rho_{k+1}\): density after growth, before remodeling&lt;br&gt;forward instead: \(\boldsymbol\sigma_{n+1} = \boldsymbol\sigma_{tr} - \frac{\Delta\rho_+}{\rho_n}(\boldsymbol\sigma_{tr} - \boldsymbol\sigma_{pre})\), weight unbounded&lt;br&gt;&lt;b&gt;Deviatoric only (A.2–A.4):&lt;/b&gt; \(\det\mathbf F_r = 1\) → \(|\mathbf F_e|\) fixed → volumetric stress unchanged; same volumetric part of \(\boldsymbol\sigma\), \(\boldsymbol\sigma_{pre}\) postulated → only \(\boldsymbol\sigma'\) (Eq. 17). Compressible matrix (FCMM-consistent): keep the full tensor." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e6f4f5;strokeColor=#0e8088;align=left;spacingLeft=12;spacingRight=12;fontSize=12;arcSize=6;" vertex="1" parent="1">
+          <mxGeometry x="40" y="920" width="1160" height="250" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="semp" name="Ours vs Sempértegui">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1220" pageHeight="840" math="1" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="t_l" value="Ours: explicit, staggered (core.py)" style="text;html=1;align=left;verticalAlign=middle;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="10" width="540" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="t_r" value="Sempértegui &amp;amp; Avril: backward, monolithic per Gauss point" style="text;html=1;align=left;verticalAlign=middle;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="640" y="10" width="540" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="g" value="&lt;b&gt;Global Newton iteration&lt;/b&gt;, trial \(\mathbf F_{n+1}\)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;fillColor=#eeeeee;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="340" y="50" width="540" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="l1" value="&lt;b&gt;sigma_solver&lt;/b&gt;, state frozen:&lt;br&gt;\(\mathbf F_e^j = \mathbf F_{n+1}(\mathbf F_g^{n})^{-1}(\mathbf F_r^{j,n})^{-1}\)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=10;align=left;spacingLeft=8;spacingRight=8;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="40" y="120" width="540" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="r1" value="&lt;b&gt;local Newton&lt;/b&gt; (UMAT), all constituents at once:&lt;br&gt;\(\mathbf X = \{\mathbf C_r^j, \Delta\lambda^j, \rho^j\}\), \(\mathbf F_g(\sum_j\rho^j)\) recomputed from \(\mathbf X\)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=10;align=left;spacingLeft=8;spacingRight=8;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="640" y="120" width="540" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="l2" value="no evolution law evaluated" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=10;align=left;spacingLeft=8;spacingRight=8;fillColor=#f4eef7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="40" y="200" width="540" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="r2" value="residuals per \(j\): \(R_{C_r}\) Eq. 29 (exp. map), \(R_f\) Eq. 21 with backstress Eq. 18,&lt;br&gt;\(R_\rho = \rho_{k+1} - \rho_k - \Delta t\,\dot\rho_{k+1}(\boldsymbol\sigma_{n+1})\) Eq. 33&lt;br&gt;coupling: \(\partial/\partial\rho\) columns only (Eq. 36/37, Fig. 2)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=10;align=left;spacingLeft=8;spacingRight=8;fillColor=#eef4fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="640" y="200" width="540" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="l3" value="\(\boldsymbol\sigma = \sum_j \frac{\rho^{j,n}}{J}\hat{\boldsymbol\sigma}^j\) = trial stress \(\boldsymbol\sigma_{tr}\)&lt;br&gt;tangent \(\partial\boldsymbol\sigma_{tr}/\partial\mathbf F\) (AD)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=10;align=left;spacingLeft=8;spacingRight=8;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="40" y="295" width="540" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="r3" value="\(\boldsymbol\sigma_{n+1}(\mathbf C_r^{n+1}, \rho^{n+1}, \mathbf F_g^{n+1})\)&lt;br&gt;consistent tangent by perturbation" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=10;align=left;spacingLeft=8;spacingRight=8;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="640" y="295" width="540" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="c" value="&lt;b&gt;converged?&lt;/b&gt;" style="rhombus;whiteSpace=wrap;html=1;fontSize=12;fillColor=#eeeeee;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="535" y="370" width="150" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="l4" value="&lt;b&gt;commit&lt;/b&gt; (once):&lt;br&gt;\(\dot\rho_\pm^j(\boldsymbol\sigma_{tr}, \rho^n)\) → \(\rho^{n+1}\)&lt;br&gt;Eq. 20 linearized with \((\boldsymbol\sigma_{tr} - \boldsymbol\sigma_{pre})\) → \(\mathbf F_r^{n+1}\)&lt;br&gt;then \(\rho_{tot}\), \(\mathbf F_g\), \(\phi\) → used from step \(n+2\)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=10;align=left;spacingLeft=8;spacingRight=8;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="40" y="470" width="540" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="r4" value="accept local state as \(n+1\) (SDVs)&lt;br&gt;nothing left to update" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=10;align=left;spacingLeft=8;spacingRight=8;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="640" y="470" width="540" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="tab" value="&lt;table border='1' cellpadding='4' style='border-collapse:collapse;width:100%;font-size:12px'&gt;&lt;tr style='background:#eeeeee'&gt;&lt;th&gt;used in equilibrium at \(n+1\)&lt;/th&gt;&lt;th&gt;ours&lt;/th&gt;&lt;th&gt;Sempértegui&lt;/th&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;remodeling \(\mathbf F_r^j\)&lt;/td&gt;&lt;td&gt;&lt;b&gt;\(n\)&lt;/b&gt; (lag)&lt;/td&gt;&lt;td&gt;\(n+1\)&lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;mass \(\rho^j\) (stress weight)&lt;/td&gt;&lt;td&gt;&lt;b&gt;\(n\)&lt;/b&gt; (lag)&lt;/td&gt;&lt;td&gt;\(n+1\)&lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;\(\rho_{tot}\), \(\mathbf F_g\), \(\phi^j\)&lt;/td&gt;&lt;td&gt;&lt;b&gt;\(n\)&lt;/b&gt; (lag)&lt;/td&gt;&lt;td&gt;\(n+1\), inside local Newton&lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;rates \(\dot\rho_\pm^j\)&lt;/td&gt;&lt;td&gt;\(\boldsymbol\sigma_{tr}\), \(\rho^n\) (explicit)&lt;/td&gt;&lt;td&gt;\(\boldsymbol\sigma_{n+1}\), \(\rho^{n+1}\) (Eq. 33)&lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;\(\boldsymbol\sigma\) in \((\boldsymbol\sigma - \boldsymbol\sigma_{pre})\)&lt;/td&gt;&lt;td&gt;\(\boldsymbol\sigma_{tr}\), linearized&lt;/td&gt;&lt;td&gt;\(\boldsymbol\sigma_{n+1}\) (Eq. 18)&lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;\(\mathbf F\), \(\mathbf R\), \(\boldsymbol\sigma_{pre}\)&lt;/td&gt;&lt;td&gt;\(n+1\)&lt;/td&gt;&lt;td&gt;\(n+1\)&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;" style="text;html=1;align=left;verticalAlign=top;fontSize=12;whiteSpace=wrap;overflow=fill;" vertex="1" parent="1">
+          <mxGeometry x="40" y="600" width="620" height="215" as="geometry" />
+        </mxCell>
+        <mxCell id="n_other" value="&lt;b&gt;other differences&lt;/b&gt; (not lag):&lt;br&gt;• S&amp;amp;A remodel deviatoric only (A.4), \(\det\mathbf F_r = 1\)&lt;br&gt;• unknown \(\mathbf C_r\) via exponential map vs. \(\mathbf F_r\) via Eq. 41/43&lt;br&gt;• \(\Delta\rho_+\) prescribed (Eq. 19) or Eq. 33 vs. Maes Eq. 24" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;align=left;spacingLeft=6;dashed=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="700" y="600" width="480" height="100" as="geometry" />
+        </mxCell>
+        <UserObject label="&lt;b&gt;where updated&lt;/b&gt;&lt;br&gt;ours: after global convergence (&lt;b&gt;commit&lt;/b&gt;)&lt;br&gt;S&amp;amp;A: inside every global iteration (local Newton), stored on convergence" link="data:page/id,algorithm" id="n_where">
+          <mxCell style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;align=left;spacingLeft=6;dashed=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+            <mxGeometry x="700" y="715" width="480" height="75" as="geometry" />
+          </mxCell>
+        </UserObject>
+        <mxCell id="a_gl" value="" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;edgeStyle=orthogonalEdgeStyle;" edge="1" parent="1" source="g" target="l1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a_gr" value="" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;edgeStyle=orthogonalEdgeStyle;" edge="1" parent="1" source="g" target="r1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a_l12" value="" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;edgeStyle=orthogonalEdgeStyle;" edge="1" parent="1" source="l1" target="l2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a_l23" value="" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;edgeStyle=orthogonalEdgeStyle;" edge="1" parent="1" source="l2" target="l3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a_r12" value="" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;edgeStyle=orthogonalEdgeStyle;" edge="1" parent="1" source="r1" target="r2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a_r23" value="" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;edgeStyle=orthogonalEdgeStyle;" edge="1" parent="1" source="r2" target="r3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a_lc" value="" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;edgeStyle=orthogonalEdgeStyle;" edge="1" parent="1" source="l3" target="c">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a_rc" value="" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;edgeStyle=orthogonalEdgeStyle;" edge="1" parent="1" source="r3" target="c">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a_cl" value="yes" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;edgeStyle=orthogonalEdgeStyle;" edge="1" parent="1" source="c" target="l4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a_cr" value="yes" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;edgeStyle=orthogonalEdgeStyle;" edge="1" parent="1" source="c" target="r4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a_no" value="no: update \(\mathbf F\)" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;exitX=0.5;exitY=0;entryX=0.5;entryY=1;dashed=1;" edge="1" parent="1" source="c" target="g">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -1,0 +1,276 @@
+<mxfile host="app.diagrams.net">
+  <diagram id="mindmap" name="Mind map">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2200" pageHeight="1700" math="1" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="legend" value="&lt;b&gt;Cross-links&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#0e8088&quot;&gt;teal dashed: ≈ analogy&lt;/font&gt;&lt;br&gt;&lt;font color=&quot;#c4387a&quot;&gt;magenta dashed: ≠ difference&lt;/font&gt;&lt;br&gt;&lt;font color=&quot;#666666&quot;&gt;grey dashed: leads to&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#cccccc;align=left;spacingLeft=8;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="20" y="20" width="220" height="80" as="geometry" />
+        </mxCell>
+        <UserObject label="&lt;b&gt;Constrained mixture theory&lt;/b&gt;&lt;br&gt;(Humphrey &amp;amp; Rajagopal 2002)&lt;br&gt;&lt;i&gt;steps: page CMM – steps&lt;/i&gt;" link="data:page/id,cmm_steps" id="cmm">
+          <mxCell style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;arcSize=20;" vertex="1" parent="1">
+            <mxGeometry x="290" y="245.0" width="240" height="80" as="geometry" />
+          </mxCell>
+        </UserObject>
+        <mxCell id="cm1" value="Constituents \(j\) (e.g. elastin, collagen, smooth muscle): own material, mass \(\rho^j\) and natural configuration; constrained to move together with one \(\mathbf F\)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f2f8f0;strokeColor=#82b366;fontSize=12;arcSize=20;" vertex="1" parent="1">
+          <mxGeometry x="590" y="130.0" width="280" height="70" as="geometry" />
+        </mxCell>
+        <UserObject label="&lt;b&gt;Mass deposited at time \(\tau\)&lt;/b&gt;&lt;br&gt;\(\mathbf F_e^j(s,\tau) = \mathbf F(s)\,\mathbf F^{-1}(\tau)\,\mathbf G^j\)&lt;br&gt;&lt;i&gt;diagram: page Constrained mixture&lt;/i&gt;" link="data:page/id,cmm" id="cm2">
+          <mxCell style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;arcSize=20;" vertex="1" parent="1">
+            <mxGeometry x="590" y="215.0" width="280" height="80" as="geometry" />
+          </mxCell>
+        </UserObject>
+        <mxCell id="cm2a" value="\(\mathbf F(s)\,\mathbf F^{-1}(\tau)\): deformation of the tissue since the deposition time \(\tau\)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f2f8f0;strokeColor=#82b366;fontSize=12;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="930" y="150.0" width="320" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="cm2b" value="\(\mathbf G^j\): deposition prestretch, new mass is laid down already stretched → prestress" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f2f8f0;strokeColor=#82b366;fontSize=12;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="930" y="215.0" width="320" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="cm2c" value="classical CMM: mass change without inelastic volume change; extended by growth:&lt;br&gt;\(\mathbf F_e^j = \mathbf F(s)\mathbf F_g^{-1}(s)\,[\mathbf F(\tau)\mathbf F_g^{-1}(\tau)]^{-1}\,\mathbf G^j\)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f2f8f0;strokeColor=#82b366;fontSize=12;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="930" y="280.0" width="320" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="cm3" value="Mass&lt;br&gt;\(\rho^j(s) = \rho^j_0 Q^j(s) + \int_0^s m^j(\tau)\,q^j(s,\tau)\,d\tau\)&lt;br&gt;production \(m^j\), survival \(q^j\)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f2f8f0;strokeColor=#82b366;fontSize=12;arcSize=20;" vertex="1" parent="1">
+          <mxGeometry x="590" y="310.0" width="280" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="cm4" value="Stress = heredity integral over all surviving cohorts → whole history \(\mathbf F(\tau)\) stored: memory and cost" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f2f8f0;strokeColor=#82b366;fontSize=12;arcSize=20;" vertex="1" parent="1">
+          <mxGeometry x="590" y="395.0" width="280" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="me" value="Mechanobiologically equilibrated CMM&lt;br&gt;(Latorre &amp;amp; Humphrey 2018)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;fontSize=13;arcSize=20;dashed=1;fontColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="290" y="360.0" width="240" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="e_cm1" style="edgeStyle=entityRelationEdgeStyle;curved=1;endArrow=none;html=1;strokeWidth=2;strokeColor=#82b366;" edge="1" parent="1" source="cmm" target="cm1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_cm2" style="edgeStyle=entityRelationEdgeStyle;curved=1;endArrow=none;html=1;strokeWidth=2;strokeColor=#82b366;" edge="1" parent="1" source="cmm" target="cm2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_cm2a" style="edgeStyle=entityRelationEdgeStyle;curved=1;endArrow=none;html=1;strokeWidth=2;strokeColor=#82b366;" edge="1" parent="1" source="cm2" target="cm2a">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_cm2b" style="edgeStyle=entityRelationEdgeStyle;curved=1;endArrow=none;html=1;strokeWidth=2;strokeColor=#82b366;" edge="1" parent="1" source="cm2" target="cm2b">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_cm2c" style="edgeStyle=entityRelationEdgeStyle;curved=1;endArrow=none;html=1;strokeWidth=2;strokeColor=#82b366;" edge="1" parent="1" source="cm2" target="cm2c">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_cm3" style="edgeStyle=entityRelationEdgeStyle;curved=1;endArrow=none;html=1;strokeWidth=2;strokeColor=#82b366;" edge="1" parent="1" source="cmm" target="cm3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_cm4" style="edgeStyle=entityRelationEdgeStyle;curved=1;endArrow=none;html=1;strokeWidth=2;strokeColor=#82b366;" edge="1" parent="1" source="cmm" target="cm4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_me" value="" style="edgeStyle=entityRelationEdgeStyle;curved=1;endArrow=none;html=1;strokeWidth=2;strokeColor=#999999;dashed=1;" edge="1" parent="1" source="cmm" target="me">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="n_x_asm_g" value="≈ stress without load&lt;br&gt;≠ set by deposition prestretch, not by assembling grown pieces&lt;br&gt;&lt;i&gt;↔ Assembly part \(\mathbf F_e^{asm}\) (kinematic_growth.drawio)&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e6f4f5;strokeColor=#0e8088;fontColor=#0e8088;fontSize=11;arcSize=12;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="1370.0" y="215.0" width="330" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="l_x_asm_g" value="" style="curved=1;endArrow=none;html=1;strokeWidth=2;dashed=1;strokeColor=#0e8088;" edge="1" parent="1" source="cm2b" target="n_x_asm_g">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="n_x_coh_eq" value="≈ same equation: F(s)F⁻¹(τ)G = F(s)[G⁻¹F(τ)]⁻¹&lt;br&gt;&lt;i&gt;↔ Per mass increment deposited at \(\tau\): (hcmm.drawio)&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e6f4f5;strokeColor=#0e8088;fontColor=#0e8088;fontSize=11;arcSize=12;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="1370.0" y="300.0" width="330" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="l_x_coh_eq" value="" style="curved=1;endArrow=none;html=1;strokeWidth=2;dashed=1;strokeColor=#0e8088;" edge="1" parent="1" source="cm2" target="n_x_coh_eq">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="n_x_coh_h" value="≠ one natural configuration per cohort τ&lt;br&gt;→ one homogenized F_gr per constituent&lt;br&gt;&lt;i&gt;↔ One \(\mathbf F_{gr}^j(s)\) per constituent instead of one per increment, chosen so that the whole mass behaves mechanically like all increments together (identical in limit cases) (hcmm.drawio)&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fbe9f2;strokeColor=#c4387a;fontColor=#c4387a;fontSize=11;arcSize=12;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="1370.0" y="385.0" width="330" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="l_x_coh_h" value="" style="curved=1;endArrow=none;html=1;strokeWidth=2;dashed=1;strokeColor=#c4387a;" edge="1" parent="1" source="cm2" target="n_x_coh_h">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="n_x_lim_cmm" value="addressed by&lt;br&gt;&lt;i&gt;↔ Limits of kinematic growth (kinematic_growth.drawio)&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f2f2f2;strokeColor=#666666;fontColor=#666666;fontSize=11;arcSize=12;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="1370.0" y="470.0" width="330" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="l_x_lim_cmm" value="" style="curved=1;endArrow=none;html=1;strokeWidth=2;dashed=1;strokeColor=#666666;" edge="1" parent="1" source="cmm" target="n_x_lim_cmm">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="n_x_fg_cmm" value="≈ CMM extended by a growth deformation F_g&lt;br&gt;&lt;i&gt;↔ Growth \(\mathbf F_g\) (kinematic_growth.drawio)&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e6f4f5;strokeColor=#0e8088;fontColor=#0e8088;fontSize=11;arcSize=12;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="1370.0" y="555.0" width="330" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="l_x_fg_cmm" value="" style="curved=1;endArrow=none;html=1;strokeWidth=2;dashed=1;strokeColor=#0e8088;" edge="1" parent="1" source="cm2c" target="n_x_fg_cmm">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="n_x_avg" value="≈ both: stress = mass average over all mass&lt;br&gt;≠ HCMM needs only the current σ and rates, no history&lt;br&gt;&lt;i&gt;↔ Stress change by mass turnover (\(\mathbf F\), \(\mathbf F_g\) fixed) (hcmm.drawio)&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e6f4f5;strokeColor=#0e8088;fontColor=#0e8088;fontSize=11;arcSize=12;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="1370.0" y="640.0" width="330" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="l_x_avg" value="" style="curved=1;endArrow=none;html=1;strokeWidth=2;dashed=1;strokeColor=#0e8088;" edge="1" parent="1" source="cm4" target="n_x_avg">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="n_x_cost" value="motivation: avoid storing the history&lt;br&gt;&lt;i&gt;↔ Homogenized CMM (hcmm.drawio)&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f2f2f2;strokeColor=#666666;fontColor=#666666;fontSize=11;arcSize=12;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="1370.0" y="725.0" width="330" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="l_x_cost" value="" style="curved=1;endArrow=none;html=1;strokeWidth=2;dashed=1;strokeColor=#666666;" edge="1" parent="1" source="cm4" target="n_x_cost">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="cmm_steps" name="CMM – steps">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1240" pageHeight="1070" math="1" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="&lt;b&gt;Constrained mixture model: one time step at a Gauss point&lt;/b&gt;" style="text;html=1;align=left;verticalAlign=middle;fontSize=17;" vertex="1" parent="1">
+          <mxGeometry x="40" y="15" width="1160" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="h_fe" value="FE (global)" style="text;html=1;align=left;verticalAlign=bottom;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="70" width="230" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="fe1" value="Time step \(s\): loads and boundary conditions" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=10;align=left;spacingLeft=8;spacingRight=8;fillColor=#eeeeee;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="40" y="110" width="230" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="fe2" value="Global Newton iteration: displacements → \(\mathbf F(s)\) at every Gauss point" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=10;align=left;spacingLeft=8;spacingRight=8;fillColor=#eeeeee;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="40" y="190" width="230" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="h_ev" value="Gauss point: stress evaluation (every Newton iteration)" style="text;html=1;align=left;verticalAlign=bottom;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="340" y="150" width="480" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="ev0" value="&lt;b&gt;1.&lt;/b&gt; For every constituent \(j\) and every stored cohort \(\tau_k \le s\): \(\mathbf F_e^j(s,\tau_k) = \mathbf F(s)\,\mathbf F^{-1}(\tau_k)\,\mathbf G^j\)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=10;align=left;spacingLeft=8;spacingRight=8;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="340" y="190" width="480" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="ev1" value="&lt;b&gt;2.&lt;/b&gt; Survival \(q^j(s,\tau_k)\), e.g. \(e^{-(s-\tau_k)/T^j}\), and \(Q^j(s)\) for the initial mass" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=10;align=left;spacingLeft=8;spacingRight=8;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="340" y="275" width="480" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="ev2" value="&lt;b&gt;3.&lt;/b&gt; New cohort at \(s\): deposition rate \(m^j(s)\) from the stress-dependent law; it depends on \(\boldsymbol\sigma^j(s)\) → local iteration" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=10;align=left;spacingLeft=8;spacingRight=8;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="340" y="355" width="480" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="ev3" value="&lt;b&gt;4.&lt;/b&gt; Mass: \(\rho^j(s) = \rho^j_0\,Q^j(s) + \sum_k m^j(\tau_k)\,q^j(s,\tau_k)\,\Delta\tau_k\)  (quadrature of the integral)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=10;align=left;spacingLeft=8;spacingRight=8;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="340" y="440" width="480" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="ev4" value="&lt;b&gt;5.&lt;/b&gt; Stress: \(\boldsymbol\sigma(s) = \frac{1}{J}\sum_j\Big[\rho^j_0 Q^j\,\frac{\partial W^j(s,0)}{\partial\mathbf F}\mathbf F^T + \sum_k m^j q^j\,\frac{\partial W^j(s,\tau_k)}{\partial\mathbf F}\mathbf F^T\,\Delta\tau_k\Big]\)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=10;align=left;spacingLeft=8;spacingRight=8;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="340" y="525" width="480" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="ev5" value="&lt;b&gt;6.&lt;/b&gt; Tangent \(\partial\boldsymbol\sigma/\partial\mathbf F\): sum over all cohorts" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=10;align=left;spacingLeft=8;spacingRight=8;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="340" y="630" width="480" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="fe3" value="assemble residual and tangent; converged?" style="rhombus;whiteSpace=wrap;html=1;fontSize=11;fillColor=#eeeeee;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="70" y="620" width="170" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="fe4" value="Converged: commit the state at every Gauss point" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=10;align=left;spacingLeft=8;spacingRight=8;fillColor=#eeeeee;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="40" y="765" width="230" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="h_co" value="Gauss point: state update after convergence (commit)" style="text;html=1;align=left;verticalAlign=bottom;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="340" y="725" width="480" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="co0" value="&lt;b&gt;7.&lt;/b&gt; Append the converged \(\mathbf F(s)\) and \(m^j(s)\) to the history: one new cohort per step" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=10;align=left;spacingLeft=8;spacingRight=8;fillColor=#f2f8f0;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="340" y="765" width="480" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="co1" value="&lt;b&gt;8.&lt;/b&gt; Optionally drop cohorts with \(q^j \approx 0\)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=10;align=left;spacingLeft=8;spacingRight=8;fillColor=#f2f8f0;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="340" y="845" width="480" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="h_st" value="Stored state per Gauss point" style="text;html=1;align=left;verticalAlign=bottom;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="900" y="150" width="300" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="st" value="whole history: \(\mathbf F(\tau_k)\), \(m^j(\tau_k)\) of all past steps&lt;br&gt;\(\rho^j_0\), \(\mathbf G^j\), \(W^j\), \(T^j\)&lt;br&gt;&lt;br&gt;grows with every step" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=10;align=left;spacingLeft=8;spacingRight=8;fillColor=#ffffff;strokeColor=#666666;dashed=1;verticalAlign=top;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="900" y="190" width="300" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="note" value="&lt;b&gt;Cost:&lt;/b&gt; every stress evaluation loops over all stored cohorts; memory and time grow with the number of steps.&lt;br&gt;&lt;b&gt;With growth:&lt;/b&gt; \(\mathbf F(s) \to \mathbf F(s)\mathbf F_g^{-1}(s)\) and \(\mathbf F(\tau_k) \to \mathbf F(\tau_k)\mathbf F_g^{-1}(\tau_k)\), \(\mathbf F_g\) from \(\rho_{tot}\).&lt;br&gt;&lt;b&gt;Natural configurations:&lt;/b&gt; one per cohort, set by \(\mathbf F(\tau_k)\) and \(\mathbf G^j\)." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;align=left;spacingLeft=12;spacingRight=12;fontSize=12;arcSize=6;" vertex="1" parent="1">
+          <mxGeometry x="40" y="940" width="1160" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="a1" value="" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="fe1" target="fe2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a2" value="\(\mathbf F(s)\)" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;fontSize=13;" edge="1" parent="1" source="fe2" target="ev0">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a_ev0" value="" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="ev0" target="ev1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a_ev1" value="" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="ev1" target="ev2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a_ev2" value="" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="ev2" target="ev3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a_ev3" value="" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="ev3" target="ev4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a_ev4" value="" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="ev4" target="ev5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a3" value="\(\boldsymbol\sigma\), \(\partial\boldsymbol\sigma/\partial\mathbf F\)" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;fontSize=13;exitX=0;exitY=0.5;entryX=1;entryY=0.5;" edge="1" parent="1" source="ev5" target="fe3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a4" value="no" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;exitX=0;exitY=0.5;entryX=0;entryY=0.5;edgeStyle=orthogonalEdgeStyle;" edge="1" parent="1" source="fe3" target="fe2">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="25" y="660" />
+              <mxPoint x="25" y="220" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="a5" value="yes" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="fe3" target="fe4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a6" value="" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="fe4" target="co0">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a_co0" value="" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="co0" target="co1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a7" value="next step \(s + ds\)" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;exitX=0;exitY=0.5;entryX=0;entryY=0.5;edgeStyle=orthogonalEdgeStyle;strokeColor=#666666;" edge="1" parent="1" source="co1" target="fe1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="12" y="867.5" />
+              <mxPoint x="12" y="135" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="r1" value="read" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;dashed=1;strokeColor=#666666;fontColor=#666666;exitX=0;exitY=0.25;entryX=1;entryY=0.5;" edge="1" parent="1" source="st" target="ev0">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="w1" value="write" style="endArrow=classic;html=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;dashed=1;strokeColor=#666666;fontColor=#666666;exitX=1;exitY=0.5;entryX=0.5;entryY=1;edgeStyle=orthogonalEdgeStyle;" edge="1" parent="1" source="co1" target="st">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="cmm" name="Constrained mixture">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="700" math="1" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="t" value="&lt;b&gt;Constrained mixture (Humphrey &amp;amp; Rajagopal 2002):&lt;/b&gt; mass of constituent \(j\) deposited at time \(\tau\)" style="text;html=1;align=left;verticalAlign=middle;fontSize=16;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="900" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="b0" value="&lt;b&gt;Reference \(\mathcal B_0\)&lt;/b&gt;&lt;br&gt;\(s = 0\)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="60" y="220" width="160" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="bt" value="&lt;b&gt;Tissue at deposition \(\mathcal B(\tau)\)&lt;/b&gt;&lt;br&gt;new mass is laid down here" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="400" y="220" width="180" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="bs" value="&lt;b&gt;Current tissue \(\mathcal B(s)\)&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="780" y="220" width="180" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="kn" value="&lt;b&gt;Natural configuration&lt;/b&gt; of the mass deposited at \(\tau\)&lt;br&gt;stress-free, one per cohort \(\tau\)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;dashed=1;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="400" y="430" width="180" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="f_t" value="\(\mathbf F(\tau)\)" style="endArrow=classic;html=1;strokeWidth=2;strokeColor=#333333;fontSize=15;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="b0" target="bt">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="f_ts" value="\(\mathbf F(s)\,\mathbf F^{-1}(\tau)\)&lt;br&gt;deformation since deposition" style="endArrow=classic;html=1;strokeWidth=2;strokeColor=#333333;fontSize=14;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="bt" target="bs">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="f_s" value="\(\mathbf F(s)\)  total" style="edgeStyle=orthogonalEdgeStyle;curved=1;endArrow=classic;html=1;strokeWidth=2;strokeColor=#333333;fontSize=14;labelBackgroundColor=#ffffff;exitX=0.5;exitY=0;entryX=0.5;entryY=0;" edge="1" parent="1" source="b0" target="bs">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="140" y="130" />
+              <mxPoint x="870" y="130" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="f_g" value="\(\mathbf G^j\)  deposition prestretch" style="endArrow=classic;html=1;strokeWidth=2;strokeColor=#82b366;fontSize=14;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="kn" target="bt">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="f_e" value="\(\mathbf F_e^j(s,\tau) = \mathbf F(s)\,\mathbf F^{-1}(\tau)\,\mathbf G^j\)&lt;br&gt;causes the stress of this cohort" style="endArrow=classic;html=1;strokeWidth=3;strokeColor=#b85450;fontSize=14;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0.5;entryY=1;edgeStyle=orthogonalEdgeStyle;curved=1;" edge="1" parent="1" source="kn" target="bs">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="note" value="&lt;b&gt;Every cohort \(\tau\) has its own natural configuration.&lt;/b&gt; Mass: \(\rho^j(s) = \rho^j_0 Q^j(s) + \int_0^s m^j(\tau)\,q^j(s,\tau)\,d\tau\); the initial mass is the cohort \(\tau = 0\) with \(\mathbf F_e^j = \mathbf F(s)\,\mathbf G^j\).&lt;br&gt;Stress \(\boldsymbol\sigma^j(s)\): integral over all surviving cohorts → \(\mathbf F(\tau)\) of the whole history must be stored (memory, cost) → motivation for the HCMM.&lt;br&gt;Extended by growth: \(\mathbf F(s) \to \mathbf F(s)\mathbf F_g^{-1}(s)\) and \(\mathbf F(\tau) \to \mathbf F(\tau)\mathbf F_g^{-1}(\tau)\)." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;align=left;spacingLeft=10;fontSize=12;arcSize=6;" vertex="1" parent="1">
+          <mxGeometry x="40" y="570" width="960" height="90" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
