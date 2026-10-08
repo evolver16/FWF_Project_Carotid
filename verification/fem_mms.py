@@ -165,8 +165,13 @@ def solve_case(n, etype, element, material, u_ex, q_ex, model):
     errs = [norm(du) / norm(points(u_ex, Xq)), norm(dG) / norm(G_ex)]
     if q_ex is not None:
         qx = points(q_ex, Xq)
-        errs.append(norm(np.repeat(sysm.last_p, len(wts)) - qx) / norm(qx))
-        if etype == "tet10":
+        if element == "hybrid_p1":
+            L = np.column_stack([1 - pts.sum(1), pts])
+            q_h = np.einsum("qa,ea->eq", L, sysm.last_p[np.asarray(sysm._pdofs)]).ravel()
+        else:
+            q_h = np.repeat(sysm.last_p, len(wts))
+        errs.append(norm(q_h - qx) / norm(qx))
+        if etype == "tet10" and element == "hybrid":
             vol = w.sum(1).reshape(-1, 6)
             q_cube = np.repeat((sysm.last_p.reshape(-1, 6) * vol).sum(1) / vol.sum(1), 6 * len(wts))
             errs.append(norm(q_cube - qx) / norm(qx))
@@ -188,6 +193,8 @@ def cases():
     yield "tet10 hybrid    incompressible, J=1 ", "tet10", tet_n, "hybrid", inc, u_isochoric, q_field, None, (2, 1, None, 1)
     yield "hex8  hybrid    J_target = det F_ex ", "hex8", hex_n, "hybrid", inc, u_general, q_field, Growth, (2, 1, 1)
     yield "tet10 hybrid    J_target = det F_ex ", "tet10", tet_n, "hybrid", inc, u_general, q_field, Growth, (2, 1, None, 1)
+    yield "tet10 P2/P1     incompressible, J=1 ", "tet10", tet_n, "hybrid_p1", inc, u_isochoric, q_field, None, (3, 2, 2)
+    yield "tet10 P2/P1     J_target = det F_ex ", "tet10", tet_n, "hybrid_p1", inc, u_general, q_field, Growth, (3, 2, 2)
     yield "hex8  standard  K/C10 = 2e4 (locks) ", "hex8", hex_n, "standard", stiff, u_isochoric, None, None, None
     yield "hex8  fbar      K/C10 = 2e4         ", "hex8", hex_n, "fbar", stiff, u_isochoric, None, None, None
 

@@ -121,7 +121,8 @@ the Cauchy stress for a given deformation gradient. The G&amp;R model (<code>hcm
 <code>fcmm</code>) is plugged in as a module with three functions:</p>
 <pre><code>sigma, aux = model.sigma_solver(state, F)   # pure: stress at a trial F, state not changed
 state      = model.commit(state, F, aux)    # once per step, on the converged F
-J_target(state)                             # optional, hybrid element (default 1)</code></pre>
+J_target(state)                             # optional, hybrid element (default 1)
+wss(state, tau_w) -> state                  # optional, wall shear stress input (BC.wss)</code></pre>
 <p>Without a model, <code>System(mesh)</code> uses <code>Elastic</code>: the state at a Gauss point <em>is</em> a material,
 and \(\sigma = \texttt{material.sigma}(F)/J\).</p>
 
@@ -214,17 +215,17 @@ Full 2×2×2 integration avoids hourglass modes. Volumetric locking is handled b
 (sections 5–6), not by reduced integration, which would need hourglass control.</li>
 <li><b>tet10, not tet4.</b> Real carotid geometries come from image segmentation and are meshed with tetrahedra.
 tet4 has constant strain, is far too stiff in bending and locks badly when nearly incompressible. tet10 is quadratic
-and converges faster than hex8 on the tube (error ratio about 7 per refinement vs about 4, section 16). It also pairs
-with a constant pressure into a stable P2/P0 hybrid element.</li>
+and converges faster than hex8 on the tube (error ratio about 7 per refinement vs about 4, section 16). With a continuous linear
+pressure at its corner nodes it forms the inf-sup stable Taylor–Hood element P2/P1 (<code>"hybrid_p1"</code>).</li>
 <li><b>Curved edges.</b> In the structured generator the tet10 midside nodes are mapped from index space, so element edges
 follow the curved wall.</li>
 </ul></div>
 
 <!-- ============================================================ -->
-<h2 id="locking">5. Volumetric locking and the three formulations</h2>
+<h2 id="locking">5. Volumetric locking and the four formulations</h2>
 <p>Arterial tissue is nearly incompressible, with bulk modulus \(K \gg \mu\). With low-order elements, the displacement
 field cannot deform at constant volume at every Gauss point. The element becomes far too stiff: it <em>locks</em>.
-<code>System(..., element=...)</code> offers three formulations:</p>
+<code>System(..., element=...)</code> offers four formulations:</p>
 
 <div class="grid2">
 <div class="card"><h4><code>"standard"</code></h4>
@@ -237,6 +238,10 @@ Displacement-only, and works with any compressible material.</p></div>
 $$\sigma_{\text{tot}} = \sigma(F) - q\,I,\quad \int_{\Omega_e}(J - J_{\text{target}})\,\mathrm{d}V = 0$$
 <p>One extra pressure unknown \(q\) per element enforces the volume <em>exactly</em> in the element average.
 The material returns only the deviatoric part.</p></div>
+<div class="card"><h4><code>"hybrid_p1"</code> (P2/P1 Taylor–Hood, tet10 only)</h4>
+$$q(\xi)=\sum_{a=1}^4 L_a(\xi)\,q_a,\quad \int L_a\,(J - J_{\text{target}})\,\mathrm{d}V = 0$$
+<p>Continuous linear pressure at the corner nodes. Inf-sup stable; optimal orders u 3 / 2, pressure 2. The pressure field is smooth,
+so this is the element for wall stresses on tetrahedral meshes.</p></div>
 </div>
 
 <h3>Evidence (thick-walled tube, <code>verification/fem_tube.py</code>)</h3>
@@ -266,18 +271,20 @@ the centroid \(J_0\), and there is no hourglass stabilization. F-bar also still 
 system ill-conditioned and \(K\) is a fake parameter. Hybrid removes \(K\) altogether.</p></div>
 
 <div class="box ok"><span class="tag">Decision</span>
-<p><b>Use <code>hybrid</code> with <code>NeoHookeanInc</code> elastin for arterial G&amp;R.</b> Use <code>standard</code> only
+<p><b>Use <code>hybrid</code> (hex8) or <code>hybrid_p1</code> (tet10) with <code>NeoHookeanInc</code> elastin for arterial G&amp;R.</b> Use <code>standard</code> only
 for compressible tests, and <code>fbar</code> only for moderately compressible materials in short runs.</p></div>
 
 <!-- ============================================================ -->
 <h2 id="hybrid">6. The hybrid element in detail</h2>
 <h3>Unknowns and equations</h3>
-<p>The unknown vector is \(x = (u, q)\), with one \(q_e\) per element appended after the displacement dofs
-(<code>n_x = n_dof + n_elem</code>, <code>_split</code>). Per element:</p>
-$$r_u = \sum_g w_g\, J\,(\sigma - q I)\,F^{-T} : \nabla_X N,\qquad
-r_q = -\sum_g w_g\,\big(J - J_{\text{target}}(\text{state})\big)$$
+<p>The unknown vector is \(x = (u, q)\), with the pressure unknowns appended after the displacement dofs
+(<code>n_x = n_dof + n_p</code>). The pressure at a Gauss point is \(q_g = L(\xi_g)\cdot q_e\), where \(L = 1\) for P0 (one \(q_e\) per element)
+and \(L = (L_1,\dots,L_4)\), the corner barycentric coordinates, for P1 (\(q_e\) = values at the 4 corner nodes, shared between elements).
+<code>_pdofs</code> maps each element's coefficients to global pressure dofs. Per element:</p>
+$$r_u = \sum_g w_g\, J\,(\sigma - q_g I)\,F^{-T} : \nabla_X N,\qquad
+r_{q} = -\sum_g w_g\,L(\xi_g)\,\big(J - J_{\text{target}}(\text{state})\big)$$
 $$K_e = \begin{pmatrix} K_{uu} & K_{uq}\\ K_{uq}^T & 0\end{pmatrix},\qquad
-K_{uq} = -\sum_g w_g\, J F^{-T} : \nabla_X N$$
+K_{uq} = -\sum_g w_g\, J F^{-T} : \nabla_X N \otimes L(\xi_g)$$
 
 <h3>Why \(J_{\text{target}}\) and not \(J = 1\)</h3>
 <p>This is the central point of combining the hybrid element with G&amp;R. Growth adds or removes mass, so the tissue
@@ -289,9 +296,12 @@ could not thicken, and the pressure \(q\) would absorb the growth as a spurious 
 
 <h3>Design choices</h3>
 <ul>
-<li><b>Constant pressure per element (P0).</b> This is the simplest pressure space. For tet10 (P2/P0) it is inf-sup stable.
-For hex8 (Q1/P0) it is the classic mean-dilatation element (Abaqus C3D8H). It is not strictly LBB-stable, but in practice
-it converges at the same rate as F-bar (table above) and shows no pressure checkerboarding on the tube meshes.</li>
+<li><b>Constant pressure per element (P0, <code>"hybrid"</code>).</b> The simplest pressure space. For hex8 (Q1/P0) it is the classic
+mean-dilatation element (Abaqus C3D8H): not inf-sup stable (Schur eigenvalue ratio ~ h² in Cook's membrane), but displacements converge like F-bar.
+For tet10 (P2/P0) displacements converge too, but the element pressures oscillate between neighbouring tets (MMS: pressure error does not decrease).</li>
+<li><b>Linear continuous pressure (P1, <code>"hybrid_p1"</code>, tet10).</b> Taylor–Hood P2/P1, inf-sup stable. MMS: u L2 2.97, H1 1.91, pressure 2.5
+(P2/P0 on the finest mesh: pressure error 0.93, P2/P1: 0.0045). Pressure dofs at the corner nodes, numbered after the displacements
+(<code>p_nodes</code> lists the mesh nodes they belong to).</li>
 <li><b>Pressure kept as a global unknown, not condensed.</b> With an incompressible material, \(K_{qq} = 0\) (there is no
 volumetric energy). Static condensation needs \(K_{qq}^{-1}\), so \(q\) stays a Lagrange multiplier. The price is a saddle-point
 system with a zero diagonal block. That decides the linear solver (section 10).</li>
@@ -302,8 +312,8 @@ and the pressure is "added by the solver". Exported total stresses (<code>fields
 (<code>_p_scale</code> = element volume) instead of mixing it with forces.</li>
 <li><b>Warm start.</b> The converged pressures are stored in <code>last_p</code> and used as the initial guess for the next solve.
 In a G&amp;R step the pressure field changes little, so Newton starts close to the solution.</li>
-<li><b>Generality.</b> The same code builds Q1/P0 and P2/P0, because <code>q</code> enters only through \(J\) and
-\(F^{-T}\) at the Gauss points.</li>
+<li><b>Generality.</b> The same code builds Q1/P0, P2/P0 and P2/P1. Only \(L\) and the pressure dof map differ; Newton, constraints,
+adjoint, arc length and stability only see <code>n_p</code>.</li>
 </ul>
 
 <!-- ============================================================ -->
@@ -341,6 +351,18 @@ the wall stretches by 15–25 %, so a dead load would be noticeably wrong. The l
 symmetric. That is one reason the global system is solved as non-symmetric. Faces are oriented outward when the mesh is
 built (<code>mesh.outward</code>), so the sign is consistent for any import.</p>
 
+<h3>Fluid input: wall pressure field and wall shear stress</h3>
+<p><code>BC.p</code> may be a number, one value per face, or one value per face Gauss point \(p_g\) (a fluid wall pressure).
+<code>System.face_points(u)</code> returns the deformed face Gauss points and the normals pointing out of the wall, where a fluid
+solution is sampled. <code>fem.transfer(points, values, targets)</code> maps by nearest neighbour: fluid wall data → face points,
+and lumen WSS → wall Gauss points (radially constant over the wall, as in Pfaller 2024). The adjoint gives \(\partial/\partial p_g\) for every point.</p>
+<p>WSS is a boundary condition too: <code>BC.wss</code>, same shapes as <code>BC.p</code>. It acts <b>mechanobiologically</b>, not as a traction
+(it is about 5 orders of magnitude smaller than the pressure). Before every step, <code>run</code> passes it to every wall Gauss point
+through the nearest lumen point in the reference configuration (<code>System.apply_wss</code>, radially constant over the wall) and the model's
+optional <code>wss(state, tau_w)</code>. The HCMM keeps <code>tau_w</code> and the homeostatic <code>tau_w_h</code> per Gauss point, and production becomes
+\((\rho/T)(1 + k\,\mathrm{rel} - k_\tau\,\Delta\tau_w)\) with \(\Delta\tau_w = \tau_w/\tau_{w,h} - 1\). Example: study <code>flow_step</code>,
+where a Poiseuille WSS on the current lumen stands in for a fluid solution. The lumen adapts to the Murray radius \(q^{1/3}\).</p>
+
 <h3>Dirichlet, dead forces, slip</h3>
 <p><code>BC(fixed, values, f_dead, p, slip)</code>. Slip conditions \(u\cdot n = 0\) (inclined supports, symmetry planes
 not aligned with the axes) are handled by a null-space basis (<code>Constraints</code>):</p>
@@ -377,7 +399,8 @@ diagonal block</b>. That rules out Cholesky and CG. The code uses a sparse LU (<
 <li><code>mtype=11</code> (real non-symmetric), METIS nested dissection;</li>
 <li><b>scaling + weighted matching</b> (<code>iparm[10], iparm[12]</code>): moves large entries onto the diagonal, which is needed for the
 zero \(K_{qq}\) block;</li>
-<li>pivot perturbation \(10^{-13}\);</li>
+<li>pivot perturbation \(10^{-13}\), followed by up to 10 <b>iterative refinement</b> steps. Without refinement, a hybrid system with a stress-free incompressible
+material (zero-energy dilatation mode in \(K_{uu}\) plus the zero \(K_{qq}\) block) came back with a 6 % residual;</li>
 <li>symbolic analysis reused while the sparsity pattern is the same;</li>
 <li>multithreaded only from 20k unknowns on (below that, thread overhead dominates); <code>KMP_BLOCKTIME=0</code> so idle MKL
 threads do not spin and slow JAX.</li>
@@ -395,7 +418,9 @@ pivots, which the zero pressure block does not provide;</li>
 <p>Within a Newton loop, and between G&amp;R steps, \(K\) changes only a little. The solver therefore first runs right-preconditioned
 GMRES with the <em>last</em> LU as preconditioner. It refactorizes immediately if GMRES does not reach the tolerance. If GMRES converged
 but needed more than 5 iterations, the old LU has become a poor preconditioner, so it is dropped and the next solve refactorizes. The result is accepted only if
-\(\|Ax-b\| \le 10\cdot\text{tol}\,\|b\|\) with tol \(=10^{-12}\). A converged Newton therefore stays quadratic, and the adjoint stays exact.</p>
+\(\|Ax-b\| \le 10\cdot\text{tol}\,\|b\|\) with tol \(=10^{-12}\). If that cannot be reached, the best solution is still accepted up to
+\(10^{-6}\). Ill-conditioned F-bar systems (\(K/\mu = 5000\)) reach only about \(10^{-10}\), which is ample for Newton. Above \(10^{-6}\),
+SuperLU is tried as a fallback, and if that fails too the solve raises an error. A bad solution is never passed on silently.</p>
 <div class="box why"><span class="tag">Why</span>
 <p>The factorization is by far the most expensive linear-algebra step. A GMRES iteration costs one sparse mat-vec plus a pair of triangular solves.
 The same factorization also serves the transposed adjoint solve (<code>trans="T"</code>). Measured on vessel G&amp;R end to end,
@@ -413,7 +438,9 @@ What remains is mostly JAX material/tangent evaluation.</p></div>
   <div class="step"><b>3. Pseudo-transient continuation</b>\((K + \eta\,|\mathrm{diag}\,K|)\,\delta x = -r\), \(\eta\times0.3\) per accepted step, \(\times10\) on rejection</div>
 </div>
 <ul>
-<li><b>Residual scale.</b> \(s_u\) is the larger of the first residual and the dead forces. The criterion is therefore relative to the load.
+<li><b>Residual scale.</b> \(s_u\) is the largest of the first residual, the dead forces and \(\max|\mathrm{diag}K\,\delta u_1|\) (the force of the first step).
+The criterion is therefore relative to the load. The last term matters when only \(J_\text{target}\) changes (pure growth): then \(r_u(u_0)=0\), and a fixed floor
+would misclassify normal residuals as divergence.
 The pressure dofs are scaled by element volume, and in slip mode the scales are mapped through \(|Z|\) (<code>restrict_scale</code>).</li>
 <li><b>Divergence detection.</b> A non-finite residual, or one above \(10^8\), raises immediately and passes to the next stage.</li>
 </ul>
@@ -451,6 +478,9 @@ $$\text{for each step: }\quad u_{n+1} = \texttt{equilibrium}(\text{state}_n, bc_
 The stress is therefore the backward-Euler G&amp;R response, and <code>commit</code> only stores the result. The FE code does not change:
 its <code>jacfwd</code> of <code>sigma_solver</code> differentiates through the final Newton step of the inner solve, which gives the
 implicit-function-theorem tangent \(\mathrm d x/\mathrm dF = -J^{-1}\partial r/\partial F\). Cost per Gauss point ≈ 24–36 µs stress and 40–49 µs tangent.</li>
+<li><b>Wall shear stress.</b> If the step's BC carries <code>wss</code>, <code>run</code> first writes it into the state at every wall Gauss point
+(<code>apply_wss</code>, nearest lumen point), then equilibrium and commit follow. The WSS is therefore taken on the geometry at the start of the step
+(staggered), which is what a fluid solution computed on the current lumen provides.</li>
 <li><b><code>commit</code> pass-through.</b> Leaves the model does not change (material parameters, fiber directions, \(\sigma_{\text{pre}}\))
 are detected once from the jaxpr. They keep their input buffers instead of being copied every step. <code>jax.checkpoint</code> on the
 commit keeps the reverse pass from storing its intermediates.</li>
@@ -509,22 +539,34 @@ nodes and elements (<code>fields</code>, <code>to_nodes</code>).</p>
 <tr><td>patch tests, homogeneous deformations (<code>fem_analytic</code>)</td><td>uniaxial, equibiaxial (hybrid), shear, dilatation, general \(F_0\); distorted hex8 and tet10</td><td class="good">exact to 1e-10 … 1e-16</td></tr>
 <tr><td>Lamé tube (<code>fem_tube</code> 1, 5)</td><td>convergence order, pressure, symmetry BCs</td><td>hex8 ratio ≈ 4 (O(h²)), tet10 ≈ 7</td></tr>
 <tr><td>formulations (<code>fem_tube</code> 3, 4)</td><td>locking at \(K/\mu = 10^4\), incompressible finite strain</td><td>standard locks 42–96 %; fbar and hybrid converge</td></tr>
-<tr><td>tet10 hybrid P2/P0 (<code>fem_tube</code> 6)</td><td>incompressible finite pressure</td><td>4.4e-5 on the finest mesh</td></tr>
+<tr><td>tet10 hybrid P2/P0 vs P2/P1 (<code>fem_tube</code> 6)</td><td>incompressible finite pressure</td><td>P2/P0 4.4e-5, <b>P2/P1 2.1e-7</b> on the finest mesh</td></tr>
 <tr><td>buckling</td><td>Euler column, arch snap-through, relaxation</td><td>1.5 % (discretization), 9e-10, 6e-12</td></tr>
 <tr><td>FE vs material point (<code>fe_vs_material_point</code>)</td><td>one (hybrid) hex8 with G&amp;R vs the 0D solver</td><td>≤ 4e-11</td></tr>
 <tr><td>artery G&amp;R (<code>element_formulations</code>)</td><td>hex8 vs tet10, Laplace vs analytic basis</td><td>1e-4, 1e-5</td></tr>
 <tr><td>adjoint</td><td>vs central FD</td><td>1e-9 … 1e-11</td></tr>
+<tr><td>manufactured solutions (<code>fem_mms</code>)</td><td>convergence orders on a curved mesh, finite strain, fibers, F-bar, hybrid with \(J_\text{target}=\det F_\text{ex}\)</td><td class="good">hex8 L2 2 / H1 1; tet10 2.97 / 1.93; Q1/P0 pressure O(h); P2/P1: u 2.97 / 1.91, pressure 2.5</td></tr>
+<tr><td>consistency (<code>fem_consistency</code>)</td><td>K = AD of the residual, Newton order, follower load \(=-p\,\partial V/\partial x\), pressure field = scalar, invariances, free growth, adjoint (incl. per-point pressure)</td><td class="good">1e-16 … 1e-8, all pass, all formulations incl. P2/P1</td></tr>
+<tr><td>Cook's membrane (<code>cook</code>)</td><td>locking under bending, skewed elements</td><td>fbar / hybrid / P2/P1 within 0.4 %, standard hex8 locks (27 %), standard tet10 partially</td></tr>
+<tr><td>WSS boundary condition (<code>flow_step</code>)</td><td>flow ×1.5 at constant pressure, Poiseuille WSS on the lumen via <code>BC.wss</code></td><td class="good">lumen → Murray radius 1.1449 (exact 1.1447); WSS = homeostatic reproduces the run without WSS (3e-16)</td></tr>
+<tr><td>artery G&amp;R GCI (<code>solution_verification</code>)</td><td>mesh and time-step convergence</td><td class="good">mesh order 2.00 (GCI 0.003 %), time order 1.00 (ds = 10 d: 3e-4)</td></tr>
 </table></div>
-<p>Run them from the repository root: <code>python -m verification.fem_tube</code>, <code>.fem_analytic</code>, <code>.buckling</code>,
-<code>.mesh_io</code>. Logs are in <code>verification/results/</code>.</p>
+<p>Run them from the repository root: <code>python -m verification.fem_tube</code>, <code>.fem_analytic</code>, <code>.fem_mms</code>,
+<code>.fem_consistency</code>, <code>.cook</code>, <code>.buckling</code>, <code>.mesh_io</code>. Logs are in <code>verification/results/</code>.
+The G&amp;R studies (<code>solution_verification</code>, <code>flow_step</code>, <code>fe_vs_material_point</code>) run from <code>cmm/</code> with
+<code>python -m studies &lt;name&gt;</code>. All of these are code-to-analytics and code-to-itself checks; an independent comparison with Abaqus is still open.</p>
 
 <!-- ============================================================ -->
 <h2 id="limits">17. Known limitations</h2>
 <ul>
 <li><b>F-bar has no hourglass stabilization.</b> It is unusable for \(K/\mu \gtrsim 10^3\) in long G&amp;R runs. Hybrid is the answer, so this was not pursued.</li>
-<li><b>Q1/P0 is not LBB-stable in theory.</b> No pressure modes have been seen on the tube meshes. On badly shaped or highly constrained hex meshes,
-check \(q\) for checkerboarding, or use tet10 (P2/P0).</li>
-<li><b>Quasi-static only.</b> There is no inertia, no fluid coupling and no wall-shear stimulus. The pressure is constant per phase.</li>
+<li><b>Q1/P0 is not inf-sup stable.</b> In Cook's membrane the smallest / largest pressure Schur eigenvalue falls like \(h^2\). It still converges, but only
+because PARDISO's iterative refinement is enabled. With all faces fixed, hex8 has 11 and tet10 4 spurious pressure modes (checkerboard).</li>
+<li><b>P2/P0 (tet10 hybrid) pressures oscillate between neighbouring tets.</b> In MMS, the element pressure error does not decrease, while cube averages converge at O(h)
+and displacements are fine. For wall stresses on tet10 meshes use <code>hybrid_p1</code> (P2/P1), which converges at order 2 in the pressure.</li>
+<li><b>F-bar under strong compression</b> (J ≈ 0.65) develops a localized near-zero mode (hourglass-like), which standard hex8 does not have. This is consistent with the
+failures in long G&amp;R runs.</li>
+<li><b>Quasi-static only, fluid as boundary condition.</b> There is no inertia and no fluid solver. Wall pressure and WSS enter as BCs per step (staggered);
+strong two-way coupling within a step is not implemented. WSS acts only as a G&amp;R stimulus, not as a traction.</li>
 <li><b>The FCMM does not run in the FE code</b> (memory for the per-Gauss-point cohort history).</li>
 <li><b>Arc length and stability freeze the G&amp;R state</b> and are not differentiable.</li>
 <li><b>Cost</b> is dominated by the JAX material and tangent evaluation, especially with the implicit HCMM, not by the linear solver.</li>

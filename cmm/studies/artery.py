@@ -2,6 +2,7 @@
 identification, pressure step (elastic vs turnover widening), pressure buckling of a G&R state."""
 
 import time
+from dataclasses import replace
 from functools import partial
 
 import jax
@@ -23,9 +24,9 @@ from verification.fem_tube import cylinder_bc, radial_u
 # ---------- model E on a tube: parameters, states, prestress + G&R run ----------
 
 def artery_par(**kw):
-    """Model E on the artery: elastin (C10, K), fibers (k1, k2, k_plus, k_minus, g, turnover T in days),
+    """Model E on the artery: elastin (C10, K), fibers (k1, k2, k_plus, k_minus, k_tau (WSS gain), g, turnover T in days),
     axial prestretch g_ax, pressures"""
-    par = dict(C10=MATRIX_DE["C10"], K=MATRIX_DE["K"], k1=FIBER["k1"], k2=FIBER["k2"], k_plus=0.1, k_minus=0.0,
+    par = dict(C10=MATRIX_DE["C10"], K=MATRIX_DE["K"], k1=FIBER["k1"], k2=FIBER["k2"], k_plus=0.1, k_minus=0.0, k_tau=0.0,
                T=setups.T_DAYS, g=FIBER["g"], g_ax=1.2, p_hom=0.010, p_gr=0.015)
     return {k: jnp.asarray(v, dtype=float) for k, v in {**par, **kw}.items()}
 
@@ -42,7 +43,7 @@ def artery_states(G_e, Qloc, par, mode, ds=10.0, elastin="compressible"):
                else materials.NeoHookeanInc(par["C10"]))
         cs = [hcmm.constituent(mat, MATRIX_DE["rho_0"], G=Ge, sigma_pre_mode=mode)]
         cs += [hcmm.constituent(materials.Fung(par["k1"], par["k2"], M), FIBER["rho_0"],
-                                *hcmm.maes(par["T"], par["k_plus"], par["k_minus"]), G=G_fiber(par["g"], M),
+                                *hcmm.maes(par["T"], par["k_plus"], par["k_minus"], par["k_tau"]), G=G_fiber(par["g"], M),
                                 sigma_pre_mode=mode) for M in dirs]
         return hcmm.mixture(cs, ds=ds, growth=hcmm.Anisotropic(e_r))
 
@@ -257,6 +258,51 @@ def pressure_step(days=2000.0, n_steps=200, n=(4, 30, 1), name="pressure_step", 
                           title="Wall", ylabel="%"),
                      dict(t=t, series={"circ. collagen": np.array([r["sigma_circ_rel"] for r in hist])},
                           title="Collagen stress / set point", ylabel="(-)")], fig)
+    log.save(txt)
+
+
+# ---------- flow step: wall shear stress stimulus from a (here Poiseuille) flow solution ----------
+
+def flow_step(days=2000.0, n_steps=200, n=(4, 30, 1), q=1.5, k_taus=(0.0, 0.5, 2.0, 8.0), name="flow_step", **par_kw):
+    """Flow step Q -> q Q at constant pressure p_hom, quarter cylinder; the flow enters as boundary condition BC.wss on
+    the lumen faces in every step, mapped by the FE to every wall Gauss point (nearest lumen point).
+    Stand-in for a fluid solution: Poiseuille tau_w = 4 mu Q / (pi a^3) with the local lumen radius a at the start of the
+    step, normalized so that tau_w_h = 1 / a_h^3 in the prestressed state:
+        tau_w / tau_w_h = q (a_h / a)^3
+    Production (rho/T)(1 + k rel - k_tau dtau): with growing k_tau the lumen tends to a / a_h = q^(1/3) (Murray)"""
+    log = Log()
+    txt, csv_path, fig = outputs("artery/flow_step", f"{name}.txt", f"{name}.csv", f"{name}.png")
+    ds = days / n_steps
+    m = meshlib.quarter_cylinder(n=n)
+    sysm = fem.System(m, hcmm, pressure_faces=m.faces[(0, -1)])
+    Qj = jnp.asarray(meshlib.cylinder_basis(fem.gauss_points(m.X, m.conn)))
+    lumen_radius = lambda u: np.linalg.norm(sysm.face_points(u)[0][..., :2], axis=-1)
+    log(f"quarter cylinder r_i 5, t 1.3 mm: {m.n_elem} hex8, HCMM model E; flow x{q} at constant pressure, "
+        f"{n_steps} steps of {ds:.3g} days; Poiseuille WSS on the lumen as BC.wss")
+    log(f"flow-adapted limit (Murray): a / a_h = q^(1/3) = {q ** (1 / 3):.4f}")
+    rows = []
+    for k_tau in k_taus:
+        par = artery_par(k_tau=k_tau, **par_kw)
+        bc = cylinder_bc(m, par["p_hom"])
+        _, u, states = artery_simulate(m, sysm, Qj, par, n_steps=0, final=True, ds=ds)
+        tau_h = sysm.apply_wss(states, 1.0 / lumen_radius(u) ** 3).tau_w
+        states = states.replace(tau_w=tau_h, tau_w_h=tau_h)
+        r_h = 5.0 + float(radial_u(m, u, -1))
+        t0 = time.time()
+        for k in range(1, n_steps + 1):
+            u, states, _ = sysm.run(states, [replace(bc, wss=q / lumen_radius(u) ** 3)], u0=u)
+            r_in, r_out = 5.0 + float(radial_u(m, u, -1)), 6.3 + float(radial_u(m, u, 1))
+            rows.append(dict(k_tau=float(k_tau), day=ds * k, r_rel=r_in / r_h, h_rel=(r_out - r_in) / 1.3,
+                             tau_rel=float(q * (r_h / r_in) ** 3)))
+        r = rows[-1]
+        log(f"  k_tau {float(k_tau):4.1f}: day {days:.0f}  inner radius / a_h {r['r_rel']:.4f}  wall thickness / h "
+            f"{r['h_rel']:.4f}  WSS / homeostatic {r['tau_rel']:.4f}  ({time.time() - t0:.0f}s)")
+    write_csv(rows, csv_path)
+    plotting.panels([dict(t=np.array([r["day"] for r in rows if r["k_tau"] == float(k_taus[0])]),
+                          series={f"k_tau {k}": np.array([r[key] for r in rows if r["k_tau"] == float(k)])
+                                  for k in k_taus}, title=title, ylabel="(-)")
+                     for key, title in (("r_rel", "Inner radius / homeostatic"), ("tau_rel", "WSS / homeostatic"),
+                                        ("h_rel", "Wall thickness / initial"))], fig)
     log.save(txt)
 
 

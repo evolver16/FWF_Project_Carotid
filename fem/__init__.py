@@ -7,4 +7,4 @@ import jax
 jax.config.update("jax_enable_x64", True)
 
 from fem.core import (ELEMENTS, BC, Elastic, System, anderson, broadcast_state, gauss_points, geometry,
-                      laplace, pardiso_available, wall_basis)
+                      laplace, pardiso_available, transfer, wall_basis)

@@ -12,6 +12,7 @@ fe_gr     fe_vs_material_point  HCMM patch test, single (hybrid) elements vs the
 artery    artery_gr           G&R of a quarter cylinder (Maes & Famaey 2023 Fig. 4)
           artery_gradients    adjoint gradients vs finite differences, parameter identification, cost
           pressure_step       pressure step held constant: elastic vs turnover widening
+          flow_step           flow step, WSS stimulus from the deformed lumen (Poiseuille stand-in for a fluid solver)
           pressure_buckling   pressure buckling of a G&R state (G&R frozen): critical pressure, post-buckling path
 vessel    stenotic_vessel     bent stenotic vessel from an .inp mesh, Laplace wall basis, adjoint
           bending_redistribution  mass redistribution in a bent tube (end rotation)
@@ -24,6 +25,6 @@ STUDIES = {f.__name__: f for f in (
     material.exact_solution, material.maes_benchmark, material.parameter_sweep, material.case_comparison,
     material.fe_readiness,
     fe_gr.fe_vs_material_point, fe_gr.element_formulations, fe_gr.solution_verification,
-    artery.artery_gr, artery.artery_gradients, artery.pressure_step, artery.pressure_buckling,
+    artery.artery_gr, artery.artery_gradients, artery.pressure_step, artery.flow_step, artery.pressure_buckling,
     vessel.stenotic_vessel, vessel.bending_redistribution, vessel.setpoint_patch,
 )}

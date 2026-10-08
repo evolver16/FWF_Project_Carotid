@@ -6,7 +6,7 @@
 
 1) hex8 convergence, small pressure      2) hex8 refinement at 15 kPa (nonlinear, no closed form)
 3) element formulations at K/mu = 1e4    4) finite pressure, incompressible
-5) hex8 vs tet10, small pressure         6) tet10 hybrid (P2/P0), finite pressure, incompressible
+5) hex8 vs tet10, small pressure         6) tet10 hybrid P2/P0 and P2/P1, finite pressure, incompressible
 Run: python -m verification.fem_tube
 """
 
@@ -124,8 +124,9 @@ def main():
         errors(f"{etype:8s}", [abs(solve(n, comp, 1e-8, etype=etype)[0] / lame(1e-8, a, b, mu, K - 2 * mu / 3) - 1)
                                for n in tet_meshes])
 
-    log(f"\n6) tet10 hybrid (P2/P0), incompressible, p = {p} (a/A exact {a_ex / a:.6f})")
-    errors("tet10   ", [abs(solve(n, inc, p, "hybrid", "tet10", steps=5)[0] / (a_ex - a) - 1) for n in tet_meshes])
+    log(f"\n6) tet10 hybrid P2/P0 and P2/P1, incompressible, p = {p} (a/A exact {a_ex / a:.6f})")
+    for element in ("hybrid", "hybrid_p1"):
+        errors(f"{element:9s}", [abs(solve(n, inc, p, element, "tet10", steps=5)[0] / (a_ex - a) - 1) for n in tet_meshes])
 
     OUT.mkdir(exist_ok=True)
     (OUT / "fem_tube.txt").write_text("\n".join(lines) + "\n")

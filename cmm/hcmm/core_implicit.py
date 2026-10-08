@@ -79,13 +79,15 @@ class constituent:
         return self.production is not None or self.removal is not None
 
 
-@pytree(("constituents", "ds", "rho_tot_0", "rho_tot", "F_g", "growth"))
+@pytree(("constituents", "ds", "rho_tot_0", "rho_tot", "F_g", "growth", "tau_w", "tau_w_h"))
 class mixture:
-    def __init__(self, constituents, ds, growth):
-        """growth: law from hcmm.growth, F_g from rho_tot / rho_tot_0"""
+    def __init__(self, constituents, ds, growth, tau_w=1.0, tau_w_h=1.0):
+        """growth: law from hcmm.growth, F_g from rho_tot / rho_tot_0;
+        tau_w, tau_w_h: wall shear stress and its homeostatic value (input, e.g. from a fluid solution)"""
         self.constituents = constituents
         self.ds = ds
         self.growth = growth
+        self.tau_w, self.tau_w_h = jnp.asarray(tau_w, dtype=float), jnp.asarray(tau_w_h, dtype=float)
         self.rho_tot_0 = sum(c.rho for c in constituents)
         self.rho_tot = self.rho_tot_0
         for c in constituents:
@@ -123,7 +125,7 @@ def mismatch(c, F, F_g, sigma_ref, z):
 
 
 ConstituentState = namedtuple("ConstituentState", "rho F_r sigma sigma_f residual")
-Step = namedtuple("Step", "F F_g R J rho_tot rho_tot_0 ds")
+Step = namedtuple("Step", "F F_g R J rho_tot rho_tot_0 ds dtau")
 
 
 @jit
@@ -179,7 +181,7 @@ def sigma_solver(mixt, F):
             def own_residual(v):
                 rho_tot_v = v[n] + (v[n + 1] if coupled else rho_others)
                 step = Step(F=F, F_g=mixt.growth.F_g(rho_tot_v / mixt.rho_tot_0), R=R, J=J,
-                            rho_tot=rho_tot_v, rho_tot_0=mixt.rho_tot_0, ds=mixt.ds)
+                            rho_tot=rho_tot_v, rho_tot_0=mixt.rho_tot_0, ds=mixt.ds, dtau=mixt.tau_w / mixt.tau_w_h - 1.0)
                 return constituent_state(c, (v[:n], v[n]), step, s).residual
 
             v = jnp.concatenate([u[0], u[1][None]] + ([rho_others[None]] if coupled else []))
@@ -211,7 +213,8 @@ def growth_step(mixt, F, R, J, unknowns):
         densities.append(c.rho if u is None else u[1])
     rho_tot = sum(densities)
     F_g = mixt.growth.F_g(rho_tot / mixt.rho_tot_0)
-    return Step(F=F, F_g=F_g, R=R, J=J, rho_tot=rho_tot, rho_tot_0=mixt.rho_tot_0, ds=mixt.ds)
+    return Step(F=F, F_g=F_g, R=R, J=J, rho_tot=rho_tot, rho_tot_0=mixt.rho_tot_0, ds=mixt.ds,
+                dtau=mixt.tau_w / mixt.tau_w_h - 1.0)
 
 
 def constituent_states(mixt, F, R, J, unknowns, slack):
@@ -242,7 +245,7 @@ def constituent_state(c, unknowns, step, slack):
     sigma_f = c.material.sigma_f(sigma) / step.J
 
     c_new = c.replace(rho=rho)
-    args = (sigma_f, step.ds, step.rho_tot, step.rho_tot_0)
+    args = (sigma_f, step.ds, step.rho_tot, step.rho_tot_0, step.dtau)
     zero = jnp.zeros_like(rho)
     drho_plus = zero if c.production is None else jnp.maximum(c.production.increment(c_new, *args), 0.0)
     drho_minus = zero if c.removal is None else c.removal.increment(c_new, *args)
@@ -271,6 +274,11 @@ def newton(residual, jacobian, x, args, tol=1e-8, max_iter=25):
         return (jnp.max(jnp.abs(r)) > tol) & (it < max_iter)
 
     return jax.lax.while_loop(not_converged, step, (x, r, 0))[0]
+
+
+def wss(mixt, tau_w):
+    """wall shear stress input (fem BC.wss) at this point; the stimulus is tau_w / tau_w_h - 1"""
+    return mixt.replace(tau_w=jnp.asarray(tau_w, dtype=float))
 
 
 def J_target(mixt):

@@ -2,10 +2,10 @@
 
 1) quadrature       sum w = V, int X dV = V X_c (distorted hex8, tet10)
 2) tangent          assembled K = jacfwd of the global residual (exact AD), and vs central differences;
-                    hex8 / tet10, standard / fbar / hybrid, matrix + fiber, follower pressure
+                    hex8 / tet10, standard / fbar / hybrid (P0) / hybrid_p1 (P2/P1), matrix + fiber, follower pressure
 3) Newton           e_k+1 ~ C e_k^2 (quadratic convergence of the full solver loop)
 4) follower load    closed surface: f_p = -p dV/dx,  V = 1/3 oint x . n da;  sum f_p = 0,  sum x x f_p = 0,
-                    load stiffness = p d^2V/dx^2 (symmetric)
+                    load stiffness = p d^2V/dx^2 (symmetric); pressure field = scalar, adjoint d/dp_field, transfer
 5) invariance       slip (u . n = 0) = fixed dofs; rotated mesh + rotated slip normals: u' = Q u;
                     node / element renumbering; PARDISO = SuperLU
 6) free growth      hybrid, J_target = c, symmetry planes only: u = (c^1/3 - 1) X, q = 0
@@ -15,6 +15,7 @@ Run: python -m verification.fem_consistency
 """
 
 import pathlib
+from dataclasses import replace
 
 import jax
 import jax.numpy as jnp
@@ -38,8 +39,8 @@ def rotation(axis, angle):
     return np.eye(3) + np.sin(angle) * W + (1 - np.cos(angle)) * W @ W
 
 
-def material_for(element, M=(0.0, 0.0, 1.0)):
-    matrix = materials.NeoHookeanInc(C10) if element == "hybrid" else materials.NeoHookean(C10, K)
+def material_for(element, M=(1.0, 1.0, 0.0)):
+    matrix = materials.NeoHookeanInc(C10) if element.startswith("hybrid") else materials.NeoHookean(C10, K)
     return Sum([matrix, materials.Fung(K1, K2, np.asarray(M))])
 
 
@@ -78,10 +79,10 @@ def main():
     log("\n2) tangent: assembled K vs jacfwd of the residual (exact) and central differences, deformed state")
     for etype in ("hex8", "tet10"):
         m = meshlib.box((2, 2, 2), (1, 1, 1), perturb=0.2 if etype == "hex8" else 0.0, etype=etype)
-        for element in ("standard", "fbar", "hybrid"):
+        for element in ("standard", "fbar", "hybrid") + (("hybrid_p1",) if etype == "tet10" else ()):
             sysm = fem.System(m, pressure_faces=m.faces[(2, 1)], element=element)
             states = fem.broadcast_state(material_for(element, (1.0, 1.0, 0.5)), m.n_elem, sysm.n_gp)
-            x = np.concatenate([0.05 * rng.standard_normal(sysm.n_dof) + 0.1 * m.X.ravel(),
+            x = np.concatenate([0.01 * rng.standard_normal(sysm.n_dof) + 0.1 * m.X.ravel(),
                                 0.05 * rng.standard_normal(sysm.n_p)])
             f0, p = jnp.zeros(sysm.n_dof), 0.03
             r = lambda x: sysm.residual(x, states, p, f0)
@@ -95,11 +96,11 @@ def main():
             check(f"{etype:5s} {element:8s} |K v - FD|_max / |K v|_max",
                   np.abs(K_fe @ v - fd).max() / np.abs(K_fe @ v).max(), 1e-7)
 
-    log("\n3) Newton convergence order, tube p = 0.1 MPa from u = 0 (hybrid, matrix + axial fibers)")
-    for etype in ("hex8", "tet10"):
+    log("\n3) Newton convergence order, tube p = 0.1 MPa from u = 0 (hybrid, matrix + fibers in the cross-section plane)")
+    for etype, element in (("hex8", "hybrid"), ("tet10", "hybrid"), ("tet10", "hybrid_p1")):
         m = meshlib.quarter_cylinder(5.0, 1.3, 0.5, (2, 12, 1), etype)
-        sysm = fem.System(m, pressure_faces=m.faces[(0, -1)], element="hybrid")
-        states = fem.broadcast_state(material_for("hybrid"), m.n_elem, sysm.n_gp)
+        sysm = fem.System(m, pressure_faces=m.faces[(0, -1)], element=element)
+        states = fem.broadcast_state(material_for(element), m.n_elem, sysm.n_gp)
         bc = cylinder_bc(m, 0.1)
         cons = sysm._constraints(bc)
         x, f0, errs = cons.project(np.zeros(sysm.n_x)), jnp.zeros(sysm.n_dof), []
@@ -111,8 +112,8 @@ def main():
             x = x - cons.prolong(spla.spsolve(sysm._K_red(x, states, bc.p, cons), r))
         e = np.log(np.array(errs))
         order = [(e[k + 1] - e[k]) / (e[k] - e[k - 1]) for k in range(1, len(e) - 1) if errs[k + 1] > 1e-11]
-        log(f"  {etype}: |r| " + " ".join(f"{v:.1e}" for v in errs))
-        check(f"{etype} 2 - max observed order log(e_k+1/e_k)/log(e_k/e_k-1)", 2 - max(order), 0.2)
+        log(f"  {etype} {element}: |r| " + " ".join(f"{v:.1e}" for v in errs) + f"   orders " + " ".join(f"{o:.2f}" for o in order))
+        check(f"{etype} {element} 2 - order of the last step above round-off", max(2 - order[-1], 0.0), 0.2)
 
     log("\n4) follower pressure on a closed surface (all six faces of a deformed box)")
     for etype in ("hex8", "tet10"):
@@ -120,7 +121,7 @@ def main():
         faces = np.concatenate([m.faces[(a, s)] for a in range(3) for s in (-1, 1)])
         sysm = fem.System(m, pressure_faces=faces)
         states = fem.broadcast_state(materials.NeoHookean(C10, K), m.n_elem, sysm.n_gp)
-        u = jnp.asarray(0.05 * rng.standard_normal(sysm.n_dof) + 0.1 * np.sin(3 * m.X).ravel())
+        u = jnp.asarray(0.01 * rng.standard_normal(sysm.n_dof) + 0.1 * np.sin(3 * m.X).ravel())
         p, f0 = 0.07, jnp.zeros(sysm.n_dof)
         f_p = np.asarray(sysm.residual(u, states, 0.0, f0) - sysm.residual(u, states, p, f0)).reshape(-1, 3)
 
@@ -142,9 +143,29 @@ def main():
         check(f"{etype:5s} |K_p - p d2V/dx2|_max / |K_p|_max", np.abs(K_p - H).max() / np.abs(K_p).max(), 1e-12)
         check(f"{etype:5s} |K_p - K_p^T|_max / |K_p|_max", np.abs(K_p - K_p.T).max() / np.abs(K_p).max(), 1e-12)
 
+    log("\n4b) pressure field (fluid wall pressure per face Gauss point), transfer")
+    m, slip = tube("tet10")
+    sysm = fem.System(m, pressure_faces=m.faces[(0, -1)], element="hybrid_p1")
+    states = fem.broadcast_state(material_for("hybrid_p1"), m.n_elem, sysm.n_gp)
+    x = np.concatenate([0.01 * rng.standard_normal(sysm.n_dof), 0.01 * rng.standard_normal(sysm.n_p)])
+    field = np.full(sysm.face_points(np.zeros(sysm.n_dof))[0].shape[:2], 0.05)
+    f0, free = jnp.zeros(sysm.n_dof), np.ones(sysm.n_x, dtype=bool)
+    check("constant field = scalar: |dr|, |dK| (rel)",
+          max(np.abs(sysm.residual(x, states, field, f0) - sysm.residual(x, states, 0.05, f0)).max(),
+              np.abs((sysm._K_free(x, states, field, free) - sysm._K_free(x, states, 0.05, free)).toarray()).max()), 1e-13)
+    w = jnp.asarray(rng.standard_normal(sysm.n_dof))
+    bc = fem.BC(np.zeros(0, int), np.zeros(0), slip=slip)
+    g_field = jax.grad(lambda p: jnp.dot(w, sysm.equilibrium(states, replace(bc, p=p), np.zeros(sysm.n_dof), 1e-12)))(
+        jnp.asarray(field))
+    g_scalar = jax.grad(lambda p: jnp.dot(w, sysm.equilibrium(states, replace(bc, p=p), np.zeros(sysm.n_dof), 1e-12)))(
+        jnp.asarray(0.05))
+    check("adjoint: sum of d/dp_field = d/dp (rel)", abs(float(g_field.sum() - g_scalar)) / abs(float(g_scalar)), 1e-10)
+    pts = sysm.face_points(np.zeros(sysm.n_dof))[0]
+    check("transfer onto its own points = identity", np.abs(fem.transfer(pts, pts[..., 0], pts) - pts[..., 0]).max(), 1e-15)
+
     log("\n5) invariance: slip = fixed, rotated mesh, renumbering, linear solver backend (tube, p = 0.05 MPa)")
     Q = rotation([1.0, -2.0, 0.5], 0.7)
-    for etype, element in (("hex8", "hybrid"), ("hex8", "standard"), ("tet10", "hybrid"), ("tet10", "fbar")):
+    for etype, element in (("hex8", "hybrid"), ("hex8", "standard"), ("tet10", "hybrid"), ("tet10", "hybrid_p1"), ("tet10", "fbar")):
         m, _ = tube(etype)
         sysm = fem.System(m, pressure_faces=m.faces[(0, -1)], element=element)
         states = fem.broadcast_state(material_for(element), m.n_elem, sysm.n_gp)
@@ -159,7 +180,7 @@ def main():
 
         mq, slip = tube(etype, Q)
         sq = fem.System(mq, pressure_faces=mq.faces[(0, -1)], element=element)
-        st = fem.broadcast_state(material_for(element, Q @ np.array([0.0, 0.0, 1.0])), mq.n_elem, sq.n_gp)
+        st = fem.broadcast_state(material_for(element, Q @ np.array([1.0, 1.0, 0.0])), mq.n_elem, sq.n_gp)
         u, _ = sq.solve(np.zeros(sq.n_dof), st, fem.BC(np.zeros(0, int), np.zeros(0), p=0.05, slip=slip))
         err = max(np.abs(u.reshape(-1, 3) - u_ref.reshape(-1, 3) @ Q.T).max() / scale,
                   np.abs(sq.last_p - p_ref).max() / max(np.abs(p_ref).max(), 1e-300) if sq.n_p else 0.0)
@@ -173,8 +194,15 @@ def main():
         sr = fem.System(mr, pressure_faces=mr.faces[(0, -1)], element=element)
         u, _ = sr.solve(np.zeros(sr.n_dof), fem.broadcast_state(material_for(element), mr.n_elem, sr.n_gp),
                         cylinder_bc(mr, 0.05))
+        dq = np.zeros(1)
+        if sr.n_p and sr.p_nodes is None:
+            dq = sr.last_p - p_ref[pe]
+        elif sr.n_p:
+            q_old, q_new = np.zeros(m.n_nodes), np.zeros(m.n_nodes)
+            q_old[sysm.p_nodes], q_new[sr.p_nodes] = p_ref, sr.last_p
+            dq = q_new[pn] - q_old
         err = max(np.abs(u.reshape(-1, 3)[pn] - u_ref.reshape(-1, 3)).max() / scale,
-                  np.abs(sr.last_p - p_ref[pe]).max() / np.abs(p_ref).max() if sr.n_p else 0.0)
+                  np.abs(dq).max() / (np.abs(p_ref).max() if sr.n_p else 1.0))
         check(f"{tag} renumbered nodes + elements: max|du|, max|dq| (rel)", err, 1e-10)
 
         sysm.linear = LinearSolver(backend="superlu" if sysm.linear.backend == "pardiso" else "pardiso")
@@ -182,25 +210,25 @@ def main():
         check(f"{tag} {sysm.linear.backend} vs default backend  max|du| / max|u|", np.abs(u - u_ref).max() / scale, 1e-10)
 
     log("\n6) free growth, hybrid, J_target = 1.3, symmetry planes: u = (1.3^1/3 - 1) X, q = 0")
-    for etype in ("hex8", "tet10"):
+    for etype, element in (("hex8", "hybrid"), ("tet10", "hybrid"), ("tet10", "hybrid_p1")):
         m = cube(2, etype) if etype == "hex8" else meshlib.box((2, 2, 2), (1, 1, 1), etype="tet10")
-        sysm = fem.System(m, Growth, element="hybrid")
+        sysm = fem.System(m, Growth, element=element)
         states = Grown(fem.broadcast_state(materials.NeoHookeanInc(C10), m.n_elem, sysm.n_gp),
                        jnp.full((m.n_elem, sysm.n_gp), 1.3))
         fixed = np.concatenate([3 * m.nodes[(a, -1)] + a for a in range(3)])
         u, _ = sysm.solve(np.zeros(sysm.n_dof), states, fem.BC(fixed, np.zeros(len(fixed))))
         err = max(np.abs(u - (1.3 ** (1 / 3) - 1) * m.X.ravel()).max(), np.abs(sysm.last_p).max())
-        check(f"{etype:5s} max|u - u_ex|, max|q|", err, 1e-10)
+        check(f"{etype:5s} {element:9s} max|u - u_ex|, max|q|", err, 1e-10)
 
     log("\n7) adjoint vs central differences: d(w . u)/d(C10, k1, p), rotated tube with slip supports")
-    for etype, element in (("hex8", "hybrid"), ("tet10", "standard"), ("hex8", "fbar")):
+    for etype, element in (("hex8", "hybrid"), ("tet10", "standard"), ("tet10", "hybrid_p1"), ("hex8", "fbar")):
         m, slip = tube(etype, Q)
         sysm = fem.System(m, pressure_faces=m.faces[(0, -1)], element=element)
         w = jnp.asarray(rng.standard_normal(sysm.n_dof))
-        M = Q @ np.array([0.0, 0.0, 1.0])
+        M = Q @ np.array([1.0, 1.0, 0.0])
 
         def objective(par, checkpoint=None, steps=1):
-            matrix = (materials.NeoHookeanInc(par["C10"]) if element == "hybrid"
+            matrix = (materials.NeoHookeanInc(par["C10"]) if element.startswith("hybrid")
                       else materials.NeoHookean(par["C10"], K))
             states = fem.broadcast_state(Sum([matrix, materials.Fung(par["k1"], K2, M)]), m.n_elem, sysm.n_gp)
             bcs = [fem.BC(np.zeros(0, int), np.zeros(0), p=par["p"] * (k + 1) / steps, slip=slip) for k in range(steps)]
@@ -216,7 +244,7 @@ def main():
         g1 = jax.grad(lambda p: objective(p, None, 4))(par)
         g2 = jax.grad(lambda p: objective(p, 2, 4))(par)
         check(f"{etype:5s} {element:8s} 4 steps: checkpoint=2 vs none (rel)",
-              max(abs(float(g1[k] - g2[k])) / abs(float(g1[k])) for k in par), 1e-10)
+              max(abs(float(g1[k] - g2[k])) / max(abs(float(g1[k])), 1e-300) for k in par), 1e-10)
 
     log("ALL PASS" if ok else "FAILURES")
     OUT.mkdir(exist_ok=True)

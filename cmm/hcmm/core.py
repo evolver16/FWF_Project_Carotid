@@ -55,13 +55,15 @@ class constituent:
         return self.production is not None or self.removal is not None
 
 
-@pytree(("constituents", "ds", "rho_tot_0", "rho_tot", "F_g", "growth"))
+@pytree(("constituents", "ds", "rho_tot_0", "rho_tot", "F_g", "growth", "tau_w", "tau_w_h"))
 class mixture:
-    def __init__(self, constituents, ds, growth):
-        """growth: law from hcmm.growth, F_g from rho_tot / rho_tot_0"""
+    def __init__(self, constituents, ds, growth, tau_w=1.0, tau_w_h=1.0):
+        """growth: law from hcmm.growth, F_g from rho_tot / rho_tot_0;
+        tau_w, tau_w_h: wall shear stress and its homeostatic value (input, e.g. from a fluid solution)"""
         self.constituents = constituents
         self.ds = ds
         self.growth = growth
+        self.tau_w, self.tau_w_h = jnp.asarray(tau_w, dtype=float), jnp.asarray(tau_w_h, dtype=float)
         self.rho_tot_0 = sum(c.rho for c in constituents)
         self.rho_tot = self.rho_tot_0
         for c in constituents:
@@ -95,7 +97,7 @@ def sigma_solver(mixt, F):
 
 
 @jit
-def constituent_update(c, F_e, sigma_s, R, ds, J, rho_tot, rho_tot_0):
+def constituent_update(c, F_e, sigma_s, R, ds, J, rho_tot, rho_tot_0, dtau):
     """sigma_pre^j(s) = (J_g/J) R sigma^j(0) R^T          deposition (Cyron Eq. 11)
                    = R sigma^j(0) R^T                   initial    (Eq. 17)
     sigma_f^j(s)   = tr(sigma^j)/J                      (Eq. 31)
@@ -108,8 +110,8 @@ def constituent_update(c, F_e, sigma_s, R, ds, J, rho_tot, rho_tot_0):
     sigma_pre_s = R @ c.sigma_pre @ R.T
 
     zero = jnp.zeros_like(c.rho)
-    rho_dot_plus = zero if c.production is None else c.production.increment(c, sigma_f_s, ds, rho_tot, rho_tot_0)
-    rho_dot_minus = zero if c.removal is None else c.removal.increment(c, sigma_f_s, ds, rho_tot, rho_tot_0)
+    rho_dot_plus = zero if c.production is None else c.production.increment(c, sigma_f_s, ds, rho_tot, rho_tot_0, dtau)
+    rho_dot_minus = zero if c.removal is None else c.removal.increment(c, sigma_f_s, ds, rho_tot, rho_tot_0, dtau)
     rho_s = c.rho + rho_dot_plus + rho_dot_minus
 
     rho_pre = rho_tot / J if c.sigma_pre_mode == "deposition" else rho_tot_0
@@ -117,6 +119,11 @@ def constituent_update(c, F_e, sigma_s, R, ds, J, rho_tot, rho_tot_0):
                                                  - rho_pre * sigma_pre_s)
     F_r_s = c.material.F_r(F_e, J, c, sigma_rate_euler)
     return rho_s, F_r_s, sigma_f_s
+
+
+def wss(mixt, tau_w):
+    """wall shear stress input (fem BC.wss) at this point; the stimulus is tau_w / tau_w_h - 1"""
+    return mixt.replace(tau_w=jnp.asarray(tau_w, dtype=float))
 
 
 def J_target(mixt):
@@ -129,7 +136,8 @@ def commit(mixt, F, aux):
     """New state: rho^j, F_r^j, phi^j = rho^j/rho_tot, F_g on the settled F."""
     J = det3(F)
     R = polar_rotation(F)
-    updates = [constituent_update(c, F_e, sigma_s, R, mixt.ds, J, mixt.rho_tot, mixt.rho_tot_0)
+    dtau = mixt.tau_w / mixt.tau_w_h - 1.0
+    updates = [constituent_update(c, F_e, sigma_s, R, mixt.ds, J, mixt.rho_tot, mixt.rho_tot_0, dtau)
                for c, (F_e, sigma_s) in zip(mixt.constituents, aux)]
     rho_tot_s = sum(u[0] for u in updates)
     constituents = [c.replace(rho=rho_s, F_r=F_r_s, phi=rho_s / rho_tot_s, sigma_f=sigma_f_s)

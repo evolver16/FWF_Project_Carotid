@@ -47,8 +47,9 @@ def check(m, material, F, sigma_exact, bc, element):
     sysm = fem.System(m, element=element)
     states = fem.broadcast_state(material, m.n_elem, sysm.n_gp)
     u, it = sysm.solve(np.zeros(sysm.n_dof), states, bc)
-    q = sysm.last_p if sysm.n_p else np.zeros(m.n_elem)
-    sig = np.asarray(sysm.stress(jnp.asarray(u), states)) - q[:, None, None, None] * np.eye(3)
+    q = (np.einsum("gq,eq->eg", np.asarray(sysm._L), sysm.last_p[np.asarray(sysm._pdofs)]) if sysm.n_p
+         else np.zeros((m.n_elem, sysm.n_gp)))
+    sig = np.asarray(sysm.stress(jnp.asarray(u), states)) - q[..., None, None] * np.eye(3)
     u_exact = ((F - np.eye(3)) @ m.X.T).T.ravel()
     eu = np.abs(u - u_exact).max() / L
     es = np.abs(sig - sigma_exact).max() / np.abs(sigma_exact).max()
@@ -61,12 +62,12 @@ def cases():
     for lam in (0.8, 1.3, 1.6):
         F = np.diag([lam, lam ** -0.5, lam ** -0.5])
         yield (f"uniaxial     lam={lam:<4}", inc, F, np.diag([2 * C10 * (lam ** 2 - 1 / lam), 0, 0]),
-               lambda m, F=F: bc_faces(m, F, sym + [(0, 1, 0)]), ("hybrid",))
+               lambda m, F=F: bc_faces(m, F, sym + [(0, 1, 0)]), ("hybrid", "hybrid_p1"))
     for lam in (1.2, 1.4):
         F = np.diag([lam, lam, lam ** -2])
         s = 2 * C10 * (lam ** 2 - lam ** -4)
         yield (f"equibiaxial  lam={lam:<4}", inc, F, np.diag([s, s, 0]),
-               lambda m, F=F: bc_faces(m, F, sym + [(0, 1, 0), (1, 1, 1)]), ("hybrid",))
+               lambda m, F=F: bc_faces(m, F, sym + [(0, 1, 0), (1, 1, 1)]), ("hybrid", "hybrid_p1"))
     for g in (0.3, 1.0):
         F = np.eye(3) + g * np.outer([1, 0, 0], [0, 1, 0])
         B = F @ F.T
@@ -93,6 +94,8 @@ def main(tol=1e-8):
     for name, material, F, sigma_exact, bc, elements in cases():
         for etype, m in meshes().items():
             for element in elements:
+                if element == "hybrid_p1" and etype == "hex8":
+                    continue
                 eu, es, it = check(m, material, F, sigma_exact, bc(m), element)
                 passed = eu < tol and es < tol
                 ok &= passed

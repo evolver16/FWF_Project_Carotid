@@ -9,7 +9,7 @@ Gradients of any result with respect to the model parameters come from the adjoi
 
 ```
 fem/            FE framework, independent of the G&R models
-  core.py         assembly, Newton, time loop (System); hex8/tet10, standard/F-bar/hybrid elements, PARDISO/SuperLU;
+  core.py         assembly, Newton, time loop (System); hex8/tet10, standard/F-bar/hybrid (Q1/P0, P2/P0, P2/P1 Taylor-Hood) elements, PARDISO/SuperLU;
                   buckling: arc_length (load path through limit points), stability (tangent eigenvalues),
                   pseudo-transient relaxation as automatic fallback when Newton fails (snaps in G&R steps)
   mesh.py         generators (box, quarter cylinder, half tube, bent stenotic tube), Abaqus .inp / gmsh .msh, ParaView
@@ -29,6 +29,9 @@ verification/   python -m verification.<module>; outputs in verification/results
   fem_tube.py        thick-walled tube vs Lame / finite-strain solutions, element formulations, hex8 vs tet10
   mesh_io.py         .inp / .msh round trips
   buckling.py        Euler column, shallow arch snap-through: arc length, stability, relaxation
+  fem_mms.py         manufactured solutions, convergence orders of all element formulations
+  fem_consistency.py tangent, Newton order, follower pressure, invariances, free growth, adjoint
+  cook.py            Cook's membrane locking benchmark
 ```
 
 Model interface used by `fem.System` and `material_point` at every integration point:
@@ -69,9 +72,11 @@ Outputs: `cmm/results/<group>/<study>/`.
 | material | `fe_readiness` | batching, objectivity, tangent and gradients of the models for the FE code |
 | fe_gr | `fe_vs_material_point` | HCMM patch test, single (hybrid) elements vs the material point, adjoint |
 | fe_gr | `element_formulations` | artery G&R with standard / F-bar / hybrid / tet10, tet10 adjoint with inclined supports |
+| fe_gr | `solution_verification` | artery G&R: mesh and time-step convergence, GCI |
 | artery | `artery_gr` | G&R of a quarter cylinder (Maes & Famaey Fig. 4) |
 | artery | `artery_gradients` | adjoint gradients vs finite differences, parameter identification, cost |
 | artery | `pressure_step` | pressure step held constant: elastic vs turnover part of the widening |
+| artery | `flow_step` | flow step at constant pressure, WSS stimulus from the deformed lumen (fluid-coupling template) |
 | artery | `pressure_buckling` | pressure buckling of a G&R state with G&R frozen: critical pressure, post-buckling path |
 | vessel | `stenotic_vessel` | bent stenotic vessel from an .inp mesh, Laplace wall basis, ParaView output, adjoint |
 | vessel | `bending_redistribution` | mass redistribution in a bent tube (end rotation) |
@@ -83,11 +88,21 @@ Outputs: `cmm/results/<group>/<study>/`.
 | `fem_tube` | Lamé convergence, nonlinear refinement, standard / F-bar / hybrid, finite-strain incompressible tube, tet10 |
 | `mesh_io` | Abaqus .inp, gmsh .msh 4.1 / 2.2 round trips |
 | `buckling` | Euler column (stability), shallow arch (arc length vs displacement control, relaxation) |
+| `fem_mms` | manufactured solutions: L2 / H1 / pressure orders for hex8, tet10, standard / F-bar / hybrid (incl. J_target ≠ 1) |
+| `fem_consistency` | tangent = AD of the residual, quadratic Newton, follower load = −p dV/dx, slip / rotation / renumbering / solver invariance, free growth, adjoint vs FD |
+| `cook` | Cook's membrane: standard locks, F-bar / hybrid converge |
+
+G&R solution verification (mesh and time-step GCI of the artery): `cd cmm && python -m studies solution_verification`.
 
 Results and their interpretation: [cmm/results/result.md](cmm/results/result.md).
 
 ## Extending
 
 - Material: new file in `materials/` with `sigma(F)`, `sigma_f(sigma)` (HCMM also `F_r(F_e, J, c, rate)`), import in `materials/__init__.py`.
-- Turnover law: class in `cmm/hcmm/production.py` / `removal.py` with `increment(c, sigma_f, ds, rho_tot, rho_tot_0)`.
+- Turnover law: class in `cmm/hcmm/production.py` / `removal.py` with `increment(c, sigma_f, ds, rho_tot, rho_tot_0, dtau)`,
+  `dtau = tau_w / tau_w_h - 1` the wall shear stress stimulus (mixture fields `tau_w`, `tau_w_h`, default 1).
+- Fluid input as boundary conditions: wall pressure `BC.p` and wall shear stress `BC.wss` per face Gauss point of the
+  pressure faces (sample a fluid solution at `System.face_points(u)`, map with `fem.transfer`); `run` passes `BC.wss`
+  to every wall Gauss point (nearest lumen point) via the model's `wss(state, tau_w)`; homeostatic `tau_w_h` in the state
+  (example: study `flow_step`).
 - Growth law: class in `cmm/hcmm/growth.py` with `F_g(ratio)`.

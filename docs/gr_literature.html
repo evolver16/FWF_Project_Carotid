@@ -1,0 +1,508 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>G&amp;R Literature Review</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js"
+        onload="renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+<style>
+:root {
+  --bg: #fbfaf7; --panel: #ffffff; --text: #1f2328; --muted: #5d6670; --line: #e3e0d8;
+  --accent: #1f6f8b; --accent-soft: #e5f1f5; --warn: #9a5b00; --warn-soft: #fbf0dc;
+  --ok: #2f7a3e; --ok-soft: #e4f3e7; --bad: #a33a2a; --bad-soft: #f8e5e1; --code: #f3f1ec;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #15181c; --panel: #1c2026; --text: #e4e6e9; --muted: #9aa3ad; --line: #2e343c;
+    --accent: #6cb6d0; --accent-soft: #1b2e36; --warn: #e2a74f; --warn-soft: #33281a;
+    --ok: #7cc68a; --ok-soft: #1c2e21; --bad: #e6826f; --bad-soft: #3a211d; --code: #23282f;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #15181c; --panel: #1c2026; --text: #e4e6e9; --muted: #9aa3ad; --line: #2e343c;
+  --accent: #6cb6d0; --accent-soft: #1b2e36; --warn: #e2a74f; --warn-soft: #33281a;
+  --ok: #7cc68a; --ok-soft: #1c2e21; --bad: #e6826f; --bad-soft: #3a211d; --code: #23282f;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { margin: 0; background: var(--bg); color: var(--text);
+       font: 16px/1.65 "Source Sans 3", "Segoe UI", system-ui, -apple-system, sans-serif; }
+.layout { display: grid; grid-template-columns: 240px minmax(0, 1fr); max-width: 1320px; margin: 0 auto; }
+nav.toc { position: sticky; top: 0; align-self: start; height: 100vh; overflow-y: auto;
+          padding: 28px 16px 28px 20px; border-right: 1px solid var(--line); font-size: 14px; }
+nav.toc .title { font-weight: 700; margin-bottom: 10px; }
+nav.toc .group { margin-top: 12px; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+nav.toc a { display: block; color: var(--muted); text-decoration: none; padding: 2px 0; }
+nav.toc a:hover { color: var(--accent); }
+main { padding: 32px 40px 80px; min-width: 0; }
+h1 { font-size: 2rem; margin: 0 0 6px; line-height: 1.2; }
+h2 { font-size: 1.45rem; margin: 56px 0 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+h3 { font-size: 1.1rem; margin: 26px 0 8px; }
+p, li { max-width: 82ch; }
+.lead { color: var(--muted); font-size: 1.05rem; max-width: 82ch; }
+code { font: 0.88em/1.4 "JetBrains Mono", Consolas, monospace; background: var(--code); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+a { color: var(--accent); }
+.katex-display { overflow-x: auto; overflow-y: hidden; padding: 4px 0; }
+.box { border-left: 4px solid var(--accent); background: var(--accent-soft); padding: 12px 16px; border-radius: 0 8px 8px 0; margin: 16px 0; max-width: 90ch; }
+.box.warn { border-color: var(--warn); background: var(--warn-soft); }
+.box.ok { border-color: var(--ok); background: var(--ok-soft); }
+.box > :first-child { margin-top: 0; } .box > :last-child { margin-bottom: 0; }
+.box .tag { font-weight: 700; font-size: 0.8rem; letter-spacing: .04em; text-transform: uppercase; display: block; margin-bottom: 4px; }
+.table-wrap { overflow-x: auto; margin: 14px 0; }
+table { border-collapse: collapse; font-size: 0.86rem; background: var(--panel); }
+th, td { border: 1px solid var(--line); padding: 6px 9px; text-align: left; vertical-align: top; }
+th { background: var(--code); font-weight: 600; position: sticky; top: 0; }
+td.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.paper { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 4px 22px 18px; margin: 26px 0; }
+.paper h2 { border-top: none; margin-top: 18px; padding-top: 0; }
+.cite { color: var(--muted); font-size: 0.92rem; margin-top: -6px; }
+dl.facts { display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 6px 16px; margin: 14px 0; }
+dl.facts dt { font-weight: 600; color: var(--muted); font-size: 0.92rem; }
+dl.facts dd { margin: 0; max-width: 90ch; }
+.pill { display: inline-block; font-size: 0.75rem; font-weight: 600; padding: 1px 8px; border-radius: 999px; margin: 0 4px 4px 0; border: 1px solid var(--line); background: var(--code); }
+.pill.g { color: var(--ok); border-color: var(--ok); background: var(--ok-soft); }
+.pill.w { color: var(--warn); border-color: var(--warn); background: var(--warn-soft); }
+.pill.b { color: var(--bad); border-color: var(--bad); background: var(--bad-soft); }
+.pill.a { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+.meta { color: var(--muted); font-size: 0.9rem; }
+@media (max-width: 900px) {
+  .layout { display: block; }
+  nav.toc { position: static; height: auto; border-right: none; border-bottom: 1px solid var(--line); padding: 16px; }
+  nav.toc a { display: inline-block; margin-right: 12px; }
+  main { padding: 20px 16px 60px; }
+  dl.facts { grid-template-columns: 1fr; }
+  dl.facts dt { margin-top: 6px; }
+}
+</style>
+</head>
+<body>
+<div class="layout">
+<nav class="toc">
+  <div class="title">G&amp;R literature</div>
+  <a href="#overview">Overview table</a>
+  <a href="#families">Model families</a>
+  <div class="group">Theory &amp; homogenization</div>
+  <a href="#humphrey2002">Humphrey 2002</a>
+  <a href="#cyron2016">Cyron 2016</a>
+  <a href="#maes">Maes &amp; Famaey</a>
+  <a href="#sempertegui2023">Sempértegui 2023</a>
+  <div class="group">Equilibrated (CMMe)</div>
+  <a href="#latorre2018">Latorre 2018</a>
+  <a href="#latorre2020">Latorre 2020</a>
+  <a href="#weiss2020">Weiss 2020</a>
+  <div class="group">Patient-specific HCMM</div>
+  <a href="#mousavi2019">Mousavi 2019</a>
+  <a href="#zhang2023">Zhang 2023</a>
+  <div class="group">Fluid–solid–growth</div>
+  <a href="#schwarz2023">Schwarz 2023</a>
+  <a href="#pfaller2024">Pfaller 2024</a>
+  <div class="group">Tissue engineering</div>
+  <a href="#drews2020">Drews 2020</a>
+  <a href="#shirazi2025">Shirazi 2025</a>
+  <div class="group">Synthesis</div>
+  <a href="#cross">Cross-cutting comparison</a>
+  <a href="#ours">Relation to our project</a>
+  <a href="#effort">Effort to replicate</a>
+  <a href="#roadmap">Suggested order</a>
+</nav>
+
+<main>
+<h1>Growth &amp; remodeling literature: what was modelled, how, and how it relates to our code</h1>
+<p class="lead">A summary of the 13 papers in <code>.context/Papers</code> (plus the Drews and Weiss supplements). For each paper:
+what was modelled, which constrained-mixture variant, constituents, production and removal laws, the growth kinematics, the FE method (code, elements,
+integration), the dimension and geometry, fluid coupling, the solver and how convergence was ensured, and how convincing the results are.
+After that come a cross-paper comparison, the relation to our JAX code, and the effort needed to replicate each paper in it.</p>
+<p class="meta">Notation: FCMM / CMM = full (heredity-integral) constrained mixture; HCMM = homogenized CMM (Cyron 2016); CMMe = mechanobiologically
+equilibrated CMM (Latorre 2018/2020); \(\Upsilon\) = stimulus function; \(K_\sigma, K_\tau\) = gains for intramural and wall shear stress; WSS = wall shear stress.
+"Not stated" means the paper does not say.</p>
+
+<!-- ================================================================== -->
+<h2 id="overview">Overview</h2>
+<div class="table-wrap"><table>
+<tr><th>Paper</th><th>Topic</th><th>Model</th><th>Dim. / geometry</th><th>Solver / elements</th><th>Fluid</th><th>Time</th><th>Data / validation</th></tr>
+<tr><td><a href="#humphrey2002">Humphrey &amp; Rajagopal 2002</a></td><td>Theory of the CMM</td><td>FCMM (origin)</td><td>—</td><td>none</td><td>—</td><td>—</td><td>none</td></tr>
+<tr><td><a href="#cyron2016">Cyron 2016</a></td><td>Homogenized CMM, Maxwell analog</td><td>HCMM</td><td>0D/1D; axisymmetric membrane (AAA)</td><td>MATLAB</td><td>none</td><td>explicit rate</td><td>qualitative (tissue equivalents); vs FCMM</td></tr>
+<tr><td><a href="#maes">Maes &amp; Famaey</a></td><td>How to implement FCMM / HCMM</td><td>FCMM + HCMM</td><td>single element; 3D tube</td><td>Abaqus UMAT, C3D8 / C3D8H</td><td>none</td><td>forward Euler</td><td>benchmark FCMM ↔ HCMM</td></tr>
+<tr><td><a href="#sempertegui2023">Sempértegui &amp; Avril 2023</a></td><td>HCMM as plasticity, 3D constituents</td><td>HCMM (implicit)</td><td>3D cubes (8 el.)</td><td>in-house FEM, Newton, perturbation tangent</td><td>none</td><td>backward Euler</td><td>none</td></tr>
+<tr><td><a href="#latorre2018">Latorre &amp; Humphrey 2018</a></td><td>Long-term equilibrium of CMM</td><td>CMMe (derivation)</td><td>0D thin-walled tube</td><td>algebraic Newton</td><td>Poiseuille WSS</td><td>none (rate-indep.)</td><td>vs FCMM (same end state)</td></tr>
+<tr><td><a href="#latorre2020">Latorre &amp; Humphrey 2020</a></td><td>CMMe in 3D FE</td><td>CMMe</td><td>3D tube, fusiform aneurysms</td><td>FEBio plugin (non-sym.), linear hex</td><td>local Poiseuille WSS</td><td>quasi-static load steps</td><td>vs semi-analytical; quadratic Newton</td></tr>
+<tr><td><a href="#weiss2020">Weiss 2020</a></td><td>Arterial tortuosity (mice)</td><td>CMMe</td><td>3D tube + material imperfection</td><td>FEBio, quadratic hex, 3×3×3 Gauss</td><td>none</td><td>quasi-static</td><td>ex vivo mouse aortas (pDIC, inverse FE)</td></tr>
+<tr><td><a href="#mousavi2019">Mousavi 2019</a></td><td>Ascending thoracic aneurysm</td><td>HCMM (Braeu)</td><td>3D cylinder, torus, patient ATAA (2 layers)</td><td>Abaqus UMAT, hex</td><td>CFD only to place the insult</td><td>explicit, 1 month</td><td>vs Braeu 2017; patient shape plausible</td></tr>
+<tr><td><a href="#zhang2023">Zhang 2023</a></td><td>Chronic type B dissection</td><td>HCMM (Braeu)</td><td>3D cylinder, torus, patient segment (2 continua + springs)</td><td>Florence (Python/C++), hex, Newton</td><td>none (FL pressure)</td><td>explicit increments</td><td>vs single-continuum model</td></tr>
+<tr><td><a href="#schwarz2023">Schwarz 2023</a></td><td>FSG solver, TEVG, aorta</td><td>FCMM</td><td>3D patient-specific (sheep TEVG, human arch)</td><td>svFSI, linear hex; Aitken</td><td>3D NS, strong coupling</td><td>trapezoid heredity integrals</td><td>vs reduced-order; qualitative clinical</td></tr>
+<tr><td><a href="#pfaller2024">Pfaller 2024</a></td><td>Fast strongly coupled FSG</td><td>CMMe</td><td>3D idealized mouse aneurysm</td><td>svFSIplus + svFSGe, MUMPS, IQN-ILS</td><td>3D steady NS, strong</td><td>10 load steps</td><td>none (method paper)</td></tr>
+<tr><td><a href="#drews2020">Drews 2020</a></td><td>Stenosis reversal in TEVG</td><td>FCMM + inflammation + polymer</td><td>0D/1D axisymmetric thin wall</td><td>compiled code + MATLAB, Newton for radius, RK2</td><td>Poiseuille</td><td>RK2, 1 day</td><td>clinical trial + sheep: <b>prediction confirmed</b></td></tr>
+<tr><td><a href="#shirazi2025">Shirazi 2025</a></td><td>Degrading scaffold → neo-tissue (sheep carotid)</td><td>HCMM + plasticity (ground matrix)</td><td>1D axisymmetric thick wall (semi-analytical)</td><td>MATLAB</td><td>Poiseuille WSS</td><td>explicit + implicit GM</td><td>6 sheep: calibrated 6 mo, <b>predicted 12 mo</b></td></tr>
+</table></div>
+
+<h3 id="families">Model families</h3>
+<div class="table-wrap"><table>
+<tr><th>Family</th><th>State per point</th><th>Transients?</th><th>Cost</th><th>Papers</th><th>In our code</th></tr>
+<tr><td><b>FCMM</b>: heredity integrals over deposited cohorts \(\rho^\alpha(s)=\int m^\alpha(\tau)q^\alpha(s,\tau)\,\mathrm d\tau\), \(F^\alpha_{n(\tau)}=F(s)F^{-1}(\tau)G^\alpha\)</td><td>history of \(F(\tau)\), production rates</td><td>yes, exact</td><td>high (memory ∝ steps); Schwarz: Gauss-point histories</td><td>Humphrey 2002, Maes, Drews, Schwarz</td><td><code>cmm/fcmm</code> (material point only)</td></tr>
+<tr><td><b>HCMM</b>: one averaged \(F_r^\alpha\) per constituent, \(F=F_e^\alpha F_r^\alpha F_g\), rate law \(\dot\sigma=-(\dot\rho_+/\rho)(\sigma-\sigma_\text{pre})\)</td><td>\(\rho^\alpha, F_r^\alpha, F_g\)</td><td>yes (homogenization error in fast transients)</td><td>low</td><td>Cyron, Maes, Mousavi, Zhang, Sempértegui, Shirazi</td><td><code>cmm/hcmm/core.py</code> (explicit), <code>core_implicit.py</code> (backward Euler)</td></tr>
+<tr><td><b>CMMe</b>: long-term limit \(\Upsilon_h=1\); stress depends on \(F\) only, pressure-like multiplier \(p_h\) from the mechanobiological constraint</td><td>stored reference values from Stage I only</td><td><b>no</b> (only quasi-equilibrated evolutions)</td><td>like hyperelasticity</td><td>Latorre 2018/2020, Weiss, Pfaller</td><td>not implemented</td></tr>
+</table></div>
+
+<!-- ================================================================== -->
+<div class="paper" id="humphrey2002">
+<h2>Humphrey &amp; Rajagopal 2002: A constrained mixture model for growth and remodeling of soft tissues</h2>
+<p class="cite">Math. Models Methods Appl. Sci. 12 (2002). The foundation of all the other papers.</p>
+<dl class="facts">
+<dt>What</dt><dd>A conceptual and theoretical framework, with no numerical study. Each constituent has its own natural configuration that evolves through continuous
+production and removal. New mass is deposited with a preferred (deposition) stretch, and all constituents are constrained to move with the mixture.</dd>
+<dt>Key ideas</dt><dd>Rule of mixtures for stress and strain energy. Mass balance with separate production and removal (survival functions).
+Deposition stretch as a constitutive quantity. Homeostasis as the target state. Analogy with evolving natural configurations in plasticity.</dd>
+<dt>Constituents</dt><dd>Generic; elastin, collagen and smooth muscle as the motivating example.</dd>
+<dt>Production / removal</dt><dd>Postulated as general functions of stress and other stimuli; no specific law.</dd>
+<dt>Numerics / geometry / fluid</dt><dd>None.</dd>
+<dt>Assessment</dt><dd><span class="pill a">foundational</span> No results to judge. Our FCMM implements this concept at a material point.</dd>
+</dl>
+</div>
+
+<div class="paper" id="cyron2016">
+<h2>Cyron, Aydin &amp; Humphrey 2016: A homogenized constrained mixture (and mechanical analog) model</h2>
+<p class="cite">Biomech. Model. Mechanobiol. 15 (2016). The origin of the HCMM used in our code.</p>
+<dl class="facts">
+<dt>What</dt><dd>Replace the cohort history of each constituent by a single temporally homogenized inelastic deformation \(F_r^\alpha\), and growth by \(F_g\).
+The resulting rate law for stress, \(\dot\sigma = -(\dot\rho_+/\rho + 1/T)(\sigma-\sigma_\text{pre})\), is interpreted as a Maxwell fluid in parallel with a cell "motor element".</dd>
+<dt>Constituents</dt><dd>Elastin (incompressible neo-Hookean), circumferential smooth muscle, 4 collagen families (0°, 90°, ±45°), all Fung.</dd>
+<dt>Production / removal</dt><dd>\(\dot\varrho^i_0=\varrho^i_0\,k_\sigma(\sigma^i-\sigma^i_\text{pre})/\sigma^i_\text{pre}\), stress-mediated; turnover time \(T = 70\) d.
+1D fibers remodel through a scalar inelastic stretch \(\lambda_r\) (closed form, Eq. 25).</dd>
+<dt>Growth</dt><dd>Kinematic, \(F_g\) from the mass change.</dd>
+<dt>Numerics</dt><dd>MATLAB. A uniaxial (1D) tissue-equivalent example, and an axisymmetric cylindrical membrane model of an AAA (from Cyron 2014) with a focal elastin loss.
+Explicit time stepping, \(\Delta s = T/7\).</dd>
+<dt>Results</dt><dd>HCMM ≈ FCMM in the near-linear regime, with moderate deviations only for the fastest-growing aneurysms after about 10 years. Much cheaper than the FCMM.
+Stability (bounded vs unbounded enlargement) is governed by \(k_\sigma\).</dd>
+<dt>Assessment</dt><dd><span class="pill g">core method</span> Sound; the comparison with the FCMM is convincing. Validation against tissue-equivalent data is only qualitative.</dd>
+<dt>For us</dt><dd>Already implemented (<code>hcmm.core</code>). The fiber closed form \(\lambda_r\) matches our Fung <code>F_r</code> / <code>flow_exp</code>.</dd>
+</dl>
+</div>
+
+<div class="paper" id="maes">
+<h2>Maes &amp; Famaey: How to implement constrained mixture G&amp;R algorithms for soft biological tissues</h2>
+<p class="cite">J. Mech. Behav. Biomed. Mater. 140 (2023) 105733 (file named 2020). Our main implementation reference.</p>
+<dl class="facts">
+<dt>What</dt><dd>A step-by-step implementation of the FCMM and the HCMM in Abaqus UMATs, compared on models A–E under the load cases U (prescribed stretch),
+S (prescribed stress) and F (prescribed force), plus an arterial example.</dd>
+<dt>Constituents</dt><dd>Elastin matrix (neo-Hookean, compressible or incompressible) plus collagen fiber families (Fung, tension-only).</dd>
+<dt>Production / removal</dt><dd>Eq. 24: stress-driven production with gain \(k_\sigma\) and turnover time \(T\); removal with time constant \(T\) (models differ in what is stress-mediated).</dd>
+<dt>Growth</dt><dd>\(F_g\) isotropic (Eq. 6) or anisotropic (Eq. 7, along \(e_r\)).</dd>
+<dt>Numerics</dt><dd>Abaqus/Standard 2017 UMATs. Single C3D8 or C3D8H (hybrid, incompressible) elements; quarter cylinder with 1920 C3D8.
+Forward Euler for \(\rho\) and \(F_r\); stress with the old \(F_r\), then the update (same as our explicit HCMM). A step-size convergence study (\(T\) = 101 d, steps up to \(T\)).</dd>
+<dt>Results</dt><dd>HCMM and FCMM agree well; HCMM is much faster. The step size matters, especially for the FCMM.</dd>
+<dt>Assessment</dt><dd><span class="pill g">reproduced</span> Our <code>maes_benchmark</code> reproduces models A–E (HCMM vs FCMM 0.2–3 %) and Fig. 4 of the artery (λ<sub>θ</sub>(1000 d) = 1.184).
+Their UMATs are in <code>.context/FortranFiles</code>.</dd>
+</dl>
+</div>
+
+<div class="paper" id="sempertegui2023">
+<h2>Sempértegui &amp; Avril 2023: Re-interpretation of the HCMM within the plasticity framework</h2>
+<p class="cite">The basis of our <code>core_implicit.py</code>.</p>
+<dl class="facts">
+<dt>What</dt><dd>Extends the HCMM to 3D (isotropic) constituents such as the ground matrix and SMCs. The backward-Euler version of the stress rate law
+gives a "backstress" \(\sigma_\text{back}\) and a yield-like function \(f=\tfrac12|\hat\tau'|^2=0\), solved with plasticity tools (exponential map, flow rule).</dd>
+<dt>Constituents</dt><dd>Nearly incompressible neo-Hookean 3D constituents, dispersed fibers; examples with 2 materials and explicit coupling in the Jacobian.</dd>
+<dt>Production / removal</dt><dd>Generic \(\dot\rho_{0+}, \dot\rho_{0-}\); examples with balanced turnover and cell-seeded collagen.</dd>
+<dt>Numerics</dt><dd>In-house FEM, local Newton–Raphson on the remodeling unknowns, consistent tangent by <b>perturbation</b> (finite differences).
+Cubes with 2×2×2 elements (Dirichlet BCs, refinement study done).</dd>
+<dt>Results</dt><dd>Demonstrations only (homeostasis maintained, stresses converging to the prestress, two-material coupling).</dd>
+<dt>Assessment</dt><dd><span class="pill w">useful idea, formulation degenerate</span> We showed in this project that the exact \(f=0\) formulation is degenerate:
+singular Jacobian, 0/0 flow direction, drift in \(\det C_r\). The underlying backward-Euler target stress (Eq. 18) is the useful part. It is what <code>core_implicit</code> implements,
+with an exponential map, a deviatoric basis, growth coupled through \(F_g(\rho_\text{tot})\), and an implicit-function tangent by AD.</dd>
+</dl>
+</div>
+
+<!-- ================================================================== -->
+<div class="paper" id="latorre2018">
+<h2>Latorre &amp; Humphrey 2018: A mechanobiologically equilibrated constrained mixture model</h2>
+<p class="cite">Z. Angew. Math. Mech. 98 (2018).</p>
+<dl class="facts">
+<dt>What</dt><dd>For sustained stimuli and \(s \gg s_{G\&amp;R}\), the heredity integrals of the FCMM can be pre-integrated exactly. The long-term state then follows from
+<b>algebraic</b> equations: balanced production and removal, \(\Upsilon_h = 1\), turnover constituents at their deposition stretch \(\hat\sigma^\alpha = G^\alpha \hat S(G^{\alpha2}) G^\alpha\), and elastin deformed elastically.</dd>
+<dt>Constituents</dt><dd>Elastin (no turnover), smooth muscle (passive + active tone with vasoconstrictor ratio driven by WSS), collagen (4 families in general; 1 circumferential in the examples).</dd>
+<dt>Production / removal</dt><dd>\(m^\alpha=k^\alpha\rho^\alpha\Upsilon^\alpha\), \(\Upsilon^\alpha = 1 + K^\alpha_\sigma\Delta\sigma - K^\alpha_\tau\Delta\tau_w\);
+removal \(k^\alpha = k^\alpha_o(1+\Delta\sigma^2)\). Stimulus: \(\tilde\sigma = \mathrm{tr}\,\sigma\) (mixture level), WSS \(\tau_w = 4\mu Q/\pi a^3\).</dd>
+<dt>Numerics / geometry</dt><dd>Thin-walled cylinder, 4 algebraic equations (radius, thickness, collagen density, axial force), Newton–Raphson with the ideal-adaptation initial guess.</dd>
+<dt>Results</dt><dd>The same end state as the full model (P, Q, λ<sub>z</sub> = 1.5×). Full model: seconds; CMMe: hundredths of a second. Shows that WSS feedback is needed for mechano-adaptation (stable vs unbounded growth).</dd>
+<dt>Assessment</dt><dd><span class="pill g">solid</span> Exact within its assumptions. It cannot capture transients or dynamic instabilities, by construction.</dd>
+<dt>For us</dt><dd>A cheap, exact long-time check for our HCMM. For sustained loads, our time integration should approach this equilibrium.</dd>
+</dl>
+</div>
+
+<div class="paper" id="latorre2020">
+<h2>Latorre &amp; Humphrey 2020: Fast, rate-independent FE implementation of a 3D constrained mixture model</h2>
+<p class="cite">CMAME 368 (2020) 113156.</p>
+<dl class="facts">
+<dt>What</dt><dd>CMMe in 3D FE with finite rotations. The stress depends only on \(F_h\): non-turnover constituents \(\sigma^\zeta = \phi^\zeta F_h G^\zeta \hat S G^\zeta F_h^T\),
+turnover constituents \(\sigma^\xi=\phi^\xi_h R_h\hat\sigma^\xi_N R_h^T\) (constant rotated stress), mass fractions \(\phi(J_h)\) from implicit equations. The multiplier \(p_h\) comes from \(\Upsilon_h=1\)
+(e.g. \(\sigma_{vh}=\sigma_{vo}\)), not from incompressibility.</dd>
+<dt>Constituents</dt><dd>Elastin (neo-Hookean, no turnover), circumferential SMC and 4 collagen families (Fung); mouse descending thoracic aorta parameters.</dd>
+<dt>Production / removal</dt><dd>Through \(\Upsilon=1+K_\sigma\Delta\sigma_I - K_\tau\Delta\tau_w\) with \(\sigma_I=\mathrm{tr}\,\sigma\); \(K_\tau/K_\sigma\) as the main parameter. Insults: elastin damage \(\varphi^e\) (spatially Gaussian-like).</dd>
+<dt>Growth</dt><dd>Implicit through \(J_h\) (mass), no separate \(F_g\).</dd>
+<dt>Numerics</dt><dd><b>FEBio plugin</b>; FEBio 2.8.2 was modified for <b>non-symmetric tangents</b> (minor symmetry only). Exact consistent linearization (derived by hand, Box II), so continuum and algorithmic tangents coincide.
+Two stages: (I) hyperelastic pre-load with penalty \(U(\ln J J_G)\), \(\kappa = 10^3 c_e\), storing \(\sigma_{vo}, \hat\sigma^\xi_N, F_o\); (II) G&amp;R load steps.
+<b>Linear displacement-based hex elements</b>, 4 through the thickness (from a convergence study), up to 4×160×60 = 38 400 elements. No mixed formulation, because the G&amp;R stage is not isochoric (\(J_h\) is free), so no volumetric locking is expected.</dd>
+<dt>Convergence</dt><dd>Quadratic Newton without line search (Tables 2, 3); 10 load steps; 6.6 s (axisymmetric) and 11 min 20 s (38 400 elements) on one core. Divergence only near mechanobiological instabilities or at excessive mesh distortion.</dd>
+<dt>Geometry / fluid</dt><dd>Mouse aorta cylinder; axisymmetric and asymmetric fusiform aneurysms; WSS from <b>local Poiseuille</b> using the local radius (no CFD).</dd>
+<dt>Results</dt><dd>FE = semi-analytical solution for P, Q and λ<sub>z</sub> changes and uniform elastin loss. Aneurysm shape depends strongly on the end BCs (fixed displacement vs force) and on WSS regulation at the healthy ends. Reorienting diagonal collagen gives axial growth and tortuosity.</dd>
+<dt>Assessment</dt><dd><span class="pill g">strong numerics</span> <span class="pill w">equilibrium only</span> Fast and well verified, but no transients (e.g. no step-pressure dynamics, no stenosis that reverses).</dd>
+</dl>
+</div>
+
+<div class="paper" id="weiss2020">
+<h2>Weiss et al. 2020: Mechanics-driven mechanobiological mechanisms of arterial tortuosity</h2>
+<p class="cite">Science Advances 6 (2020) eabd3574, plus supplement.</p>
+<dl class="facts">
+<dt>What</dt><dd>Experiments plus simulation. Ex vivo descending thoracic aortas of wild-type and fibulin-5-null mice (elastic-fiber defect) were tested biaxially and imaged in 3D with pDIC.
+Regional stiffness was identified by an inverse virtual-fields method with FEBio. The tortuosity index (TI) was correlated with mechanical metrics, and G&amp;R simulations tested the hypotheses.</dd>
+<dt>Model</dt><dd>CMMe (Latorre 2020): elastin neo-Hookean, collagen and passive SMC Fung, no active tone. Insult: ~20 % loss of \(c_e\), optionally with diagonal collagen reoriented by ~30 %,
+applied as a smooth one-wave asymmetric <b>material imperfection</b> on a straight tube (or a geometric imperfection).</dd>
+<dt>Numerics</dt><dd>Modified FEBio, 1×20×40 = 800 <b>quadratic</b> displacement-based hexahedra with full 3×3×3 Gauss integration, quasi-static load steps. Post-buckling-like G&amp;R paths are followed through the imperfection.</dd>
+<dt>Results</dt><dd>Elastic buckling alone does not explain persistent tortuosity. Tortuosity needs G&amp;R (axial growth) in elastin-compromised vessels plus a perturbation (multiple hits).
+The normal aorta is robust against modest perturbations under isometric end conditions.</dd>
+<dt>Assessment</dt><dd><span class="pill g">well-founded</span> A combined experimental and computational argument. Comparisons are qualitative or trend-level (TI correlations), with no quantitative prediction.</dd>
+<dt>For us</dt><dd>Directly relevant to our buckling tools (<code>arc_length</code>, <code>stability</code>, PTC) and to carotid tortuosity and kinking.</dd>
+</dl>
+</div>
+
+<!-- ================================================================== -->
+<div class="paper" id="mousavi2019">
+<h2>Mousavi, Farzaneh &amp; Avril 2019: Patient-specific predictions of ATAA growth with the HCMM</h2>
+<p class="cite">Biomech. Model. Mechanobiol. 18 (2019).</p>
+<dl class="facts">
+<dt>What</dt><dd>The first patient-specific HCMM FE model of an ascending thoracic aortic aneurysm (ATAA), driven by localized elastin proteolysis.</dd>
+<dt>Constituents</dt><dd>Elastin (neo-Hookean with penalty \(\kappa(J^e_{el}-1)^2\), \(\kappa = 10\mu\) or \(100\mu\)), 4 collagen families (0°, 90°, ±45°), passive SMCs (Fung, with different parameters in tension and compression).
+<b>Two layers</b>: media (97 % of elastin, 100 % of SMCs, 15 % of axial and diagonal collagen) and adventitia (the rest, plus all circumferential collagen).</dd>
+<dt>Production / removal</dt><dd>Collagen: \(\dot\varrho = \varrho\,k_\sigma(\sigma-\sigma_h)/\sigma_h + \dot D_g\). <b>In the media driven by SMC stress</b>, in the adventitia by collagen stress.
+Elastin only degrades: \(\dot D^e_g=-\varrho^e/T_e - (D_\max/t_\text{dam})\varrho^e(0)e^{-0.5(X_3/L_\text{dam})^2 - t/t_\text{dam}}\) (spatial and temporal damage).
+SMCs: no turnover, but continuous remodeling (\(1/T\) term).</dd>
+<dt>Growth</dt><dd>Braeu 2017: common \(F_g\), rate \(\dot F_g=\sum(\dot\varrho^i/\varrho)[F_g^{-T}:a_g\otimes a_g]a_g\otimes a_g\), along the wall normal.
+Remodeling by Eq. 15 (2nd-PK form of the Cyron rate law).</dd>
+<dt>Numerics</dt><dd>Abaqus UMAT; structured hexahedral mesh with edges along the radial, circumferential and axial directions; ATAA with 7700 hexahedra. Newton–Raphson per step; time step = <b>1 month</b>.
+G&amp;R explicit (from the stresses of the previous step). Prestress: iterative elastin deposition stretch (Mousavi &amp; Avril 2017) at diastolic pressure.</dd>
+<dt>Geometry / fluid</dt><dd>Thick cylinder (vs Braeu 2017), toric arch (R/r = 4), patient ATAA from CT (MIMICS segmentation, uniform thickness 2.38 mm).
+4D-flow MRI and CFD were used only to <b>place</b> the elastin damage (WSS jet impingement); no coupling.</dd>
+<dt>Results</dt><dd>Agrees with Braeu's cylinder. Stable or unstable dilatation depending on \(k_\sigma\). Patient ATAA: diameter 42 → 64 mm (small gain) or → 47 mm (stable).
+Stress shifts to the adventitia, and collagen is deposited mainly in the media.</dd>
+<dt>Assessment</dt><dd><span class="pill w">plausible, not validated</span> No follow-up imaging comparison. Uniform thickness and material, and a prescribed damage law.
+The authors report instabilities when imposing arbitrary deposition stretches.</dd>
+</dl>
+</div>
+
+<div class="paper" id="zhang2023">
+<h2>Zhang, Laubrie, Mousavi, Avril &amp; Ben Ahmed 2023: Aneurysmal dilatation after chronic type B dissection</h2>
+<p class="cite">Patient-specific FE G&amp;R of cTBAD.</p>
+<dl class="facts">
+<dt>What</dt><dd>G&amp;R after an aortic dissection: the media and adventitia are two separate continua connected by stiff <b>interfacial springs</b> (\(k = 1000\) kPa/mm).
+The dissection is created by removing springs in a region, and the false-lumen (FL) pressure acts on the newly freed surfaces.</dd>
+<dt>Constituents</dt><dd>Elastin, 4 collagen families (0°, 90°, ±45°), SMCs with active tone (λ<sub>0</sub> = 0.8, λ<sub>m</sub> = 1.4).</dd>
+<dt>Production / removal</dt><dd>\(\dot\rho^i_R=\rho^i_R k^i_\sigma(\sigma^i-\sigma^i_h)/\sigma^i_h\) (stress-mediated only); remodeling of 1D fibers by the scalar law (Eq. 7, with \(T^i\)).</dd>
+<dt>Growth</dt><dd>Braeu: common \(F_g\); prestretch \(F_r(t_0)=G_h^{-1}\); non-uniform prestretch for the patient case (Laubrie iterative method).</dd>
+<dt>Numerics</dt><dd>Open-source <b>Florence</b> (Poya et al., Python/C++, high-order FE). Hexahedral meshes 6×40×25, 6×60×20, 6×48×42 (thickness × circumference × length).
+Three steps: homeostasis; opening; G&amp;R increments, each solved by Newton–Raphson. About 2 h per simulation on a laptop.</dd>
+<dt>Geometry / fluid</dt><dd>Cylinder, torus, patient descending-aorta segment from CT. Constant pressures in the true and false lumens; no CFD.</dd>
+<dt>Results</dt><dd>Gain \(k_\sigma\) decides stable or excessive dilatation. A wide tear and a high FL pressure favour instability.</dd>
+<dt>Assessment</dt><dd><span class="pill w">mechanistically plausible, not validated</span> No patient follow-up yet (stated as future work). The spring interface is simple and effective.</dd>
+</dl>
+</div>
+
+<!-- ================================================================== -->
+<div class="paper" id="schwarz2023">
+<h2>Schwarz et al. 2023: A fluid–solid–growth solver for cardiovascular modeling</h2>
+<p class="cite">CMAME 417 (2023) 116312.</p>
+<dl class="facts">
+<dt>What</dt><dd>Full 3D CMM (heredity integrals) coupled to 3D Navier–Stokes in svFSI (SimVascular). Long-term evolution of TEVGs and aortas with resolved WSS and pressure.</dd>
+<dt>Constituents</dt><dd>Elastin (neo-Hookean), collagen families and passive or active SMCs (Fung, active tone driven by a WSS-dependent vasoconstrictor ratio), polymers (2 kinds, sigmoid degradation), ground matrix, and <b>immuno-mediated</b> constituents.</dd>
+<dt>Production / removal</dt><dd>\(\Upsilon=1+K_\sigma\Delta\sigma_f-K_\tau\Delta\tau_f\), clipped at ≥ 0.1; inflammation \(\Upsilon=K\Gamma(\tau)/\max\Gamma\) with a gamma function.
+Removal \(k(t)=k_h(1+K_{D\sigma}\Delta\sigma+K_{D\tau}\Delta\tau)\). Stimulus: radially averaged \(\mathrm{tr}\,\sigma\) and WSS from the CFD. Minimum basal production for TEVGs.</dd>
+<dt>Growth</dt><dd>Volume follows mass, \(J^{n+1}=\sum\rho^\alpha_R/\hat\rho^\alpha\), enforced by a dilatational <b>penalty</b> in a linearized (St Venant–Kirchhoff-like, prestressed) stress update for the solid–growth iteration.</dd>
+<dt>Numerics</dt><dd>svFSI; solid with linear hexahedra (C3D8-type), generalized-α; fluid stabilized with RBVMS, generalized-α.
+Deformation-gradient histories at <b>every Gauss point</b>; trapezoidal rule for the heredity integrals; hemodynamic stimuli smoothed with a Laplacian kernel.
+Coupling: partitioned, steady (rigid-wall CFD → solid) or monolithic pulsatile FSI; solid–growth fixed point with <b>Aitken relaxation</b>.
+Tolerances \(10^{-3}\) on displacement, \(10^{-2}\) on other fields (loose).</dd>
+<dt>Geometry</dt><dd>IVC validation (vs thin-walled reduced order), idealized TEVG between IVC segments, sheep TEVG from MRI, human aortic arch (healthy, 27 y) for 800 days, normal and hypertensive, and a pulsatile check.</dd>
+<dt>Results</dt><dd>Excellent agreement with the reduced-order model. A stenosis changes the WSS proximally and distally (only visible with CFD). The TEVG becomes elliptic (qualitatively like the sheep data).
+The aorta thickens at low-WSS sites.</dd>
+<dt>Assessment</dt><dd><span class="pill g">most complete physics</span> <span class="pill w">expensive, loose tolerances, not quantitatively validated</span>
+The arch is not started from homeostasis, which the authors acknowledge. The tangent ignores the dependence of turnover on strain, so convergence is slow.</dd>
+</dl>
+</div>
+
+<div class="paper" id="pfaller2024">
+<h2>Pfaller et al. 2024: FSGe, a fast and strongly coupled 3D fluid–solid–growth interaction method</h2>
+<p class="cite">CMAME 431 (2024) 117259; code svFSIplus + svFSGe (GitHub).</p>
+<dl class="facts">
+<dt>What</dt><dd>CMMe (Latorre 2020) solid coupled strongly to 3D steady Navier–Stokes. WSS acts on the whole wall volume (radial propagation).</dd>
+<dt>Constituents</dt><dd>Elastin, SMC, 4 collagen families (mouse aorta parameters from Latorre 2020). Insult: elastin stiffness loss up to 70 % and loss of mechanosensing \(K_{\tau\sigma}\to 0\) in an asymmetric patch.</dd>
+<dt>Stimulus</dt><dd>\(\Delta\sigma_I = K_{\tau\sigma}\Delta\tau_w\) with \(\sigma_I = \mathrm{tr}\,\sigma/3\); WSS = magnitude of the CFD wall shear vector.</dd>
+<dt>Numerics</dt><dd>svFSIplus. Fluid P1–P1 VMS; solid linear displacement-based hexahedra 64×1×40 (<b>one element through the thickness</b>, because more elements gave Gauss-point oscillations of the equilibria).
+Non-symmetric tangent → <b>MUMPS</b> direct solver (PETSc). Partitioned coupling: Gauss–Seidel for pre-load, then <b>IQN-ILS</b> (q = 20, filtering 0.1) with static relaxation (ω = 0.1) at the start, a linear predictor, and tolerance \(10^{-3}\).
+Weak coupling was unstable for \(K_{\tau\sigma}>0\); Aitken failed at high \(K_{\tau\sigma}\).</dd>
+<dt>Cost</dt><dd>84 coupling iterations for \(K_{\tau\sigma} = 1\): fluid 52 min (6 cores), solid 1.7 min, mesh 2.7 min (M2 Max). The fluid is the bottleneck.</dd>
+<dt>Results</dt><dd>FSGe ≈ solid-only G&amp;R for \(K_{\tau\sigma}\to 0\). For \(K_{\tau\sigma}\to 1\) there are large differences: the healthy side grows inward with 3× thickness, and the fluid couples the aneurysm to the healthy wall. CMMe shows instabilities for \(K_{\tau\sigma}\to 1\).</dd>
+<dt>Assessment</dt><dd><span class="pill g">best FSG numerics</span> <span class="pill w">idealized, no data</span> Very transparent about failure modes (useful for us).</dd>
+</dl>
+</div>
+
+<!-- ================================================================== -->
+<div class="paper" id="drews2020">
+<h2>Drews et al. 2020: Spontaneous reversal of stenosis in tissue-engineered vascular grafts</h2>
+<p class="cite">Sci. Transl. Med. 12 (2020) eaax6919; supplement with model and code (<code>.context/drews</code>).</p>
+<dl class="facts">
+<dt>What</dt><dd>An FDA clinical trial of TEVGs (Fontan conduits in children) showed early stenosis, treated with angioplasty. A computational model predicted that the stenosis would reverse spontaneously (inflammation-driven, mechano-mediated),
+and this was then <b>confirmed in a sheep IVC interposition model</b>.</dd>
+<dt>Constituents</dt><dd>Polymer (PGA, P(CL/LA): neo-Hookean, shear modulus from porosity, sigmoidal degradation \(Q_p\)), immuno-mediated and mechano-mediated collagen (4 families) and SMCs (Fung, with fiber maturation \(c(s,\tau)=c_h(1-e^{-k_c(s-\tau)})\)).</dd>
+<dt>Production / removal</dt><dd>Inflammatory: \(m^i=m_h(1-e^{-\tau})K^i\Gamma(\tau)\) (gamma-shaped burden, gain depending on pore size).
+Mechano: \(m=m_h(1-e^{-\tau})(1+K_\sigma\Delta\sigma-K_\tau\Delta\tau_w)\) with \(\Delta\sigma=(r/r_h)/(h/h_h)-1\) and \(\Delta\tau_w=(r_h/r)^3-1\).
+Removal \(k(1+K_D)\), mechano part with \(K_D=(\lambda_{n(t)}/\lambda_{n(\tau)}-1)^2\).</dd>
+<dt>Numerics / geometry</dt><dd>Full CMM, homogeneous axisymmetric thin-walled tube. Newton for the radius per step; <b>RK2</b> explicit for the mass densities; time step reduced until converged (1 day).
+Compiled executable with a MATLAB driver (in the supplement).</dd>
+<dt>Results</dt><dd>Parametric studies over 4 inflammatory parameters: dilatation, transient stenosis that reverses, or prolonged narrowing. Prediction confirmed in sheep (angiography, IVUS, histology).</dd>
+<dt>Assessment</dt><dd><span class="pill g">the strongest validation story</span> A model-generated hypothesis tested prospectively in animals. Low-dimensional, but sufficient for the question.</dd>
+</dl>
+</div>
+
+<div class="paper" id="shirazi2025">
+<h2>Shirazi et al. 2025: Endogenous tissue restoration in biodegradable implants</h2>
+<p class="cite">Comput. Biol. Med. 196 (2025) 110741 (Famaey, Avril, Holzapfel; SimInSitu project).</p>
+<dl class="facts">
+<dt>What</dt><dd>An electrospun biodegradable conduit (Xeltis, UPy-polycarbonate) <b>in sheep carotid arteries</b>. The scaffold degrades, and neo-tissue (collagen + ground matrix) forms and remodels.
+Global sensitivity analysis, then calibration on 6-month data and prediction of 12-month data.</dd>
+<dt>Constituents</dt><dd>Scaffold (anisotropic, Wollner-type invariants, degradation only), 4 collagen families (Fung), 3D ground matrix (neo-Hookean, 10 % of the collagen mass).</dd>
+<dt>Production / removal</dt><dd>Scaffold: sigmoid degradation (as Drews). Collagen: \(\dot\rho_{0+}=\rho_h[1-e^{-t}](1+K_\sigma\Delta\sigma-K_\tau\Delta\tau)\),
+\(\dot\rho_{0-}=-k_h\rho(1+(I_4/G-1)^2)\). WSS stimulus from Poiseuille \((a_h/a)^3-1\).</dd>
+<dt>Remodeling / growth</dt><dd>HCMM; collagen by the scalar \(\lambda_r\) rate law (Maes), ground matrix by the <b>plasticity backward-Euler</b> HCMM (Sempértegui); anisotropic growth along \(e_r\).
+They note that the 3D matrix stabilizes the numerics, because fibers alone cannot carry shear.</dd>
+<dt>Numerics / geometry</dt><dd>Semi-analytical thick-walled axisymmetric cylinder in MATLAB, with an iterative solve for the deformed radius from the pressure balance per step. Mesh and time convergence: NRMSE &lt; 0.05 with more than 2 points through the thickness and \(\Delta t\) &lt; 1 day.
+GSA with SALib (Saltelli, 20 000 samples, 9 parameters).</dd>
+<dt>Results</dt><dd>Inner diameter and neo-tissue density are predicted within the experimental standard deviation at 12 months. Scaffold degradation is overestimated. The scaffold stiffness and collagen production dominate the radius.</dd>
+<dt>Assessment</dt><dd><span class="pill g">calibration and prediction</span> <span class="pill w">n = 3 + 3 animals, 1D model</span> The VVUQ mindset (ASME V&amp;V 40) is a good template. The <b>carotid</b> application is the closest to our project.</dd>
+</dl>
+</div>
+
+<!-- ================================================================== -->
+<h2 id="cross">Cross-cutting comparison</h2>
+
+<h3>Production, removal and stimuli</h3>
+<div class="table-wrap"><table>
+<tr><th>Paper</th><th>Production</th><th>Removal</th><th>Stress measure</th><th>WSS</th><th>Other drivers</th></tr>
+<tr><td>Cyron, Zhang, Mousavi</td><td>\(\dot\rho=\rho k_\sigma(\sigma-\sigma_h)/\sigma_h\) (net)</td><td>in net rate / \(1/T\)</td><td>constituent fiber stress (Mousavi: SMC stress in media)</td><td>—</td><td>elastin damage (Mousavi), dissection (Zhang)</td></tr>
+<tr><td>Maes, <b>ours</b></td><td>Eq. 24: gain on mixture-weighted fiber stress; ours additionally \(-k_\tau\Delta\tau_w\)</td><td>\(1/T\), optionally stress-dependent</td><td>\(\mathrm{tr}\,\sigma\) of constituent, density-weighted</td><td>ours: <code>BC.wss</code> per lumen point (from a fluid solution or Poiseuille)</td><td>—</td></tr>
+<tr><td>Latorre, Weiss, Pfaller</td><td>\(k\rho\Upsilon\), \(\Upsilon=1+K_\sigma\Delta\sigma_I-K_\tau\Delta\tau_w\)</td><td>\(k_o(1+\Delta\sigma^2)\)</td><td>mixture \(\mathrm{tr}\,\sigma\)</td><td>Poiseuille or CFD</td><td>elastin damage</td></tr>
+<tr><td>Schwarz</td><td>same \(\Upsilon\), clipped ≥ 0.1</td><td>\(k_h(1+K_{D\sigma}\Delta\sigma+K_{D\tau}\Delta\tau)\)</td><td>radially averaged \(\mathrm{tr}\,\sigma\)</td><td>CFD</td><td>inflammation, polymer</td></tr>
+<tr><td>Drews, Shirazi</td><td>\(m_h(1-e^{-t})(1+K_\sigma\Delta\sigma-K_\tau\Delta\tau)\) + inflammation (Drews)</td><td>stretch-dependent</td><td>\(\sigma_\theta\) (thin wall) or fiber stress</td><td>Poiseuille</td><td>polymer degradation</td></tr>
+</table></div>
+
+<h3>Numerics</h3>
+<div class="table-wrap"><table>
+<tr><th>Paper</th><th>Code</th><th>Elements / integration</th><th>Incompressibility</th><th>Tangent</th><th>Linear solver</th><th>Time integration</th><th>Convergence control</th></tr>
+<tr><td>Maes</td><td>Abaqus UMAT</td><td>C3D8, C3D8H</td><td>hybrid (C3D8H) or compressible</td><td>analytic</td><td>Abaqus</td><td>forward Euler</td><td>step-size study</td></tr>
+<tr><td>Mousavi</td><td>Abaqus UMAT</td><td>hexahedra (type not stated)</td><td>penalty κ = 10–100 μ</td><td>analytic (UMAT)</td><td>Abaqus</td><td>explicit, 1 month</td><td>not reported</td></tr>
+<tr><td>Zhang</td><td>Florence</td><td>hexahedra, 6 through thickness</td><td>not stated</td><td>not stated</td><td>not stated</td><td>explicit increments</td><td>Newton per increment</td></tr>
+<tr><td>Sempértegui</td><td>in-house</td><td>hexahedra, 2×2×2</td><td>nearly incompressible NH</td><td>finite-difference perturbation</td><td>—</td><td>backward Euler</td><td>local + global Newton</td></tr>
+<tr><td>Latorre 2020</td><td>FEBio (modified)</td><td>linear hex, 4 through thickness</td><td>penalty in Stage I; none needed in G&amp;R</td><td>exact, non-symmetric</td><td>FEBio (non-sym.)</td><td>rate-independent load steps</td><td>quadratic Newton shown</td></tr>
+<tr><td>Weiss</td><td>FEBio (modified)</td><td><b>quadratic hex, 3×3×3 Gauss</b>, 1 through thickness</td><td>as Latorre</td><td>exact</td><td>FEBio</td><td>load steps</td><td>—</td></tr>
+<tr><td>Schwarz</td><td>svFSI</td><td>linear hex (solid); RBVMS (fluid)</td><td>dilatational penalty to the mass-based \(J\)</td><td>approximate (no turnover derivative)</td><td>svFSI</td><td>trapezoid heredity integrals</td><td>Aitken, tol \(10^{-3}\)/\(10^{-2}\)</td></tr>
+<tr><td>Pfaller</td><td>svFSIplus + svFSGe</td><td>linear hex, <b>1 through thickness</b>; P1–P1 VMS fluid</td><td>CMMe constraint</td><td>exact, non-symmetric</td><td><b>MUMPS</b></td><td>load steps</td><td>IQN-ILS, predictor</td></tr>
+<tr><td>Drews, Shirazi, Cyron, Latorre 2018</td><td>MATLAB / compiled</td><td>no FE (0D/1D)</td><td>analytic</td><td>—</td><td>—</td><td>RK2 / Euler</td><td>step-size studies</td></tr>
+<tr><td><b>Ours</b></td><td>JAX FE</td><td>hex8 (2×2×2), tet10 (4-point); standard / F-bar / <b>hybrid with \(J_\text{target}=\det F_g\)</b></td><td>Q1/P0, P2/P0 and <b>P2/P1 Taylor–Hood</b> hybrid</td><td><b>exact by AD</b> (incl. implicit G&amp;R)</td><td>PARDISO / SuperLU + LU-preconditioned GMRES</td><td>explicit or backward Euler HCMM</td><td>quadratic Newton, continuation, PTC, verified by MMS and GCI</td></tr>
+</table></div>
+
+<h3>Prestress and initial homeostasis</h3>
+<ul>
+<li><b>Mousavi:</b> iterative elastin deposition stretch (Mousavi &amp; Avril 2017). <b>Zhang:</b> Laubrie iterative non-uniform prestretch.</li>
+<li><b>Latorre:</b> Stage I hyperelastic pre-load with a pre-Jacobian; stores \(\sigma_{vo}\) and \(\hat\sigma^\xi_N\), then computes \(F_h = F F_o^{-1}\).</li>
+<li><b>Pfaller:</b> thin-wall analytic homeostasis with freely chosen pressure (cannot use measured in-vivo pressures). <b>Schwarz:</b> the arch is <i>not</i> started from homeostasis.</li>
+<li><b>Ours:</b> Anderson-accelerated \(G_e\leftarrow F G_e\) until \(u = 0\) at the measured pressure (like Maes UMAT_DEP and Gebauer), differentiable through the prestress.</li>
+</ul>
+
+<h3>Validation level</h3>
+<div class="table-wrap"><table>
+<tr><th>Level</th><th>Papers</th></tr>
+<tr><td>Prospective prediction confirmed experimentally</td><td>Drews 2020 (sheep), Shirazi 2025 (sheep carotid, 12 months predicted from 6)</td></tr>
+<tr><td>Experiments + mechanistic simulation (trends)</td><td>Weiss 2020 (mice)</td></tr>
+<tr><td>Code-to-model verification only</td><td>Latorre 2020, Schwarz 2023, Maes, Mousavi, Zhang, Cyron</td></tr>
+<tr><td>Method demonstration</td><td>Sempértegui 2023, Pfaller 2024, Latorre 2018</td></tr>
+</table></div>
+
+<!-- ================================================================== -->
+<h2 id="ours">Relation to our project</h2>
+<div class="box ok"><span class="tag">What we have that none of the papers have</span>
+<ul>
+<li><b>Adjoint gradients</b> through prestress and the whole G&amp;R history (verified against FD to 1e-9 … 1e-11). Shirazi needed 20 000 forward runs for a GSA and did calibration without gradients; we can calibrate with gradients.</li>
+<li><b>Exact tangents by AD</b>, including the implicit HCMM. Schwarz's convergence suffers from an approximate tangent; Latorre and Weiss derived theirs by hand; Sempértegui used finite differences.</li>
+<li><b>Implicit (backward Euler) HCMM coupled to growth</b> and <b>explicit HCMM</b> side by side; FCMM at the material point as a reference.</li>
+<li><b>Hybrid elements with \(J_\text{target}=\det F_g\)</b> for incompressible growing walls: Q1/P0 (hex8) and the inf-sup stable <b>P2/P1 Taylor–Hood</b> (tet10)
+with smooth, optimally converging pressures (MMS: u 2.97 / 1.91, pressure 2.5); verified incl. \(J_\text{target}\neq 1\) and free growth.</li>
+<li><b>Fluid input as boundary conditions:</b> wall pressure field <code>BC.p</code> and wall shear stress <code>BC.wss</code> per lumen point, mapped radially through
+the wall (as Pfaller), WSS stimulus \(-k_\tau\Delta\tau_w\) in production; adjoint gradients with respect to every wall pressure value. Demo: flow step reaches the Murray radius.</li>
+<li>A <b>verification suite</b> (patch, MMS orders for all formulations, Lamé, Cook, consistency incl. adjoint, GCI: mesh order 2.00, time order 1.00).
+No paper reports MMS or GCI; Shirazi reports an NRMSE mesh and time check. Still missing: an independent code-to-code comparison (Abaqus).</li>
+<li><b>Buckling tools</b> (arc length, stability eigenvalues, PTC), relevant to Weiss-type tortuosity.</li>
+</ul></div>
+
+<div class="box warn"><span class="tag">What the papers have that we lack</span>
+<ul>
+<li><b>A fluid solver:</b> the WSS stimulus and the fluid BCs exist, but the WSS must come from outside (Poiseuille stand-in or an external CFD). Schwarz and Pfaller
+solve 3D Navier–Stokes and couple strongly (Pfaller: IQN-ILS); we couple one-way per step. For carotid bifurcations a real CFD WSS is likely essential.</li>
+<li><b>Intramural-stress driven thickening:</b> with our fiber-stress driver the flow step dilates correctly but the wall thins (stress restored by remodeling, elastin carries the
+extra hoop load); Latorre's mixture-stress stimulus also restores the thickness.</li>
+<li><b>CMMe:</b> the cheapest route to long-term states; needed for Weiss / Pfaller-type studies.</li>
+<li><b>Elastin degradation laws</b> (Mousavi, Latorre) and <b>active SMC tone</b> (Latorre, Schwarz, Zhang).</li>
+<li><b>Layer-specific walls</b> (Mousavi, Zhang) and <b>dissection</b> (Zhang).</li>
+<li><b>Inflammation and polymer constituents</b> (Drews, Schwarz, Shirazi) for implants and TEVGs.</li>
+<li><b>Experimental calibration and validation</b> (Shirazi, Drews, Weiss).</li>
+</ul></div>
+
+<div class="box"><span class="tag">Numerical lessons relevant to our FE choices</span>
+<ul>
+<li><b>Pressure / G&amp;R-variable oscillations:</b> Pfaller saw Gauss-point oscillations of CMMe equilibria and used one element through the thickness; they propose a Q1P0-type field for G&amp;R variables.
+Our own verification found pressure checkerboarding in P2/P0 (tet10) and inf-sup degradation of Q1/P0 in 2D-like problems; we implemented the stable pair P2/P1 (<code>hybrid_p1</code>),
+which removes the oscillation. The same idea (continuous lower-order field) would apply to G&amp;R variables if CMMe shows Pfaller's Gauss-point oscillations.</li>
+<li><b>Non-symmetric tangents:</b> FEBio had to be modified; svFSIplus uses MUMPS. We already use non-symmetric direct solvers. Lesson from this session: always check the residual of the linear solve; PARDISO with perturbed pivots needs iterative refinement.</li>
+<li><b>Locking:</b> Latorre argues that CMMe does not lock, because \(J_h\) is free. For the HCMM with incompressible elastin our hybrid element is needed (Maes uses C3D8H likewise).</li>
+<li><b>Coupling:</b> for any fluid coupling, IQN-ILS with a predictor is the proven choice; weak coupling is unstable and Aitken is insufficient at high \(K_\tau\) (Pfaller).</li>
+</ul></div>
+
+<!-- ================================================================== -->
+<h2 id="effort">Effort to replicate in our code</h2>
+<p>These are estimates for one person who knows this codebase, working with AI assistance, assuming the papers' parameters are available. "Replicate" means
+reproducing the paper's simulations in our JAX FE or material-point code, not their experiments.</p>
+<div class="table-wrap"><table>
+<tr><th>Paper</th><th>What is needed</th><th>Prerequisites in our code</th><th>Effort</th><th>Risk</th></tr>
+<tr><td>Humphrey 2002</td><td>Nothing (theory)</td><td>FCMM exists</td><td class="num">—</td><td>—</td></tr>
+<tr><td>Maes</td><td>Done (models A–E, artery)</td><td>—</td><td class="num">done</td><td>—</td></tr>
+<tr><td>Sempértegui</td><td>Done (implicit HCMM); their 2-material cube demos</td><td>core_implicit</td><td class="num">1–3 days</td><td>low</td></tr>
+<tr><td>Cyron 2016</td><td>1D tissue equivalent; AAA with focal elastin loss → elastin removal law (spatial), cylinder</td><td>removal laws, artery mesh</td><td class="num">3–5 days</td><td>low</td></tr>
+<tr><td>Latorre 2018</td><td>Algebraic thin-wall equilibrium system (Newton in JAX); compare with long-time HCMM</td><td>none</td><td class="num">2–4 days</td><td>low</td></tr>
+<tr><td>Latorre 2020</td><td>New CMMe model module: \(\phi(J)\) solve, stored Stage-I fields, \(p_h\) from \(\Upsilon=1\); Stage I/II driver; tangent by AD; aneurysm insult fields</td><td>model interface, AD tangent, non-symmetric LU, WSS input (<code>BC.wss</code>)</td><td class="num">1.5–3 weeks</td><td>medium (Gauss-point equilibrium oscillations)</td></tr>
+<tr><td>Weiss 2020 (computational part)</td><td>CMMe + material imperfection field, post-buckling path, tortuosity index</td><td>CMMe, arc length / PTC</td><td class="num">+1–2 weeks</td><td>medium</td></tr>
+<tr><td>Mousavi 2019</td><td>Two layers (per-Gauss-point fractions), elastin damage law, collagen production driven by <i>another</i> constituent's (SMC) stress, SMC remodeling without turnover, Braeu \(\dot F_g\); torus mesh; patient ATAA mesh</td><td>per-point states, wall basis, .inp/.msh import</td><td class="num">2–4 weeks</td><td>medium (patient mesh: segmentation)</td></tr>
+<tr><td>Zhang 2023</td><td>Two continua + interface springs (node-to-node or face penalty), removal of springs in a tear region, pressure on internal faces, active SMC tone</td><td>pressure faces, sets</td><td class="num">2–3 weeks</td><td>medium (interface stability)</td></tr>
+<tr><td>Drews 2020</td><td>Polymer constituent (sigmoid survival, porosity modulus), immuno-mediated production (gamma), fiber maturation \(c(s,\tau)\) → FCMM cohort-dependent parameters; thin-wall driver</td><td>FCMM (cohorts), material point, Poiseuille WSS stimulus (<code>flow_step</code>)</td><td class="num">1–2 weeks</td><td>low–medium</td></tr>
+<tr><td>Shirazi 2025</td><td>Scaffold (Wollner anisotropic) material, degradation, ground matrix (implicit HCMM), Poiseuille WSS stimulus, thick-wall driver or FE tube; GSA (SALib, vmap) and calibration (gradients)</td><td>core_implicit, adjoint, WSS stimulus (<code>BC.wss</code>, <code>k_tau</code>)</td><td class="num">2–3 weeks</td><td>medium (needs their data for calibration)</td></tr>
+<tr><td>Pfaller 2024 (FSGe)</td><td>Steady 3D Navier–Stokes (external svFSIplus/OpenFOAM via files, or own JAX solver), fluid-mesh motion, IQN-ILS coupling; plus CMMe.
+Already there: pressure field and WSS as BCs, radial propagation (<code>apply_wss</code>), sampling points (<code>face_points</code>, <code>transfer</code>)</td><td>CMMe, fluid BCs, wall basis</td><td class="num">3–6 weeks (external CFD)<br>3–5 months (own CFD)</td><td>high</td></tr>
+<tr><td>Schwarz 2023 (FSG + full CMM)</td><td>FCMM in the FE (Gauss-point histories, memory), inflammation, polymer, plus everything from FSGe; pulsatile FSI optional</td><td>FCMM, FSGe infrastructure</td><td class="num">3–6 months</td><td>high (cost, memory)</td></tr>
+</table></div>
+<div class="box warn"><span class="tag">Caveats</span>
+<p>Adjoint gradients through an external CFD solver need that solver's adjoint (or a JAX-native CFD). Without that, FSG gradients would be partial (G&amp;R part only).
+Patient-specific work needs segmented, meshed wall geometries with a radial direction; our Laplace wall basis already provides the latter.</p></div>
+
+<h2 id="roadmap">Suggested order for the carotid project</h2>
+<ol>
+<li><b>Latorre 2018 check</b> (days): the long-time limit of our HCMM against the algebraic equilibrium. A cheap model verification.</li>
+<li><s><b>Poiseuille-type WSS stimulus</b></s> <b>done</b>: <code>BC.wss</code> + <code>k_tau</code>, study <code>flow_step</code> (Murray radius reached).</li>
+<li><b>Elastin damage and SMC-mediated production</b> (1–2 weeks): Cyron and Mousavi aneurysm cases; two-layer walls.</li>
+<li><b>Shirazi-type calibration</b> on carotid data with our adjoint (2–4 weeks): the most direct route to a validated carotid model.</li>
+<li><b>CMMe</b> (2–3 weeks): fast long-term states, Weiss tortuosity with our buckling tools.</li>
+<li><b>Fluid coupling</b> (weeks to months): the BC side is ready (<code>BC.p</code>, <code>BC.wss</code>, <code>face_points</code>); connect an external steady CFD per step,
+later strong coupling with IQN-ILS (Pfaller's recipe).</li>
+</ol>
+</main>
+</div>
+</body>
+</html>

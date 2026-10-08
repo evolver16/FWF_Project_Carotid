@@ -4,6 +4,7 @@ Model interface per integration point (hcmm, fcmm; default Elastic: the state is
     sigma, aux = model.sigma_solver(state, F)
     state      = model.commit(state, F, aux)
     J_target(state)                              optional, hybrid element (default 1)
+    wss(state, tau_w) -> state                   optional, wall shear stress input (BC.wss)
 """
 
 from dataclasses import dataclass, replace
@@ -17,7 +18,7 @@ import scipy.sparse.linalg as spla
 from fem.elements import element_for, face_for
 from fem.tensor3 import det3, inv3
 
-ELEMENTS = ("standard", "fbar", "hybrid")
+ELEMENTS = ("standard", "fbar", "hybrid", "hybrid_p1")
 
 
 def geometry(X, conn):
@@ -71,6 +72,16 @@ def wall_basis(X, conn, inner, outer, inlets, outlets):
     return np.stack([e_r, np.cross(e_z, e_r), e_z], axis=-1)
 
 
+def transfer(points, values, targets):
+    """values (points.shape[:-1] + extra) at the nearest of points for every target -> targets.shape[:-1] + extra;
+    e.g. fluid wall data -> System.face_points, lumen WSS -> wall Gauss points (radially constant, Pfaller 2024)"""
+    from scipy.spatial import cKDTree
+    points, values, targets = np.asarray(points), np.asarray(values), np.asarray(targets)
+    extra = values.shape[points.ndim - 1:]
+    idx = cKDTree(points.reshape(-1, 3)).query(targets.reshape(-1, 3))[1]
+    return values.reshape((-1,) + extra)[idx].reshape(targets.shape[:-1] + extra)
+
+
 def anderson(xs, fs, eps=1e-12):
     """Anderson (type II) step from iterates x_k and residuals f_k = g(x_k) - x_k:
     x+ = x + f - (dX + dF) gamma,  (dF^T dF + eps tr(dF^T dF) I) gamma = dF^T f
@@ -92,13 +103,17 @@ def broadcast_state(state, n_el, n_gp=8):
 
 @dataclass
 class BC:
-    """Dirichlet dofs/values, dead nodal forces, follower pressure p on the pressure faces,
+    """Dirichlet dofs/values, dead nodal forces, follower pressure p on the pressure faces: a number, one value per face
+    (n_faces,) or per face Gauss point (n_faces, n_gp_face), e.g. a fluid wall pressure sampled at System.face_points;
+    wss: wall shear stress magnitude on the pressure faces (same shapes as p), passed by run() to every Gauss point
+    of the wall (nearest lumen point, radially constant) through the model's wss(state, tau_w); None: state unchanged;
     slip = (nodes, normals): u . n = 0 at those nodes (inclined supports, symmetry planes)."""
     fixed: np.ndarray
     values: np.ndarray
     f_dead: np.ndarray = None
-    p: float = 0.0
+    p: float | np.ndarray = 0.0
     slip: tuple = None
+    wss: float | np.ndarray = None
 
 
 class Constraints:
@@ -194,6 +209,7 @@ class Pardiso:
         it[:] = 0
         it[0] = 1    # user iparm
         it[1] = 3    # parallel nested dissection (METIS)
+        it[7] = 10   # max iterative refinement steps (perturbed pivots of hybrid saddle points: 6 % residual without)
         it[9] = 13   # pivot perturbation 1e-13
         it[10] = 1   # scaling
         it[12] = 1   # weighted matching
@@ -248,10 +264,13 @@ def pardiso_available():
 
 class LinearSolver:
     """K x = b or K^T x = b by GMRES preconditioned with the last LU of K; refactorized when that fails.
-    backend "pardiso" (MKL, multithreaded) or "superlu" (scipy, serial); default pardiso when installed"""
+    backend "pardiso" (MKL, multithreaded) or "superlu" (scipy, serial); default pardiso when installed
+    target |Ax - b| <= 10 tol |b|; above accept |b| (e.g. pivoting failure): SuperLU, then error"""
 
-    def __init__(self, tol=1e-12, max_iter=20, refactor_after=5, ordering="MMD_AT_PLUS_A", backend=None):
+    def __init__(self, tol=1e-12, max_iter=20, refactor_after=5, ordering="MMD_AT_PLUS_A", backend=None,
+                 accept=1e-6):
         self.tol, self.max_iter, self.refactor_after, self.ordering = tol, max_iter, refactor_after, ordering
+        self.accept = accept
         self.backend = backend or ("pardiso" if pardiso_available() else "superlu")
         self.lu = None
         self._pardiso = None
@@ -267,7 +286,8 @@ class LinearSolver:
         if not (np.isfinite(K.data).all() and np.isfinite(b).all()):
             raise RuntimeError("linear solve: non-finite tangent or right-hand side")
         A = K if trans == "N" else K.T
-        ok = lambda x: x is not None and np.linalg.norm(A @ x - b) <= 10 * self.tol * np.linalg.norm(b)
+        res = lambda x: np.inf if x is None else np.linalg.norm(A @ x - b) / max(np.linalg.norm(b), 1e-300)
+        ok = lambda x: res(x) <= 10 * self.tol
         if self.lu is not None and self.lu.shape == K.shape:
             x, it = gmres(A, b, lambda v: self.lu.solve(v, trans=trans), self.tol, self.max_iter)
             self.iterations += it
@@ -282,7 +302,16 @@ class LinearSolver:
             return x
         y, it = gmres(A, b, lambda v: self.lu.solve(v, trans=trans), self.tol, self.max_iter)
         self.iterations += it
-        return x if y is None else y
+        if ok(y):
+            return y
+        x = min((x, y), key=res)
+        if res(x) > self.accept and self.backend != "superlu":
+            self.lu = spla.splu(K.tocsc(), permc_spec=self.ordering)
+            self.factorizations += 1
+            x = self.lu.solve(b, trans=trans)
+        if res(x) > self.accept:
+            raise RuntimeError(f"linear solve: relative residual {res(x):.1e}")
+        return x
 
 
 class Elastic:
@@ -302,9 +331,12 @@ class Elastic:
 class System:
     """Mesh of hex8 (2x2x2 Gauss) or tet10 (4-point); element formulation:
     "standard", "fbar" (F^ = (J_0/J)^(1/3) F, J_0 at the element centre),
-    "hybrid" (Q1/P0 or P2/P0: sigma - q I with one pressure q per element and J = J_target on average)
+    "hybrid" (Q1/P0 or P2/P0: sigma - q I with one pressure q per element and J = J_target on average),
+    "hybrid_p1" (tet10 only, P2/P1 Taylor-Hood: continuous linear q at the corner nodes, int L_a (J - J_target) = 0)
 
+    pressure q(xi) = L(xi) . q_e: L = 1 (P0) or the corner barycentric coordinates (P1)
     fbar develops hourglass-type modes in long G&R runs for K/mu >~ 1e3; use hybrid there.
+    P2/P0 pressures oscillate between neighbouring tets (cube means converge); P2/P1 is inf-sup stable.
     """
 
     def __init__(self, mesh, model=None, pressure_faces=None, batch=128, element="standard"):
@@ -313,16 +345,27 @@ class System:
         self.mesh, self.batch, self.element = mesh, batch, element
         self.model = Elastic if model is None else model
         self.n_dof = 3 * mesh.n_nodes
-        self.n_p = mesh.n_elem if element == "hybrid" else 0
-        self.n_x = self.n_dof + self.n_p
         dNdX, wdet = geometry(mesh.X, mesh.conn)
         bad = np.flatnonzero((wdet <= 0).any(axis=1))
         if len(bad):
             raise ValueError(f"{len(bad)} elements with det(dX/dxi) <= 0 at a Gauss point "
                              f"(inverted or misordered), e.g. {bad[:5]}")
+        pdofs, L = np.arange(mesh.n_elem)[:, None], np.ones((wdet.shape[1], 1))
+        self.p_nodes = None
+        if element == "hybrid_p1":
+            if mesh.conn.shape[1] != 10:
+                raise ValueError("hybrid_p1 (P2/P1) needs tet10")
+            self.p_nodes, local = np.unique(mesh.conn[:, :4], return_inverse=True)
+            pdofs = local.reshape(-1, 4)
+            L = np.stack([np.array([1 - g.sum(), *g]) for g in element_for(10).gauss])
+        self.n_p = 0 if element not in ("hybrid", "hybrid_p1") else int(pdofs.max()) + 1
+        self.n_x = self.n_dof + self.n_p
+        self._pdofs, self._L = jnp.asarray(pdofs), jnp.asarray(L)
         self.dNdX, self.wdet = jnp.asarray(dNdX), jnp.asarray(wdet)
         self.dNdX0 = jnp.asarray(centroid_dNdX(mesh.X, mesh.conn))
-        self._p_scale = wdet.sum(axis=1)[:self.n_p]
+        self._p_scale = np.zeros(self.n_p)
+        if self.n_p:
+            np.add.at(self._p_scale, pdofs, np.einsum("eg,gq->eq", wdet, L))
         self.J_target = getattr(model, "J_target", lambda s: jnp.ones(()))
         self.conn = jnp.asarray(mesh.conn)
         self.n_en, self.n_gp = mesh.conn.shape[1], wdet.shape[1]
@@ -334,11 +377,16 @@ class System:
         self.N2 = jnp.asarray(np.stack([face.N(g) for g in face.gauss]))
         self.dN2 = jnp.asarray(np.stack([face.dN(g) for g in face.gauss]))
         self.w2 = jnp.asarray(face.weights)
+        self._wss_map = None
+        if len(faces):
+            lumen = self.face_points(np.zeros(self.n_dof))[0]
+            self._wss_map = jnp.asarray(transfer(lumen, np.arange(lumen.shape[0] * lumen.shape[1]).reshape(lumen.shape[:2]),
+                                                 gauss_points(mesh.X, mesh.conn)))
 
         ne = 3 * self.n_en
         edofs = (3 * mesh.conn[:, :, None] + np.arange(3)).reshape(mesh.n_elem, ne)
         if self.n_p:
-            edofs = np.hstack([edofs, self.n_dof + np.arange(mesh.n_elem)[:, None]])
+            edofs = np.hstack([edofs, self.n_dof + pdofs])
         nd, nf = edofs.shape[1], 3 * faces.shape[1]
         fdofs = (3 * np.asarray(faces)[:, :, None] + np.arange(3)).reshape(-1, nf)
         self._rows = np.concatenate([np.repeat(edofs, nd, axis=1).ravel(),
@@ -379,8 +427,9 @@ class System:
         J_g = det F_g (mixtures) and the Gauss-point fields in gauss (n_el, n_gp, ...) as nodal and element means"""
         u = jnp.asarray(u)
         F = self.gauss_F(u)
-        q = self.last_p if self.n_p else np.zeros(self.mesh.n_elem)
-        sig = np.asarray(self.stress(u, states)) - np.asarray(q)[:, None, None, None] * np.eye(3)
+        q = (np.einsum("gq,eq->eg", np.asarray(self._L), self.last_p[np.asarray(self._pdofs)]) if self.n_p
+             else np.zeros(F.shape[:2]))
+        sig = np.asarray(self.stress(u, states)) - q[..., None, None] * np.eye(3)
         dev = sig - np.trace(sig, axis1=-2, axis2=-1)[..., None, None] * np.eye(3) / 3
         g = dict(J=det3(F), sigma=sig, von_mises=np.sqrt(1.5 * np.sum(dev * dev, axis=(-2, -1))))
         if hasattr(states, "rho_tot"):
@@ -394,8 +443,8 @@ class System:
                 {k: mean(v) for k, v in g.items()})
 
     def _split(self, x):
-        """x = (u, element pressures); zero pressures without the hybrid element"""
-        return x[:self.n_dof], (x[self.n_dof:] if self.n_p else jnp.zeros(self.mesh.n_elem))
+        """x = (u, pressures) -> (u, pressure coefficients per element (n_el, n_q)); zeros without the hybrid element"""
+        return x[:self.n_dof], (x[self.n_dof:][self._pdofs] if self.n_p else jnp.zeros(self._pdofs.shape))
 
     def _gauss_F(self, u):
         """Material deformation gradient at every Gauss point, (n_el, n_gp, 3, 3)"""
@@ -409,19 +458,41 @@ class System:
                 jnp.eye(3) + jnp.einsum("ai,aj->ij", u_e, dNdX0_e))
 
     def _elem_force(self, u_e, q, st_e, dNdX_e, dNdX0_e, w_e):
-        """f_ai = sum_g w_g P_iJ dN_a/dX_J,  P = J (sigma(F^) - q I) F^-T;  r_q = -sum_g w_g (J - J_target)"""
+        """f_ai = sum_g w_g P_iJ dN_a/dX_J,  P = J (sigma(F^) - q I) F^-T,  q = L q_e;
+        r_q = -sum_g w_g L (J - J_target)"""
         F, F0 = self._elem_F(u_e, dNdX_e, dNdX0_e)
-        sig = jax.vmap(lambda s, f: self.model.sigma_solver(s, f)[0])(st_e, self._Fhat(F, F0)) - q * jnp.eye(3)
+        sig = jax.vmap(lambda s, f: self.model.sigma_solver(s, f)[0])(st_e, self._Fhat(F, F0))
+        sig = sig - (self._L @ q)[:, None, None] * jnp.eye(3)
         J = det3(F)
         P = J[:, None, None] * sig @ inv3(F).transpose(0, 2, 1)
-        r_q = -jnp.sum(w_e * (J - jax.vmap(self.J_target)(st_e)))
+        r_q = -jnp.einsum("g,gq,g->q", w_e, self._L, J - jax.vmap(self.J_target)(st_e))
         return jnp.einsum("g,gaJ,giJ->ai", w_e, dNdX_e, P), r_q
 
     def _face_force(self, x_f, p):
-        """f_a = -p sum_g w_g N_a (dx/deta1 x dx/deta2)   (follower pressure on the deformed face)"""
+        """f_a = -sum_g w_g p_g N_a (dx/deta1 x dx/deta2)   (follower pressure on the deformed face)"""
         a1 = jnp.einsum("ai,ga->gi", x_f, self.dN2[:, :, 0])
         a2 = jnp.einsum("ai,ga->gi", x_f, self.dN2[:, :, 1])
-        return -p * jnp.einsum("g,ga,gi->ai", self.w2, self.N2, jnp.cross(a1, a2))
+        return -jnp.einsum("g,g,ga,gi->ai", self.w2, p, self.N2, jnp.cross(a1, a2))
+
+    def _p_faces(self, p):
+        """pressure (number, per face or per face Gauss point) -> (n_faces, n_gp_face)"""
+        p = jnp.asarray(p, dtype=float)
+        return jnp.broadcast_to(p[:, None] if p.ndim == 1 else p, (self.faces.shape[0], self.w2.shape[0]))
+
+    def apply_wss(self, states, wss):
+        """states with the wall shear stress (number, per face or per face Gauss point of the pressure faces) at every
+        Gauss point, taken from the nearest lumen point in the reference configuration: model.wss(state, tau_w)"""
+        tau = self._p_faces(wss).ravel()[self._wss_map]
+        return jax.vmap(jax.vmap(self.model.wss))(states, tau)
+
+    def face_points(self, u):
+        """Deformed pressure-face Gauss points and unit normals pointing out of the wall, (n_faces, n_gp_face, 3) each:
+        where to sample a fluid solution (BC.p per face Gauss point, WSS for the G&R stimulus); u = 0: reference"""
+        x_f = (self.X + jnp.asarray(u).reshape(-1, 3))[self.faces]
+        a1 = jnp.einsum("fai,ga->fgi", x_f, self.dN2[:, :, 0])
+        a2 = jnp.einsum("fai,ga->fgi", x_f, self.dN2[:, :, 1])
+        n = jnp.cross(a1, a2)
+        return np.asarray(jnp.einsum("fai,ga->fgi", x_f, self.N2)), np.asarray(n / jnp.linalg.norm(n, axis=-1, keepdims=True))
 
     def _residual(self, x, states, p, f_dead):
         """r = (f_int(u, q) - f_pressure(u) - f_dead, r_q)"""
@@ -430,9 +501,9 @@ class System:
         fe, rq = jax.lax.map(lambda a: self._elem_force(*a),
                              (U[self.conn], q, states, self.dNdX, self.dNdX0, self.wdet), batch_size=self.batch)
         r = jnp.zeros_like(U).at[self.conn].add(fe)
-        ff = jax.vmap(self._face_force, (0, None))((self.X + U)[self.faces], p)
+        ff = jax.vmap(self._face_force)((self.X + U)[self.faces], self._p_faces(p))
         r = r.at[self.faces].add(-ff).ravel() - f_dead
-        return jnp.concatenate([r, rq]) if self.n_p else r
+        return jnp.concatenate([r, jnp.zeros(self.n_p).at[self._pdofs].add(rq)]) if self.n_p else r
 
     def _residual_vjp(self, x, states, p, f_dead, w):
         """(w . dr/dstates, w . dr/dp)"""
@@ -440,21 +511,21 @@ class System:
 
     def _elem_tangent(self, u_e, q, st_e, dNdX_e, dNdX0_e, w_e):
         """K_aibk = sum_g w_g dN_a/dX_J [(dP_iJ/dF_kL) dN_b/dX_L + (dP_iJ/dF0_kL) dN0_b/dX_L]
-        hybrid: K_uq = -sum_g w_g J F^-T : dN = K_qu^T, K_qq = 0
+        hybrid: K_uq = -sum_g w_g L J F^-T : dN = K_qu^T, K_qq = 0
         dsigma/dF^ by forward AD per Gauss point, then AD of P with sigma linearized about F^
         """
         F, F0 = self._elem_F(u_e, dNdX_e, dNdX0_e)
         fbar = self.element == "fbar"
 
-        def gp(st, F):
+        def gp(st, F, q_g):
             Fh = self._Fhat(F, F0)
             s = lambda f: self.model.sigma_solver(st, f)[0]
             sig, C = s(Fh), jax.jacfwd(s)(Fh)
             P = lambda F, F0: det3(F) * (sig + jnp.einsum("ijkl,kl->ij", C, self._Fhat(F, F0) - Fh)
-                                         - q * jnp.eye(3)) @ inv3(F).T
+                                         - q_g * jnp.eye(3)) @ inv3(F).T
             return jax.jacfwd(P, argnums=(0, 1) if fbar else 0)(F, F0)
 
-        AB = jax.vmap(gp)(st_e, F)
+        AB = jax.vmap(gp)(st_e, F, self._L @ q)
         A = AB[0] if fbar else AB
         K = jnp.einsum("g,gaJ,giJkL,gbL->aibk", w_e, dNdX_e, A, dNdX_e)
         if fbar:
@@ -464,8 +535,9 @@ class System:
         if not self.n_p:
             return K
         G = det3(F)[:, None, None] * inv3(F).transpose(0, 2, 1)
-        kuq = -jnp.einsum("g,gaJ,giJ->ai", w_e, dNdX_e, G).reshape(ne, 1)
-        return jnp.block([[K, kuq], [kuq.T, jnp.zeros((1, 1))]])
+        n_q = self._L.shape[1]
+        kuq = -jnp.einsum("g,gaJ,giJ,gq->aiq", w_e, dNdX_e, G, self._L).reshape(ne, n_q)
+        return jnp.block([[K, kuq], [kuq.T, jnp.zeros((n_q, n_q))]])
 
     def _tangent(self, x, states, p):
         """Element and face tangents dr/dx for sparse assembly"""
@@ -474,12 +546,12 @@ class System:
         ke = jax.lax.map(lambda a: self._elem_tangent(*a),
                          (U[self.conn], q, states, self.dNdX, self.dNdX0, self.wdet), batch_size=self.batch)
         nf = self.faces.shape[1]
-        kf = jax.vmap(jax.jacfwd(lambda xf: -self._face_force(xf.reshape(nf, 3), p).ravel()))(
-            (self.X + U)[self.faces].reshape(-1, 3 * nf))
+        kf = jax.vmap(jax.jacfwd(lambda xf, pf: -self._face_force(xf.reshape(nf, 3), pf).ravel()))(
+            (self.X + U)[self.faces].reshape(-1, 3 * nf), self._p_faces(p))
         return jnp.concatenate([ke.ravel(), kf.ravel()])
 
     def _stress(self, u, states):
-        """Material Cauchy stress at every Gauss point, (n_el, n_gp, 3, 3); hybrid total: minus last_p[e] I"""
+        """Material Cauchy stress at every Gauss point, (n_el, n_gp, 3, 3); hybrid total: minus q I (see fields)"""
         return jax.vmap(jax.vmap(lambda s, f: self.model.sigma_solver(s, f)[0]))(states, self._gauss_F(u))
 
     def _commit(self, u, states, commit=None):
@@ -541,7 +613,8 @@ class System:
     def _solve(self, u0, states, bc, tol=1e-10, max_iter=30):
         """Newton on the free unknowns x = (u, element pressures) -> (x, n_iter)
 
-        converged: |r_u| < tol max|r_u(u0)|, |r_q| < tol V_e, or |du| <= 1e-13 L
+        converged: |r_u| < tol max(|r_u(u0)|, |f_dead|, |diag K du_1|), |r_q| < tol V_e, or |du| <= 1e-13 L
+        (du_1: first step, the force scale when only J_target changes)
         failed Newton: load continuation from the last converged BC with cutback, then pseudo-transient relaxation
         """
         try:
@@ -559,7 +632,7 @@ class System:
         f = lambda bc: np.zeros(self.n_dof) if bc.f_dead is None else np.asarray(bc.f_dead, dtype=float)
         v0, v1, f0, f1 = np.asarray(bc0.values, dtype=float), np.asarray(bc1.values, dtype=float), f(bc0), f(bc1)
         return lambda s: replace(bc1, values=(1 - s) * v0 + s * v1, f_dead=(1 - s) * f0 + s * f1,
-                                 p=(1 - s) * float(bc0.p) + s * float(bc1.p))
+                                 p=(1 - s) * np.asarray(bc0.p, dtype=float) + s * np.asarray(bc1.p, dtype=float))
 
     @staticmethod
     def _same_support(a, b):
@@ -573,7 +646,7 @@ class System:
         if start is None or not self._same_support(start, bc):
             start = replace(bc, values=np.zeros(len(bc.fixed)), f_dead=None, p=0.0)
         f = lambda b: None if b.f_dead is None else np.asarray(b.f_dead)
-        if (np.array_equal(start.values, bc.values) and float(start.p) == float(bc.p)
+        if (np.array_equal(start.values, bc.values) and np.array_equal(np.asarray(start.p, dtype=float), np.asarray(bc.p, dtype=float))
                 and np.array_equal(f(start), f(bc))):
             raise RuntimeError("load unchanged, no continuation")
         blend = self._blend(start, bc)
@@ -610,7 +683,12 @@ class System:
                 break
             if err > 1e8:
                 raise RuntimeError(f"FE Newton diverged, |r| = {err:.1e}")
-            dx = cons.prolong(self.linear(self._K_red(x, states, bc.p, cons), r_red))
+            K = self._K_red(x, states, bc.p, cons)
+            dy = self.linear(K, r_red)
+            if it == 1:
+                w = cons.restrict_scale(np.concatenate([np.ones(self.n_dof), np.zeros(self.n_p)])) > 0.5
+                scale = np.where(w, np.maximum(scale, np.abs(K.diagonal() * dy)[w].max()), scale)
+            dx = cons.prolong(dy)
             x -= dx
             if np.abs(dx[:self.n_dof]).max() <= 1e-13 * self.length:
                 break
@@ -673,7 +751,7 @@ class System:
         blend = self._blend(bc0, bc1)
         cons, cons1 = self._constraints(bc0), self._constraints(bc1)
         f0, f1 = np.asarray(blend(0.0).f_dead), np.asarray(blend(1.0).f_dead)
-        d_xp, d_p, d_f = cons1.x_p - cons.x_p, float(bc1.p) - float(bc0.p), f1 - f0
+        d_xp, d_p, d_f = cons1.x_p - cons.x_p, np.asarray(bc1.p, dtype=float) - np.asarray(bc0.p, dtype=float), f1 - f0
         if not hasattr(self, "_residual_dir"):
             self._residual_dir = jax.jit(lambda x, s, p, f, dx, dp, df: jax.jvp(
                 lambda x, p, f: self._residual(x, s, p, f), (x, p, f), (dx, dp, df))[1])
@@ -771,7 +849,7 @@ class System:
         f_dead = self._f_dead(bc)
 
         def primal(states, p, u0):
-            x, self.last_iterations = self._solve(u0, states, replace(bc, p=float(p)), tol)
+            x, self.last_iterations = self._solve(u0, states, replace(bc, p=np.asarray(p, dtype=float)), tol)
             self.last_u = x[:self.n_dof]
             return jnp.asarray(x)
 
@@ -816,6 +894,8 @@ class System:
         def steps(states, u, ps):
             hist = []
             for bc, p in zip(bcs, ps):
+                if bc.wss is not None:
+                    states = self.apply_wss(states, bc.wss)
                 u = self.equilibrium(states, replace(bc, p=p), u, tol)
                 hist.append(on_step(u, states) if on_step else u)
                 states = self.commit(u, states)
