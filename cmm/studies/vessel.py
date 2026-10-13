@@ -2,6 +2,7 @@
 redistribution in a straight half tube (end rotation, local set-point change)."""
 
 import time
+from dataclasses import replace
 
 import jax
 import jax.numpy as jnp
@@ -131,6 +132,119 @@ def stenotic_vessel(etype="hex8", n=None, n_steps=100, check_n=((2, 15, 1), (4, 
                           title="Lumen radius stretch", ylabel="r / r_ref (-)"),
                      dict(t=t, series={"lumen area": np.asarray(area), "wall volume": np.asarray(vol)},
                           title="Ratios to reference", ylabel="(-)")], fig)
+    log.save(txt)
+
+
+# ---------- WSS-driven remodeling of a bent stenosis ----------
+
+def stenosis_wss(n=(4, 32, 80), n_steps=300, ds=10.0, k_tau=0.5, stenosis=0.25, record_every=5, name="stenosis_wss",
+                 stimulus="fiber", k_sigma=1.0, length=2.5, plaque=False, t_intima=0.25, n_intima=2, T_plaque=300.0):
+    """Bent stenotic half tube (hybrid hex8, incompressible elastin), prestressed at p_hom, then pressure and flow held.
+    Flow as boundary condition BC.wss each step: Poiseuille along the centreline, tau_w = 4 mu Q / (pi a^3) with the
+    current lumen radius a of each cross-section; target tau_w_h = WSS of the healthy tube (radius r_i), so the throat
+    starts with tau_w / tau_w_h = (r_i / a_throat)^3 > 1 and all changes come from WSS-driven turnover (k_tau).
+    stimulus "fiber": fiber stress (MaesProduction), "mixture": wall stress (MixtureProduction, k_sigma), the von Mises
+    stress of the mixture, nonlocal mean over length ~ sqrt(r t) (a local stimulus localizes on the mesh scale), input
+    each step like the WSS.
+    plaque: outer radius constant, the stenosis is a plaque in an intima (t_intima, first n_intima layers) that is
+    removed with mean life T_plaque (artery_states(plaque=...)); WSS-driven turnover of the remaining tissue as above."""
+    log = Log()
+    txt, pvd, csv_path, fig = outputs("vessel/stenosis_wss", *(f"{name}{s}" for s in (".txt", ".pvd", ".csv", ".png")))
+    m = meshlib.bent_tube(n=n, stenosis=stenosis, intima=(t_intima, n_intima) if plaque else None)
+    Q = fem.wall_basis(m.X, m.conn, m.nodes["inner"], m.nodes["outer"], [m.nodes["inlet"]], [m.nodes["outlet"]])
+    Qj = jnp.asarray(Q)
+    sysm = fem.System(m, hcmm, pressure_faces=m.faces["inner"], element="hybrid")
+    par = artery_par(k_tau=k_tau, k_sigma=k_sigma, T_plaque=T_plaque)
+    f_p = None
+    if plaque:
+        s = np.asarray(fem.gauss_points(m.param, m.conn))
+        bump = 5.0 * stenosis * np.exp(-((s[..., 2] - 0.5) / 0.08) ** 2)
+        f_p = jnp.asarray(np.where(s[..., 0] < n_intima / n[0], bump / (t_intima + bump), 0.0))
+    bc = dof_bc(m, par["p_hom"], [("sym", 1), ("inlet", 2), ("outlet", 0)])
+
+    def rings(side):
+        """node rings of one wall side, one per axial grid line, ordered in theta"""
+        nodes = m.nodes[side]
+        s2 = np.round(m.param[nodes, 2], 12)
+        return [nodes[s2 == v][np.argsort(m.param[nodes[s2 == v], 1])] for v in np.unique(s2)]
+
+    inner, outer = rings("inner"), rings("outer")
+    line = np.zeros(m.n_nodes, dtype=int)
+    for j, r in enumerate(inner):
+        line[r] = j
+    face_lines = line[m.faces["inner"]]
+    radius = lambda u, rs: np.array([float(ring_radius(m, u, r)) for r in rs])
+    r_i, mid = 5.0, len(inner) // 2
+
+    def wss(u):
+        """Poiseuille WSS per lumen face from the mean radius of its cross-sections (normalization 4 mu Q / pi = 1)"""
+        a = radius(u, inner)
+        return 1.0 / a[face_lines].mean(axis=1) ** 3
+
+    def wall_stress(u, states):
+        """von Mises stress (independent of the hybrid pressure), nonlocal mean"""
+        sig = sysm.stress(u, states)
+        dev = sig - jnp.trace(sig, axis1=-2, axis2=-1)[..., None, None] / 3.0 * jnp.eye(3)
+        return sysm.nonlocal_mean(jnp.sqrt(1.5 * jnp.sum(dev * dev, axis=(-2, -1))), length)
+
+    log(f"bent stenotic half tube ({100 * stenosis:.0f} % stenosis{', plaque' if plaque else ''}): {m.n_elem} hex8 (hybrid), {sysm.n_dof} dofs, "
+        f"{sysm.n_p} pressures; HCMM model E with incompressible elastin, k_tau {k_tau}, {stimulus} stress stimulus"
+        + (f" (k_sigma {k_sigma})" if stimulus == "mixture" else ""))
+    log(f"prestress at {float(par['p_hom']) * 1e3:.0f} kPa, then pressure and flow held, {n_steps} steps of {ds:g} days"
+        + (f"; plaque mean life {T_plaque:g} days" if plaque else ""))
+    t0 = time.time()
+    _, u, states = artery_simulate(m, sysm, Qj, par, n_steps=0, bc=lambda p: dof_bc(m, p, [("sym", 1), ("inlet", 2),
+                                                                                            ("outlet", 0)]),
+                                   final=True, elastin="incompressible", log=log, ds=ds, stimulus=stimulus, plaque=f_p)
+    log(f"  prestress done in {time.time() - t0:.0f}s")
+    sw = wall_stress(u, states)
+    states = states.replace(tau_w_h=jnp.full_like(states.tau_w_h, 1.0 / r_i ** 3), sigma_w=sw, sigma_w_h=sw)
+    rho0 = sum(np.asarray(c.rho) for c in states.constituents[1:5])
+    a0, b0 = radius(u, inner), radius(u, outer)
+    h0 = b0 - a0
+    log(f"  initial lumen radius: throat {a0[mid]:.3f} mm, inlet {a0[2]:.3f} mm; WSS / target at the throat "
+        f"{(r_i / a0[mid]) ** 3:.2f}")
+    series = meshlib.VTKSeries(pvd)
+    rows = []
+
+    def record(k, u, states):
+        F = sysm.gauss_F(u)
+        e = F @ Qj[..., 1:2]
+        e = e / jnp.linalg.norm(e, axis=-2, keepdims=True)
+        s_tt = (jnp.swapaxes(e, -1, -2) @ sysm.stress(u, states) @ e)[..., 0, 0]
+        col = sum(np.asarray(c.rho) for c in states.constituents[1:5])
+        extra = dict(plaque=states.constituents[5].rho) if plaque else {}
+        series.write(ds * k, m.X, m.conn, *sysm.fields(u, states, dict(
+            sigma_tt_kPa=1e3 * s_tt, rho_rel_collagen=col / rho0, wss_rel=states.tau_w / states.tau_w_h,
+            wall_stress_rel=states.sigma_w / states.sigma_w_h, J_g=det3(states.F_g), **extra)))
+
+    record(0, u, states.replace(tau_w=jnp.asarray(sysm.apply_wss(states, wss(u)).tau_w)))
+    t0 = time.time()
+    for k in range(1, n_steps + 1):
+        u, states, _ = sysm.run(states.replace(sigma_w=wall_stress(u, states)), [replace(bc, wss=wss(u))], u0=u)
+        a, b = radius(u, inner), radius(u, outer)
+        rows.append(dict(day=ds * k, throat_radius=a[mid] / a0[mid], inlet_radius=a[2] / a0[2],
+                         throat_outer_radius=b[mid] / b0[mid], throat_thickness=(b[mid] - a[mid]) / h0[mid],
+                         throat_wss_rel=(r_i / a[mid]) ** 3, stenosis_degree=1 - a[mid] / a[2]))
+        if k % record_every == 0 or k == n_steps:
+            record(k, u, states)
+        if k % max(n_steps // 10, 1) == 0:
+            r = rows[-1]
+            log(f"  day {ds * k:5.0f}  throat radius {r['throat_radius']:.4f}  outer {r['throat_outer_radius']:.4f}  "
+                f"thickness {r['throat_thickness']:.4f}  "
+                f"WSS/target {r['throat_wss_rel']:.3f}  stenosis {100 * r['stenosis_degree']:.1f} %  "
+                f"({time.time() - t0:.0f}s)")
+    log(f"  ParaView: {pvd.name} ({len(series.entries)} time steps)")
+    write_csv(rows, csv_path)
+    t = np.array([r["day"] for r in rows])
+    plotting.panels([dict(t=t, series={"throat": np.array([r["throat_radius"] for r in rows]),
+                                       "throat outer": np.array([r["throat_outer_radius"] for r in rows]),
+                                       "inlet": np.array([r["inlet_radius"] for r in rows])},
+                          title="Radius / initial", ylabel="(-)"),
+                     dict(t=t, series={"throat": np.array([r["throat_wss_rel"] for r in rows])},
+                          title="WSS / healthy target", ylabel="(-)"),
+                     dict(t=t, series={"stenosis": 100 * np.array([r["stenosis_degree"] for r in rows])},
+                          title="Degree of stenosis", ylabel="%")], fig)
     log.save(txt)
 
 

@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Project Glossary</title>
+<style>
+:root {
+  --bg: #fbfaf7; --panel: #ffffff; --text: #1f2328; --muted: #5d6670; --line: #e3e0d8;
+  --accent: #1f6f8b; --accent-soft: #e5f1f5; --code: #f3f1ec; --mark: #fbe9a8;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #15181c; --panel: #1c2026; --text: #e4e6e9; --muted: #9aa3ad; --line: #2e343c;
+    --accent: #6cb6d0; --accent-soft: #1b2e36; --code: #23282f; --mark: #5a4a16;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #15181c; --panel: #1c2026; --text: #e4e6e9; --muted: #9aa3ad; --line: #2e343c;
+  --accent: #6cb6d0; --accent-soft: #1b2e36; --code: #23282f; --mark: #5a4a16;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text);
+       font: 16px/1.6 "Source Sans 3", "Segoe UI", system-ui, -apple-system, sans-serif; }
+main { max-width: 1200px; margin: 0 auto; padding: 32px 24px 80px; }
+h1 { font-size: 2rem; margin: 0 0 4px; }
+.lead { color: var(--muted); margin: 0 0 20px; max-width: 80ch; }
+.controls { position: sticky; top: 0; background: var(--bg); padding: 10px 0 12px; z-index: 1;
+            display: flex; flex-wrap: wrap; gap: 8px; align-items: center; border-bottom: 1px solid var(--line); }
+input[type=search] { flex: 1 1 260px; font: inherit; padding: 8px 12px; border: 1px solid var(--line);
+                     border-radius: 8px; background: var(--panel); color: var(--text); }
+.chip { font: inherit; font-size: 0.85rem; padding: 4px 12px; border: 1px solid var(--line); border-radius: 999px;
+        background: var(--panel); color: var(--muted); cursor: pointer; }
+.chip.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.count { color: var(--muted); font-size: 0.85rem; margin-left: auto; }
+table { width: 100%; border-collapse: collapse; margin-top: 12px; background: var(--panel); }
+th, td { text-align: left; vertical-align: top; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+th { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+td.term { font-weight: 700; white-space: nowrap; }
+td.aka, td.where { font-size: 0.9rem; color: var(--muted); }
+td.cat { font-size: 0.8rem; color: var(--accent); white-space: nowrap; }
+code { font: 0.85em/1.4 "JetBrains Mono", Consolas, monospace; background: var(--code); padding: 1px 5px;
+       border-radius: 4px; overflow-wrap: anywhere; }
+mark { background: var(--mark); color: inherit; border-radius: 2px; }
+@media (max-width: 760px) {
+  thead { display: none; }
+  table, tbody, tr, td { display: block; width: 100%; }
+  tr { border-bottom: 1px solid var(--line); padding: 8px 0; }
+  td { border: none; padding: 2px 12px; }
+  td.term { white-space: normal; }
+}
+</style>
+</head>
+<body>
+<main>
+<h1>Glossary</h1>
+<p class="lead">Terms, abbreviations and alternative phrasings used in the project, the papers and Abaqus.
+Search matches the term, other names and the explanation. Entries live in the JSON block <code>#glossary-data</code>
+at the end of this file.</p>
+
+<div class="controls">
+  <input type="search" id="q" placeholder="Search, e.g. hybrid, C3D8H, prestretch" autofocus>
+  <div id="cats"></div>
+  <span class="count" id="count"></span>
+</div>
+
+<table>
+  <thead><tr><th>Term</th><th>Other names</th><th>Explanation</th><th>In our code</th><th>Area</th></tr></thead>
+  <tbody id="rows"></tbody>
+</table>
+</main>
+
+<script type="application/json" id="glossary-data">
+[
+  {"term": "Hex8", "aka": ["8-node hexahedron", "brick", "Q1", "trilinear brick"], "cat": "FEM",
+   "text": "Solid element with a node at each of its 8 corners; displacements vary trilinearly. Integrated with 2×2×2 Gauss points.",
+   "where": "fem/elements.py"},
+  {"term": "Tet10", "aka": ["10-node tetrahedron", "quadratic tet", "P2", "C3D10"], "cat": "FEM",
+   "text": "Tetrahedron with 4 corner and 6 mid-edge nodes; displacements vary quadratically. Easy to mesh complex geometry (e.g. a bifurcation).",
+   "where": "fem/elements.py"},
+  {"term": "C3D8H", "aka": ["hybrid brick", "Abaqus hybrid hex"], "cat": "Abaqus",
+   "text": "Abaqus name: Continuum, 3D, 8 nodes, Hybrid. A hex8 with an extra constant pressure unknown per element for (nearly) incompressible material. Corresponds to our hex8 hybrid (Q1/P0).",
+   "where": "element=\"hybrid\""},
+  {"term": "C3D8 / C3D8R / C3D8I", "aka": ["Abaqus brick variants", "reduced integration", "incompatible modes"], "cat": "Abaqus",
+   "text": "C3D8: full brick with selectively reduced integration (close to our F-bar). R: reduced integration, 1 point plus hourglass control. I: incompatible modes, good in bending. RH: reduced + hybrid.",
+   "where": "element=\"fbar\" ≈ C3D8"},
+  {"term": "C3D10 / C3D10H", "aka": ["Abaqus quadratic tet", "hybrid tet"], "cat": "Abaqus",
+   "text": "C3D10: 10-node tetrahedron (= our tet10 standard). C3D10H: hybrid version with linear pressure (≈ our tet10 hybrid_p1, P2/P1).",
+   "where": "element=\"standard\" / \"hybrid_p1\""},
+  {"term": "Hybrid element", "aka": ["mixed element", "u/p formulation", "mixed formulation", "H elements"], "cat": "FEM",
+   "text": "Element with displacements and a separate pressure field. The volume constraint J = J_target is enforced by the pressure instead of a huge bulk modulus, so incompressible material does not lock. Gives a saddle-point system.",
+   "where": "fem/core.py, element=\"hybrid\", \"hybrid_p1\""},
+  {"term": "Q1/P0", "aka": ["Q1P0", "constant-pressure brick"], "cat": "FEM",
+   "text": "Notation: displacement field / pressure field. Q1 = trilinear on a hex, P0 = constant pressure per element. Our hex8 hybrid.",
+   "where": "element=\"hybrid\" (hex8)"},
+  {"term": "P2/P1", "aka": ["Taylor–Hood", "P2P1"], "cat": "FEM",
+   "text": "Quadratic displacements (tet10) with linear, continuous pressure at the corner nodes. Inf-sup stable: no spurious pressure modes, pressure converges.",
+   "where": "element=\"hybrid_p1\""},
+  {"term": "P2/P0", "aka": ["P2P0"], "cat": "FEM",
+   "text": "Quadratic tet with constant pressure per element. Works but shows a pressure checkerboard between elements.",
+   "where": "element=\"hybrid\" (tet10)"},
+  {"term": "F-bar", "aka": ["Fbar", "F̄ method", "volumetric averaging"], "cat": "FEM",
+   "text": "Replaces the volume change J at each Gauss point by the element-centre value: F̄ = (J0/J)^(1/3) F. Avoids locking without extra unknowns; can show hourglass modes under strong compression.",
+   "where": "element=\"fbar\""},
+  {"term": "Locking", "aka": ["volumetric locking", "shear locking", "too stiff"], "cat": "FEM",
+   "text": "Low-order displacement elements come out far too stiff because they cannot deform without violating a constraint (volume for incompressible material, or bending kinematics). Cured by hybrid, F-bar, reduced integration or higher order.",
+   "where": "verification/cook.py"},
+  {"term": "Gauss point", "aka": ["integration point", "quadrature point", "material point (in FE)"], "cat": "FEM",
+   "text": "Points inside an element where stresses and the material state are evaluated; integrals are weighted sums over them. Our G&R state lives at every Gauss point.",
+   "where": "System.gauss_F, fem.gauss_points"},
+  {"term": "Inf-sup condition", "aka": ["LBB condition", "Babuška–Brezzi"], "cat": "FEM",
+   "text": "Stability condition for mixed (u/p) elements: the pressure space must not be too rich for the displacement space. Violated → spurious pressure modes / checkerboard.",
+   "where": "verification/fem_consistency.py"},
+  {"term": "Follower load", "aka": ["follower pressure", "deformation-dependent load"], "cat": "FEM",
+   "text": "Pressure that always acts normal to the deformed surface (like blood pressure), unlike a dead load with fixed direction. Adds a non-symmetric load stiffness.",
+   "where": "System._face_force, BC.p"},
+  {"term": "Total Lagrangian", "aka": ["TL", "reference-configuration formulation"], "cat": "FEM",
+   "text": "All quantities are expressed on the undeformed (reference) mesh; the first Piola–Kirchhoff stress P is used in the weak form.",
+   "where": "fem/core.py"},
+  {"term": "Newton–Raphson", "aka": ["Newton method", "tangent iteration"], "cat": "Numerics",
+   "text": "Solves the nonlinear equilibrium r(u) = 0 by repeated linearization: K Δu = −r. Converges quadratically near the solution.",
+   "where": "System._newton"},
+  {"term": "Adjoint", "aka": ["adjoint method", "reverse-mode gradient", "sensitivity"], "cat": "Numerics",
+   "text": "Computes the gradient of one output with respect to all parameters at the cost of about one extra linear solve per step. Used for parameter identification.",
+   "where": "System.equilibrium (custom_vjp), artery_gradients"},
+  {"term": "MMS", "aka": ["method of manufactured solutions", "manufactured solution"], "cat": "Verification",
+   "text": "Choose an exact solution, compute the body force it needs, solve, and check that the error shrinks with the expected order under mesh refinement.",
+   "where": "verification/fem_mms.py"},
+  {"term": "GCI", "aka": ["grid convergence index", "Roache"], "cat": "Verification",
+   "text": "Estimate of the discretization error from three meshes (or time steps) and the observed convergence order.",
+   "where": "studies solution_verification"},
+  {"term": "Verification vs. validation", "aka": ["V&V"], "cat": "Verification",
+   "text": "Verification: are the equations solved correctly (code vs. exact/reference solutions)? Validation: are they the right equations (model vs. experiments)?",
+   "where": "verification/, TODO.md §5"},
+  {"term": "Growth and remodeling", "aka": ["G&R", "GnR", "adaptation"], "cat": "G&R",
+   "text": "Growth: change of mass/volume. Remodeling: change of structure or stress-free state at constant mass (fiber turnover, reorientation).",
+   "where": "cmm/"},
+  {"term": "Constrained mixture model", "aka": ["CMM", "FCMM", "full CMM"], "cat": "G&R",
+   "text": "Tissue as a mixture of constituents (elastin, collagen, smooth muscle) that all deform together but each has its own stress-free state; mass is deposited and removed continuously. The full version tracks every deposited cohort over time.",
+   "where": "cmm/fcmm/"},
+  {"term": "HCMM", "aka": ["homogenized constrained mixture", "Cyron/Maes model"], "cat": "G&R",
+   "text": "Homogenized CMM: instead of tracking cohorts, each constituent has one remodeling tensor F_r that evolves with turnover. Much cheaper than the FCMM.",
+   "where": "cmm/hcmm/"},
+  {"term": "Turnover", "aka": ["production and removal", "mass turnover", "half-life"], "cat": "G&R",
+   "text": "Continuous deposition of new and degradation of old material. Collagen turnover ~ 70–100 days; elastin is essentially not replaced in adults.",
+   "where": "hcmm/production.py, hcmm/removal.py"},
+  {"term": "Deposition stretch", "aka": ["G", "prestretch at deposition", "homeostatic stretch"], "cat": "G&R",
+   "text": "Stretch with which new fibers are laid down in the current configuration. Turnover keeps fibers at this stretch, so collagen stays prestressed.",
+   "where": "G_fiber, FIBER[\"g\"]"},
+  {"term": "Prestretch", "aka": ["prestress", "residual stretch", "in-vivo stretch", "G_e"], "cat": "G&R",
+   "text": "Stretch the wall already carries in the imaged (in-vivo) state. Elastin prestretch is unknown and found by the fixed point G_e ← F G_e until the mesh does not move under pressure.",
+   "where": "artery_simulate, TODO.md §4"},
+  {"term": "Homeostasis", "aka": ["mechanobiological equilibrium", "homeostatic state"], "cat": "G&R",
+   "text": "State where production equals removal and stimuli (stress, WSS) are at their target values, so nothing changes over time.",
+   "where": "tau_w_h, sigma_w_h, sigma_f_pre"},
+  {"term": "Wall shear stress", "aka": ["WSS", "τ_w", "tau_w", "shear"], "cat": "G&R",
+   "text": "Frictional stress of the blood flow on the lumen surface (Pa range, far smaller than pressure). Sensed by endothelial cells; high WSS lowers production, which widens the lumen.",
+   "where": "BC.wss, System.apply_wss, k_tau"},
+  {"term": "Murray's law", "aka": ["Q ∝ r³", "cube law"], "cat": "G&R",
+   "text": "Vessels adapt their radius to keep WSS constant, so radius scales with flow^(1/3).",
+   "where": "studies flow_step"},
+  {"term": "Fiber stress stimulus", "aka": ["Maes production", "rel"], "cat": "G&R",
+   "text": "Production driven by the stress of each constituent relative to its homeostatic value. Restored by remodeling alone, so it does not force thickening.",
+   "where": "MaesProduction"},
+  {"term": "Wall stress stimulus", "aka": ["mixture stress", "intramural stress", "σ_w", "Latorre production"], "cat": "G&R",
+   "text": "Production driven by the stress of the whole wall (∼ P r / h). Only mass can restore it, so a dilated vessel thickens. Needs a nonlocal average in 3D.",
+   "where": "MixtureProduction, System.nonlocal_mean"},
+  {"term": "Nonlocal average", "aka": ["nonlocal mean", "regularization length", "smoothing kernel"], "cat": "Numerics",
+   "text": "Replaces a pointwise value by a weighted mean over a neighbourhood of size ℓ. Prevents mesh-scale localization of stimuli that feed back on themselves.",
+   "where": "System.nonlocal_mean"},
+  {"term": "Von Mises stress", "aka": ["equivalent stress", "σ_vm"], "cat": "Mechanics",
+   "text": "Scalar measure of the deviatoric (shape-changing) part of the stress, √(3/2 s:s). Independent of the hydrostatic pressure.",
+   "where": "stenosis_wss wall_stress"},
+  {"term": "Volumetric / deviatoric split", "aka": ["vol-dev split", "isochoric split", "J and F̄"], "cat": "Mechanics",
+   "text": "Splits deformation and energy into volume change (J) and shape change. Lets incompressibility be handled separately (penalty or pressure).",
+   "where": "materials/"},
+  {"term": "Incompressible", "aka": ["isochoric", "J = 1", "volume preserving"], "cat": "Mechanics",
+   "text": "Material that cannot change volume (soft tissue nearly so). Enforced exactly with a Lagrange-multiplier pressure in hybrid elements.",
+   "where": "NeoHookeanInc, J_target"},
+  {"term": "Neo-Hookean", "aka": ["neo-Hooke", "NH"], "cat": "Mechanics",
+   "text": "Simplest hyperelastic rubber-like law, W = C10 (I1 − 3) (+ volumetric part). Used for elastin and the plaque.",
+   "where": "materials/neo_hookean*.py"},
+  {"term": "Fung / Holzapfel fiber law", "aka": ["exponential fiber", "HGO", "k1, k2"], "cat": "Mechanics",
+   "text": "Exponential strain energy for collagen fibers, W = k1/(2k2)(exp(k2(λ²−1)²) − 1); stiffens strongly with stretch.",
+   "where": "materials/fung.py"},
+  {"term": "Deformation gradient", "aka": ["F", "F = F_e F_r F_g"], "cat": "Mechanics",
+   "text": "Maps reference line elements to current ones. In G&R it is split into elastic (F_e), remodeling (F_r) and growth (F_g) parts.",
+   "where": "hcmm/core.py"}
+]
+</script>
+
+<script>
+const data = JSON.parse(document.getElementById("glossary-data").textContent)
+  .sort((a, b) => a.term.localeCompare(b.term));
+const cats = [...new Set(data.map(d => d.cat))].sort();
+let active = null;
+const esc = s => s.replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+const hl = (s, q) => {
+  const t = esc(s);
+  if (!q) return t;
+  const re = new RegExp("(" + q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + ")", "gi");
+  return t.replace(re, "<mark>$1</mark>");
+};
+function render() {
+  const q = document.getElementById("q").value.trim();
+  const ql = q.toLowerCase();
+  const rows = data.filter(d => (!active || d.cat === active) &&
+    (!ql || [d.term, d.text, d.where || "", ...(d.aka || [])].join(" ").toLowerCase().includes(ql)));
+  document.getElementById("rows").innerHTML = rows.map(d => `<tr>
+    <td class="term">${hl(d.term, q)}</td>
+    <td class="aka">${(d.aka || []).map(a => hl(a, q)).join(", ")}</td>
+    <td>${hl(d.text, q)}</td>
+    <td class="where">${d.where ? "<code>" + hl(d.where, q) + "</code>" : ""}</td>
+    <td class="cat">${esc(d.cat)}</td></tr>`).join("");
+  document.getElementById("count").textContent = `${rows.length} / ${data.length}`;
+}
+document.getElementById("cats").innerHTML = cats.map(c => `<button class="chip" data-c="${esc(c)}">${esc(c)}</button>`).join(" ");
+document.getElementById("cats").addEventListener("click", e => {
+  const c = e.target.dataset.c;
+  if (!c) return;
+  active = active === c ? null : c;
+  document.querySelectorAll(".chip").forEach(b => b.classList.toggle("on", b.dataset.c === active));
+  render();
+});
+document.getElementById("q").addEventListener("input", render);
+render();
+</script>
+</body>
+</html>

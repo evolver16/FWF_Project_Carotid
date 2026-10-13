@@ -23,6 +23,7 @@ from jax import jit
 from jax.flatten_util import ravel_pytree
 from fem.pytree import pytree
 from fem.tensor3 import det3, inv3, polar_rotation
+from hcmm.core import stimuli
 
 _a, _b = np.sqrt(0.5), np.sqrt(1.0 / 6.0)
 DEV_BASIS = np.array([
@@ -79,15 +80,18 @@ class constituent:
         return self.production is not None or self.removal is not None
 
 
-@pytree(("constituents", "ds", "rho_tot_0", "rho_tot", "F_g", "growth", "tau_w", "tau_w_h"))
+@pytree(("constituents", "ds", "rho_tot_0", "rho_tot", "F_g", "growth", "tau_w", "tau_w_h", "sigma_w", "sigma_w_h"))
 class mixture:
-    def __init__(self, constituents, ds, growth, tau_w=1.0, tau_w_h=1.0):
+    def __init__(self, constituents, ds, growth, tau_w=1.0, tau_w_h=1.0, sigma_w=0.0, sigma_w_h=0.0):
         """growth: law from hcmm.growth, F_g from rho_tot / rho_tot_0;
-        tau_w, tau_w_h: wall shear stress and its homeostatic value (input, e.g. from a fluid solution)"""
+        tau_w, tau_w_h: wall shear stress and its homeostatic value (input, e.g. from a fluid solution);
+        sigma_w, sigma_w_h: wall stress and its homeostatic value (input, e.g. System.nonlocal_mean of the von Mises stress;
+        sigma_w_h = 0: no wall stress stimulus)"""
         self.constituents = constituents
         self.ds = ds
         self.growth = growth
         self.tau_w, self.tau_w_h = jnp.asarray(tau_w, dtype=float), jnp.asarray(tau_w_h, dtype=float)
+        self.sigma_w, self.sigma_w_h = jnp.asarray(sigma_w, dtype=float), jnp.asarray(sigma_w_h, dtype=float)
         self.rho_tot_0 = sum(c.rho for c in constituents)
         self.rho_tot = self.rho_tot_0
         for c in constituents:
@@ -125,7 +129,7 @@ def mismatch(c, F, F_g, sigma_ref, z):
 
 
 ConstituentState = namedtuple("ConstituentState", "rho F_r sigma sigma_f residual")
-Step = namedtuple("Step", "F F_g R J rho_tot rho_tot_0 ds dtau")
+Step = namedtuple("Step", "F F_g R J rho_tot rho_tot_0 ds dtau dsig")
 
 
 @jit
@@ -168,7 +172,8 @@ def sigma_solver(mixt, F):
         per constituent d r^a / d(z^a, rho^a, rho_others),  d r^a / d rho^b = d r^a / d rho_others
         """
         unknowns = unflatten(x)
-        rho_tot = growth_step(mixt, F, R, J, unknowns).rho_tot
+        base = growth_step(mixt, F, R, J, unknowns)
+        rho_tot = base.rho_tot
         coupled = len(blocks) > 1
         jac = jnp.zeros((x.size, x.size))
         rows = iter(blocks)
@@ -180,8 +185,7 @@ def sigma_solver(mixt, F):
 
             def own_residual(v):
                 rho_tot_v = v[n] + (v[n + 1] if coupled else rho_others)
-                step = Step(F=F, F_g=mixt.growth.F_g(rho_tot_v / mixt.rho_tot_0), R=R, J=J,
-                            rho_tot=rho_tot_v, rho_tot_0=mixt.rho_tot_0, ds=mixt.ds, dtau=mixt.tau_w / mixt.tau_w_h - 1.0)
+                step = base._replace(F_g=mixt.growth.F_g(rho_tot_v / mixt.rho_tot_0), rho_tot=rho_tot_v)
                 return constituent_state(c, (v[:n], v[n]), step, s).residual
 
             v = jnp.concatenate([u[0], u[1][None]] + ([rho_others[None]] if coupled else []))
@@ -213,8 +217,7 @@ def growth_step(mixt, F, R, J, unknowns):
         densities.append(c.rho if u is None else u[1])
     rho_tot = sum(densities)
     F_g = mixt.growth.F_g(rho_tot / mixt.rho_tot_0)
-    return Step(F=F, F_g=F_g, R=R, J=J, rho_tot=rho_tot, rho_tot_0=mixt.rho_tot_0, ds=mixt.ds,
-                dtau=mixt.tau_w / mixt.tau_w_h - 1.0)
+    return Step(F, F_g, R, J, rho_tot, mixt.rho_tot_0, mixt.ds, *stimuli(mixt))
 
 
 def constituent_states(mixt, F, R, J, unknowns, slack):
@@ -245,7 +248,7 @@ def constituent_state(c, unknowns, step, slack):
     sigma_f = c.material.sigma_f(sigma) / step.J
 
     c_new = c.replace(rho=rho)
-    args = (sigma_f, step.ds, step.rho_tot, step.rho_tot_0, step.dtau)
+    args = (sigma_f, step.ds, step.rho_tot, step.rho_tot_0, step.dtau, step.dsig)
     zero = jnp.zeros_like(rho)
     drho_plus = zero if c.production is None else jnp.maximum(c.production.increment(c_new, *args), 0.0)
     drho_minus = zero if c.removal is None else c.removal.increment(c_new, *args)

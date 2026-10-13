@@ -6,7 +6,7 @@ materials: shared library materials/ (passed in via the constituents)
 
 from hcmm.core import constituent, mixture, sigma_solver, commit, J_target, wss
 from hcmm.growth import Isotropic, Anisotropic
-from hcmm.production import MaesProduction
+from hcmm.production import MaesProduction, MixtureProduction
 from hcmm.removal import MaesRemoval
 
 

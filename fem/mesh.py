@@ -356,10 +356,12 @@ def half_tube(r_i=5.0, t=1.3, L=30.0, n=(3, 24, 30), etype="hex8"):
 
 
 def bent_tube(r_i=5.0, t=1.3, R_c=20.0, L_in=10.0, L_out=10.0, stenosis=0.25, width=0.08, n=(3, 24, 40),
-              etype="hex8"):
+              etype="hex8", intima=None):
     """Half tube (y >= 0) along a centerline: straight z (inlet at z = 0), 90 deg arc of radius R_c, straight x.
 
     r_inner(l) = r_i (1 - stenosis exp(-((l/L - 1/2)/width)^2)),  l = arc length, L = total length
+    intima=(t_i, n_i): outer radius r_i + t_i + t constant, the first n_i of n[0] layers are an intima of thickness
+    t_i + r_i - r_inner(l) (plaque), the others the media of thickness t; else the whole wall t is indented
     named nodes/faces: inner, outer, inlet (z = 0), outlet (x = R_c + L_out), sym (y = 0)
     """
     L = L_in + 0.5 * np.pi * R_c + L_out
@@ -374,7 +376,12 @@ def bent_tube(r_i=5.0, t=1.3, R_c=20.0, L_in=10.0, L_out=10.0, stenosis=0.25, wi
 
     def mapping(s):
         l = L * s[:, 2]
-        r = r_i * (1 - stenosis * np.exp(-((s[:, 2] - 0.5) / width) ** 2)) + t * s[:, 0]
+        bump = r_i * stenosis * np.exp(-((s[:, 2] - 0.5) / width) ** 2)
+        if intima is None:
+            r = r_i - bump + t * s[:, 0]
+        else:
+            t_i, f = intima[0], intima[1] / n[0]
+            r = np.where(s[:, 0] < f, r_i + t_i - (t_i + bump) * (1 - s[:, 0] / f), r_i + t_i + t * (s[:, 0] - f) / (1 - f))
         th = np.pi * s[:, 1]
         c, n1 = frame(l)
         return c + r[:, None] * (np.cos(th)[:, None] * n1 + np.sin(th)[:, None] * np.array([0.0, 1.0, 0.0]))

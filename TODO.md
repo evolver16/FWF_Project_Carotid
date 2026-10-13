@@ -11,13 +11,26 @@ Links are relative to this file and clickable in the preview.
   - remodeling (turnover-driven F_r)
   - production (stimulus: intramural stress, wall shear stress, ...)
   - removal (constant half-life, stress- or stretch-dependent, elastin degradation)
+- [ ] Constituent fractions: model E is 80 % elastin without turnover, so the wall can hardly thicken
+  (stenosis_wss thins mainly by dilation); a wall-stress law (`MixtureProduction`) needs a larger turnover fraction
 - current laws: [hcmm/production.py](cmm/hcmm/production.py), [hcmm/removal.py](cmm/hcmm/removal.py), [hcmm/growth.py](cmm/hcmm/growth.py); literature overview: [docs/gr_literature.html](docs/gr_literature.html)
 
 ## 2. Vessel geometry
 
 - [ ] Carotid geometry (segmentation, bifurcation, wall thickness, layers), mesh import exists: [fem/mesh.py](fem/mesh.py)
 
-## 3. Prestretch / in-vivo axial stretch
+## 3. Experiments: carotid tortuosity
+
+- [ ] Find out the prestretches in the vessel (axial in-vivo stretch, e.g. retraction on excision; circumferential, e.g. opening angle)
+- [ ] Compare healthy and tortuous / diseased carotids:
+  - fiber alignment and dispersion (collagen families, angles)
+  - constituent mass fractions (elastin, collagen, smooth muscle)
+  - wall thickness and other structural / mechanical properties
+- [ ] Compare the convex and the concave side of curved segments (same quantities)
+- these data would inform the model inputs: prestretch (section 4), constituents and fiber directions (section 1);
+  similar experimental-computational approach: Weiss 2020 in [.context/Papers](.context/Papers)
+
+## 4. Prestretch / in-vivo axial stretch
 
 - [ ] Decide how the in-vivo stretch (carotid ~1.6 axially) enters: elastin deposition stretch, end BC (force or displacement), or both
 
@@ -37,7 +50,7 @@ Links are relative to this file and clickable in the preview.
   springs / radial rollers at the ends
 - conclusion: the prestretch distribution changes the G&R response, it should be identified regionally from data
 
-## 4. Verification
+## 5. Verification
 
 **Done so far** (all set up and run by Claude, against analytical / manufactured solutions and internal consistency; logs in
 [verification/results/](verification/results/), overview in [docs/fem.html](docs/fem.html) section 16):
@@ -54,7 +67,7 @@ Links are relative to this file and clickable in the preview.
   - cases: Lamé / finite-strain tube, patch tests, Cook's membrane, arch
 - [ ] G&R against the Maes UMATs ([.context/FortranFiles](.context/FortranFiles); needs Abaqus + Fortran compiler)
 
-## 5. End point: modeling workflow
+## 6. End point: modeling workflow
 
 - [ ] Explicit HCMM ([hcmm/core.py](cmm/hcmm/core.py)): main model, fast
 - [ ] Parameter identification on the explicit HCMM (adjoint gradients, [artery_gradients](cmm/studies/artery.py))

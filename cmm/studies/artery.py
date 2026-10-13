@@ -24,30 +24,39 @@ from verification.fem_tube import cylinder_bc, radial_u
 # ---------- model E on a tube: parameters, states, prestress + G&R run ----------
 
 def artery_par(**kw):
-    """Model E on the artery: elastin (C10, K), fibers (k1, k2, k_plus, k_minus, k_tau (WSS gain), g, turnover T in days),
-    axial prestretch g_ax, pressures"""
+    """Model E on the artery: elastin (C10, K), fibers (k1, k2, k_plus, k_minus, k_tau (WSS gain), k_sigma (mixture stress
+    gain), g, turnover T in days), axial prestretch g_ax, pressures; plaque (C_plaque, mean life T_plaque in days)"""
     par = dict(C10=MATRIX_DE["C10"], K=MATRIX_DE["K"], k1=FIBER["k1"], k2=FIBER["k2"], k_plus=0.1, k_minus=0.0, k_tau=0.0,
-               T=setups.T_DAYS, g=FIBER["g"], g_ax=1.2, p_hom=0.010, p_gr=0.015)
+               k_sigma=1.0, T=setups.T_DAYS, g=FIBER["g"], g_ax=1.2, p_hom=0.010, p_gr=0.015, C_plaque=0.005,
+               T_plaque=300.0)
     return {k: jnp.asarray(v, dtype=float) for k, v in {**par, **kw}.items()}
 
 
-@partial(jax.jit, static_argnames=("mode", "elastin"))
-def artery_states(G_e, Qloc, par, mode, ds=10.0, elastin="compressible"):
+@partial(jax.jit, static_argnames=("mode", "elastin", "stimulus"))
+def artery_states(G_e, Qloc, par, mode, ds=10.0, elastin="compressible", stimulus="fiber", plaque=None):
     """HCMM per Gauss point: elastin (no turnover) + fibers along e_theta, e_z, +-alpha; growth along e_r.
-    elastin "incompressible" needs the hybrid element."""
+    elastin "incompressible" needs the hybrid element; stimulus "fiber": MaesProduction (k_plus, k_minus),
+    "mixture": MixtureProduction (k_sigma), constant removal.
+    plaque: fraction f per Gauss point, (1 - f) x the above + plaque of density f (neo-Hooke C_plaque, elastin
+    prestretch, removal only: rho = f exp(-s / T_plaque)); without plaque mass the point is back to normal tissue"""
+    laws = (hcmm.maes(par["T"], par["k_plus"], par["k_minus"], par["k_tau"]) if stimulus == "fiber" else
+            (hcmm.MixtureProduction(par["T"], par["k_sigma"], par["k_tau"]), hcmm.MaesRemoval(par["T"], 0.0)))
 
-    def make(Ge, Q):
+    def make(Ge, Q, f):
         e_r, e_t, e_z = Q[:, 0], Q[:, 1], Q[:, 2]
         dirs = [e_t, e_z, jnp.cos(ALPHA) * e_t + jnp.sin(ALPHA) * e_z, jnp.cos(ALPHA) * e_t - jnp.sin(ALPHA) * e_z]
-        mat = (materials.NeoHookean(par["C10"], par["K"]) if elastin == "compressible"
-               else materials.NeoHookeanInc(par["C10"]))
-        cs = [hcmm.constituent(mat, MATRIX_DE["rho_0"], G=Ge, sigma_pre_mode=mode)]
-        cs += [hcmm.constituent(materials.Fung(par["k1"], par["k2"], M), FIBER["rho_0"],
-                                *hcmm.maes(par["T"], par["k_plus"], par["k_minus"], par["k_tau"]), G=G_fiber(par["g"], M),
-                                sigma_pre_mode=mode) for M in dirs]
+        matrix = lambda C10: (materials.NeoHookean(C10, par["K"]) if elastin == "compressible"
+                              else materials.NeoHookeanInc(C10))
+        cs = [hcmm.constituent(matrix(par["C10"]), (1 - f) * MATRIX_DE["rho_0"], G=Ge, sigma_pre_mode=mode)]
+        cs += [hcmm.constituent(materials.Fung(par["k1"], par["k2"], M), (1 - f) * FIBER["rho_0"], *laws,
+                                G=G_fiber(par["g"], M), sigma_pre_mode=mode) for M in dirs]
+        if plaque is not None:
+            cs.append(hcmm.constituent(matrix(par["C_plaque"]), f, None, hcmm.MaesRemoval(par["T_plaque"], 0.0), G=Ge,
+                                       sigma_pre_mode=mode))
         return hcmm.mixture(cs, ds=ds, growth=hcmm.Anisotropic(e_r))
 
-    st = jax.vmap(jax.checkpoint(make))(G_e.reshape(-1, 3, 3), Qloc.reshape(-1, 3, 3))
+    f = jnp.zeros(G_e.shape[:2]) if plaque is None else plaque
+    st = jax.vmap(jax.checkpoint(make))(G_e.reshape(-1, 3, 3), Qloc.reshape(-1, 3, 3), f.reshape(-1))
     return jax.tree.map(lambda x: x.reshape(G_e.shape[:2] + x.shape[1:]), st)
 
 
@@ -65,11 +74,13 @@ def wall_area(m, u):
 
 def artery_simulate(m, sysm, Qloc, par, mode="deposition", n_steps=100, bc=None, measure=None,
                     pre_tol=1e-6, pre_iter=60, anderson=5, tol=1e-10, log=None, final=False,
-                    elastin="compressible", checkpoint=None, record=None, bc_gr=None, insult=None, ds=10.0):
+                    elastin="compressible", checkpoint=None, record=None, bc_gr=None, insult=None, ds=10.0,
+                    stimulus="fiber", plaque=None):
     """Prestress G_elas <- F G_elas at p_hom until u = 0 (Maes UMAT_DEP; Anderson-accelerated, 0 = plain),
     G&R at p_gr, steps of ds days -> measure(u) per step (default lambda_theta(inner), wall area),
     reverse-differentiable in par; final: also (u, states) at the end; record(k, u, states): after prestress (k = 0) and step k (forward only);
-    bc_gr: G&R BCs per step instead of bc(p_gr); insult(states) -> states: applied once after the prestress"""
+    bc_gr: G&R BCs per step instead of bc(p_gr); insult(states) -> states: applied once after the prestress;
+    plaque: fraction per Gauss point (artery_states)"""
     if bc is None:
         bc = lambda p: cylinder_bc(m, p)
     if measure is None:
@@ -80,7 +91,7 @@ def artery_simulate(m, sysm, Qloc, par, mode="deposition", n_steps=100, bc=None,
     zero = jnp.zeros(sysm.n_dof)
     xs, fs = [], []
     for it in range(1, pre_iter + 1):
-        states = artery_states(G_e, Qloc, par, mode, ds=ds, elastin=elastin)
+        states = artery_states(G_e, Qloc, par, mode, ds=ds, elastin=elastin, stimulus=stimulus, plaque=plaque)
         u = sysm.equilibrium(states, bc(par["p_hom"]), zero, tol)
         du = float(np.abs(sysm.last_u).max())
         if log and (it % 5 == 0 or du < pre_tol):

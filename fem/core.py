@@ -403,7 +403,7 @@ class System:
         self.last_u, self.last_iterations = None, 0
         self.last_p = np.zeros(self.n_p)
         self._bc_last, self.cutbacks, self.relaxations = None, 0, 0
-        self._patterns, self._passthrough, self._cons = {}, {}, {}
+        self._patterns, self._passthrough, self._cons, self._nonlocal = {}, {}, {}, {}
 
     def _Fhat(self, F, F0):
         """Deformation gradient seen by the material: F-bar (J_0/J)^(1/3) F, else F"""
@@ -484,6 +484,24 @@ class System:
         Gauss point, taken from the nearest lumen point in the reference configuration: model.wss(state, tau_w)"""
         tau = self._p_faces(wss).ravel()[self._wss_map]
         return jax.vmap(jax.vmap(self.model.wss))(states, tau)
+
+    def nonlocal_mean(self, values, length):
+        """Gauss-point field (n_el, n_gp) -> nonlocal mean per element, broadcast to its Gauss points:
+        v_e = sum_f w_ef V_f v_f / sum_f w_ef V_f,  w_ef = exp(-|X_e - X_f|^2 / length^2),  |X_e - X_f| < 2.5 length
+        (reference element centroids, V_f element volume)"""
+        if length not in self._nonlocal:
+            import scipy.sparse as sp
+            from scipy.spatial import cKDTree
+            xc = np.asarray(self.X)[np.asarray(self.conn)].mean(1)
+            vol = np.asarray(self.wdet).sum(1)
+            W = cKDTree(xc).sparse_distance_matrix(cKDTree(xc), 2.5 * length, output_type="coo_matrix")
+            W = sp.coo_matrix((np.exp(-W.data ** 2 / length ** 2), (W.row, W.col)), W.shape)
+            W = W.tocsr() @ sp.diags(vol)
+            self._nonlocal[length] = sp.diags(1.0 / np.asarray(W.sum(1)).ravel()) @ W
+        w = np.asarray(self.wdet)
+        v = np.asarray(values)
+        mean = self._nonlocal[length] @ ((w * v).sum(1) / w.sum(1))
+        return np.broadcast_to(mean[:, None], v.shape).copy()
 
     def face_points(self, u):
         """Deformed pressure-face Gauss points and unit normals pointing out of the wall, (n_faces, n_gp_face, 3) each:

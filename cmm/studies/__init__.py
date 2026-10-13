@@ -16,6 +16,7 @@ artery    artery_gr           G&R of a quarter cylinder (Maes & Famaey 2023 Fig.
           pressure_buckling   pressure buckling of a G&R state (G&R frozen): critical pressure, post-buckling path
 vessel    stenotic_vessel     bent stenotic vessel from an .inp mesh, Laplace wall basis, adjoint
           bending_redistribution  mass redistribution in a bent tube (end rotation)
+          stenosis_wss        WSS-driven remodeling of a bent stenosis (flow as BC.wss, ParaView series)
           setpoint_patch      lowered collagen set point in a patch: growth-only displacement
 """
 
@@ -26,5 +27,5 @@ STUDIES = {f.__name__: f for f in (
     material.fe_readiness,
     fe_gr.fe_vs_material_point, fe_gr.element_formulations, fe_gr.solution_verification,
     artery.artery_gr, artery.artery_gradients, artery.pressure_step, artery.flow_step, artery.pressure_buckling,
-    vessel.stenotic_vessel, vessel.bending_redistribution, vessel.setpoint_patch,
+    vessel.stenotic_vessel, vessel.stenosis_wss, vessel.bending_redistribution, vessel.setpoint_patch,
 )}
