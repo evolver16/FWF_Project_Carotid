@@ -16,6 +16,17 @@ class MaesProduction:
         return (c.rho / (self.T / ds)) * (1.0 + self.k * sigma_f_rel(c, sigma_f, rho_tot, rho_tot_0) - self.k_tau * dtau)
 
 
+@pytree(("law", "M_dep"))
+class Reorienting:
+    """production of law, deposited along M_dep (per Gauss point): the fiber direction turns toward it with the
+    deposited mass, M(s+ds) ~ (rho + rho_dot_- ds) M + rho_dot_+ ds M_dep (hcmm.core.reoriented)"""
+    def __init__(self, law, M_dep):
+        self.law, self.M_dep = law, M_dep
+
+    def increment(self, *args):
+        return self.law.increment(*args)
+
+
 @pytree(("T", "k", "k_tau"))
 class MixtureProduction:
     """stimulus from the wall stress (Latorre & Humphrey 2018): set by equilibrium (~ P r / h), so restored only by mass,

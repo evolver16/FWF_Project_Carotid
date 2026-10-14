@@ -55,6 +55,26 @@ def write_csv(rows, path):
         w.writerows(rows)
 
 
+def wall_stress(sysm, u, states, length, e_r=None, trace=False):
+    """Input sigma_w of the wall stress stimulus, nonlocal mean over length (a local stimulus localizes on the mesh
+    scale):
+        default:   von Mises stress of the mixture (sign-blind, independent of the hybrid pressure)
+        e_r:       tr(sigma) - 3 n.sigma.n = (s_tt - s_rr) + (s_zz - s_rr),  n ~ F^-T e_r  (in-plane, ~ tr sigma of a
+                   thin wall: compression lowers it; independent of the hybrid pressure)
+        trace:     tr(sigma) with the hybrid pressure q (Weiss / Latorre: the pressure of J = mass / mass_0 enters,
+                   volume that does not fit raises q and lowers the stimulus)"""
+    if trace:
+        return sysm.nonlocal_mean(np.trace(sysm.total_stress(u, states), axis1=-2, axis2=-1), length)
+    sig = sysm.stress(u, states)
+    tr = jnp.trace(sig, axis1=-2, axis2=-1)
+    if e_r is None:
+        dev = sig - tr[..., None, None] / 3.0 * jnp.eye(3)
+        return sysm.nonlocal_mean(jnp.sqrt(1.5 * jnp.sum(dev * dev, axis=(-2, -1))), length)
+    n = jnp.linalg.solve(jnp.swapaxes(sysm.gauss_F(u), -1, -2), e_r[..., None])[..., 0]
+    n = n / jnp.linalg.norm(n, axis=-1, keepdims=True)
+    return sysm.nonlocal_mean(tr - 3.0 * jnp.einsum("...i,...ij,...j->...", n, sig, n), length)
+
+
 def surface_area(m, u, faces):
     """Deformed area of quad4 or tri6 faces by their Gauss rule"""
     from fem.elements import face_for

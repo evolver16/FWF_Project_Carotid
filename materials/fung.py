@@ -71,6 +71,13 @@ class Fung:
         dW_dI4 = jnp.where(e > 0.0, self.k1 * e * jnp.exp(self.k2 * e ** 2), 0.0)
         return 2.0 * dW_dI4 * jnp.outer(FM, FM)
 
+    def reorient(self, F_r, sigma_pre, M):
+        """material along M, F_r = lam_r M(x)M + lam_r^-1/2 (I - M(x)M) with the remodeling stretch lam_r of F_r,
+        uniaxial deposition stress sigma_pre = tr(sigma_pre) M(x)M"""
+        lam_r = self.M @ F_r @ self.M
+        new = Fung(self.k1, self.k2, M)
+        return new, lam_r * new.P + (1.0 / jnp.sqrt(lam_r)) * (jnp.eye(3) - new.P), jnp.trace(sigma_pre) * new.P
+
     @staticmethod
     @jit
     def sigma_f(sigma):

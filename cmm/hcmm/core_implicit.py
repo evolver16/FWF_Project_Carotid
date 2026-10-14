@@ -4,7 +4,7 @@ Unknowns per constituent with turnover: z^j (remodeling increment) and rho^j (de
 all solved in one Newton, coupled through F_g(rho_tot)   (Eq. 37)
 
     F_g          = F_g(sum_j rho^j / rho_tot(0))                                          (Eq. 4)
-    sigma_trial  = sigma_mat(F F_g^-1 F_r(n)^-1)                                          (old F_r, new F, F_g)
+    sigma_trial  = sigma_mat(F F_g^j^-1 F_r(n)^-1),  F_g^j = F_g or a constituent law       (old F_r, new F, F_g)
     sigma_target = [drho_+ sigma_pre + rho sigma_trial] / (drho_+ + rho)                   (Eq. 18)
     F_r(n+1)     = exp(sum_i z_i B_i) F_r(n),  B_i sym., tr B_i = 0                         (Eq. 28)
     remodeling:  dev(sigma(F_r(n+1)) - sigma_target) = 0                                  (Eq. 20)
@@ -23,7 +23,7 @@ from jax import jit
 from jax.flatten_util import ravel_pytree
 from fem.pytree import pytree
 from fem.tensor3 import det3, inv3, polar_rotation
-from hcmm.core import stimuli
+from hcmm.core import F_g_of, reoriented, stimuli
 
 _a, _b = np.sqrt(0.5), np.sqrt(1.0 / 6.0)
 DEV_BASIS = np.array([
@@ -42,19 +42,21 @@ def F_e_calc(F, F_g, F_r):
     return F @ inv3(F_g) @ inv3(F_r)
 
 
-@pytree(("material", "production", "removal", "rho", "F_r", "C_r", "sigma_pre", "sigma_f_pre", "sigma_f", "phi"),
-        static=("sigma_pre_mode",))
+@pytree(("material", "production", "removal", "growth", "rho", "F_r", "C_r", "sigma_pre", "sigma_f_pre", "sigma_f",
+         "phi"), static=("sigma_pre_mode",))
 class constituent:
     def __init__(self, material, rho_0, production=None, removal=None, G=None, sigma_pre=None, F_r=None, C_r=None,
-                 sigma_pre_mode="deposition"):
+                 sigma_pre_mode="deposition", growth=None):
         """production/removal: laws from hcmm.production / hcmm.removal (None: no turnover, e.g. elastin).
-        sigma_pre_mode: "deposition" (F_e -> G, Cyron/CMM) or "initial" (Maes Eq. 17)."""
+        sigma_pre_mode: "deposition" (F_e -> G, Cyron/CMM) or "initial" (Maes Eq. 17).
+        growth: constituent law F_g^j = growth.of(F_g) (hcmm.Fixed: I), None: the mixture's F_g."""
         if sigma_pre_mode not in ("deposition", "initial"):
             raise ValueError(f"sigma_pre_mode must be 'deposition' or 'initial', got {sigma_pre_mode!r}")
         self.sigma_pre_mode = sigma_pre_mode
         self.material = material
         self.production = production
         self.removal = removal
+        self.growth = growth
         self.rho = rho_0
 
         self.sigma_pre = material.sigma(G) if sigma_pre is None else sigma_pre
@@ -128,7 +130,7 @@ def mismatch(c, F, F_g, sigma_ref, z):
     return jnp.tensordot(flow_basis(c), mandel, 2)
 
 
-ConstituentState = namedtuple("ConstituentState", "rho F_r sigma sigma_f residual")
+ConstituentState = namedtuple("ConstituentState", "rho F_r sigma sigma_f residual drho_plus drho_minus")
 Step = namedtuple("Step", "F F_g R J rho_tot rho_tot_0 ds dtau dsig")
 
 
@@ -144,8 +146,9 @@ def sigma_solver(mixt, F):
     for c in mixt.constituents:
         if c.turnover:
             z = jnp.zeros(flow_basis(c).shape[0])
-            sigma_trial = c.material.sigma(F_e_calc(F, mixt.F_g, c.F_r))
-            stiffness = jnp.diag(jax.jacfwd(mismatch, argnums=4)(c, F, mixt.F_g, sigma_trial, z))
+            F_g = F_g_of(c, mixt.F_g)
+            sigma_trial = c.material.sigma(F_e_calc(F, F_g, c.F_r))
+            stiffness = jnp.diag(jax.jacfwd(mismatch, argnums=4)(c, F, F_g, sigma_trial, z))
             guess.append((z, jnp.asarray(c.rho, float)))
             slack.append(jnp.abs(stiffness) < SLACK_EPS)
         else:
@@ -207,7 +210,7 @@ def sigma_solver(mixt, F):
     states = constituent_states(mixt, F, R, J, solution, slack)
 
     sigma_tot = sum(s.rho * s.sigma for s in states) / J
-    return sigma_tot, [(s.rho, s.F_r, s.sigma_f) for s in states]
+    return sigma_tot, [(s.rho, s.F_r, s.sigma_f, s.drho_plus, s.drho_minus) for s in states]
 
 
 def growth_step(mixt, F, R, J, unknowns):
@@ -236,11 +239,13 @@ def constituent_state(c, unknowns, step, slack):
     remodeling_i    = [F_e^T (sigma(z) - sigma_target) F_e^-T] : B_i,  z_i = 0 if slack   (Eq. 20, 24)
     growth          = rho - rho(n) - drho_+ - drho_-                                    (Eq. 33)
     """
-    F, F_g = step.F, step.F_g
+    F, F_g = step.F, F_g_of(c, step.F_g)
 
     sigma_trial = c.material.sigma(F_e_calc(F, F_g, c.F_r))
     if not c.turnover:
-        return ConstituentState(c.rho, c.F_r, sigma_trial, c.material.sigma_f(sigma_trial) / step.J, jnp.zeros(0))
+        zero = jnp.zeros_like(c.rho)
+        return ConstituentState(c.rho, c.F_r, sigma_trial, c.material.sigma_f(sigma_trial) / step.J, jnp.zeros(0), zero,
+                                zero)
 
     z, rho = unknowns
     F_r = F_r_new(c, z)
@@ -259,7 +264,7 @@ def constituent_state(c, unknowns, step, slack):
 
     remodeling = jnp.where(slack, z, mismatch(c, F, F_g, sigma_target, z))
     growth = rho - c.rho - drho_plus - drho_minus
-    return ConstituentState(rho, F_r, sigma, sigma_f, jnp.append(remodeling, growth))
+    return ConstituentState(rho, F_r, sigma, sigma_f, jnp.append(remodeling, growth), drho_plus, drho_minus)
 
 
 def newton(residual, jacobian, x, args, tol=1e-8, max_iter=25):
@@ -285,15 +290,19 @@ def wss(mixt, tau_w):
 
 
 def J_target(mixt):
-    """J = det F_g for incompressible constituents (det F_e = det F_r = 1)"""
+    """J = det F_g = rho_tot / rho_tot_0: mixture volume from mass (constant density)"""
     return det3(mixt.F_g)
 
 
 @jit
 def commit(mixt, F, aux):
-    """stores what sigma_solver computed at the converged F: rho^j, F_r^j, C_r^j = F_r^T F_r, phi^j, sigma_f^j, F_g"""
-    rho_tot = sum(rho for rho, _, _ in aux)
-    constituents = [c.replace(rho=rho, F_r=F_r, C_r=F_r.T @ F_r, phi=rho / rho_tot, sigma_f=sigma_f)
-                    for c, (rho, F_r, sigma_f) in zip(mixt.constituents, aux)]
+    """stores what sigma_solver computed at the converged F: rho^j, F_r^j, C_r^j = F_r^T F_r, phi^j, sigma_f^j, F_g;
+    fiber direction turned toward the deposition direction of a Reorienting production (hcmm.core.reoriented)"""
+    rho_tot = sum(a[0] for a in aux)
+    constituents = []
+    for c, (rho, F_r, sigma_f, drho_plus, drho_minus) in zip(mixt.constituents, aux):
+        material, F_r, sigma_pre = reoriented(c, F_r, drho_plus, drho_minus)
+        constituents.append(c.replace(rho=rho, F_r=F_r, C_r=F_r.T @ F_r, phi=rho / rho_tot, sigma_f=sigma_f,
+                                      material=material, sigma_pre=sigma_pre))
     return mixt.replace(constituents=constituents, rho_tot=rho_tot,
                         F_g=mixt.growth.F_g(rho_tot / mixt.rho_tot_0))

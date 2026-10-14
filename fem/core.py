@@ -427,9 +427,7 @@ class System:
         J_g = det F_g (mixtures) and the Gauss-point fields in gauss (n_el, n_gp, ...) as nodal and element means"""
         u = jnp.asarray(u)
         F = self.gauss_F(u)
-        q = (np.einsum("gq,eq->eg", np.asarray(self._L), self.last_p[np.asarray(self._pdofs)]) if self.n_p
-             else np.zeros(F.shape[:2]))
-        sig = np.asarray(self.stress(u, states)) - q[..., None, None] * np.eye(3)
+        sig = self.total_stress(u, states)
         dev = sig - np.trace(sig, axis1=-2, axis2=-1)[..., None, None] * np.eye(3) / 3
         g = dict(J=det3(F), sigma=sig, von_mises=np.sqrt(1.5 * np.sum(dev * dev, axis=(-2, -1))))
         if hasattr(states, "rho_tot"):
@@ -441,6 +439,14 @@ class System:
         mean = lambda v: np.einsum("eg,eg...->e...", w, v) / w.sum(1).reshape((-1,) + (1,) * (v.ndim - 2))
         return (dict(u=np.asarray(u).reshape(-1, 3), **{k: self.to_nodes(v) for k, v in g.items()}),
                 {k: mean(v) for k, v in g.items()})
+
+    def total_stress(self, u, states):
+        """Total Cauchy stress at every Gauss point (numpy): material stress minus the hybrid pressure q of last_p"""
+        sig = np.asarray(self.stress(jnp.asarray(u), states))
+        if self.n_p:
+            q = np.einsum("gq,eq->eg", np.asarray(self._L), self.last_p[np.asarray(self._pdofs)])
+            sig = sig - q[..., None, None] * np.eye(3)
+        return sig
 
     def _split(self, x):
         """x = (u, pressures) -> (u, pressure coefficients per element (n_el, n_q)); zeros without the hybrid element"""
@@ -853,6 +859,15 @@ class System:
         order = np.argsort(mu.real)
         modes = np.stack([cons.prolong(V[:, i].real)[:self.n_dof] for i in order])
         return mu.real[order], modes / np.abs(modes).max(axis=1, keepdims=True)
+
+    def reaction(self, u, states, bc):
+        """support forces at the fixed dofs of bc in the equilibrium u (last_p), (n_dof,), 0 elsewhere:
+        added to BC.f_dead they replace the support (e.g. isotonic ends: the axial end reactions of the isometric state)"""
+        x = jnp.concatenate([jnp.asarray(u, dtype=float), jnp.asarray(self.last_p)])
+        r = np.asarray(self.residual(x, states, bc.p, self._f_dead(bc)))[:self.n_dof]
+        f = np.zeros(self.n_dof)
+        f[bc.fixed] = r[bc.fixed]
+        return f
 
     def solve(self, u0, states, bc, tol=1e-10, max_iter=30):
         """Newton -> (u, n_iter); hybrid element pressures in last_p"""

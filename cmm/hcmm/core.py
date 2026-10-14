@@ -1,6 +1,6 @@
 """HCMM core: constituents, mixture, stress and the commit of one G&R step.
 
-    F_e^j(s)        = F(s) F_g(s)^-1 F_r^j(s)^-1                    (Eq. 15)
+    F_e^j(s)        = F(s) F_g^j(s)^-1 F_r^j(s)^-1,  F_g^j = F_g or a constituent law (Eq. 15)
     rho^j(s+ds)     = rho^j(s) + rho_dot^j(s) ds                     (Eq. 37)
     (rho_dot_+/rho)(sigma^j - sigma_pre^j)
                     = (d sigma^j / d F_e^j) : (F_e^j L_r^j)          (Eq. 20)
@@ -21,19 +21,26 @@ def F_e_calc(F, F_g, F_r):
     return F @ inv3(F_g) @ inv3(F_r)
 
 
-@pytree(("material", "production", "removal", "rho", "F_r", "sigma_pre", "sigma_f_pre", "sigma_f", "phi"),
+def F_g_of(c, F_g):
+    """F_g^j of constituent c from the mixture's F_g: c.growth.of(F_g), None: F_g"""
+    return F_g if c.growth is None else c.growth.of(F_g)
+
+
+@pytree(("material", "production", "removal", "growth", "rho", "F_r", "sigma_pre", "sigma_f_pre", "sigma_f", "phi"),
         static=("sigma_pre_mode",))
 class constituent:
     def __init__(self, material, rho_0, production=None, removal=None, G=None, sigma_pre=None, F_r=None,
-                 sigma_pre_mode="deposition"):
+                 sigma_pre_mode="deposition", growth=None):
         """production/removal: laws from hcmm.production / hcmm.removal (None: no turnover, e.g. elastin).
-        sigma_pre_mode: "deposition" (F_e -> G, Cyron/CMM) or "initial" (Maes Eq. 17)."""
+        sigma_pre_mode: "deposition" (F_e -> G, Cyron/CMM) or "initial" (Maes Eq. 17).
+        growth: constituent law F_g^j = growth.of(F_g) (hcmm.Fixed: I), None: the mixture's F_g."""
         if sigma_pre_mode not in ("deposition", "initial"):
             raise ValueError(f"sigma_pre_mode must be 'deposition' or 'initial', got {sigma_pre_mode!r}")
         self.sigma_pre_mode = sigma_pre_mode
         self.material = material
         self.production = production
         self.removal = removal
+        self.growth = growth
         self.rho = rho_0
 
         self.sigma_pre = material.sigma(G) if sigma_pre is None else sigma_pre
@@ -99,7 +106,7 @@ def sigma_solver(mixt, F):
     sigma_tot = jnp.zeros((3,3))
     trial = []
     for c in mixt.constituents:
-        F_e = F_e_calc(F, F_g, c.F_r)
+        F_e = F_e_calc(F, F_g_of(c, F_g), c.F_r)
         sigma = c.material.sigma(F_e)
         sigma_tot += sigma * c.rho / J
         trial.append((F_e, sigma))
@@ -116,7 +123,7 @@ def constituent_update(c, F_e, sigma_s, R, ds, J, rho_tot, rho_tot_0, dtau, dsig
     """
     sigma_f_s = c.material.sigma_f(sigma_s) / J
     if not c.turnover:
-        return c.rho, c.F_r, sigma_f_s
+        return c.rho, c.F_r, sigma_f_s, c.material, c.sigma_pre
     sigma_pre_s = R @ c.sigma_pre @ R.T
 
     zero = jnp.zeros_like(c.rho)
@@ -124,13 +131,25 @@ def constituent_update(c, F_e, sigma_s, R, ds, J, rho_tot, rho_tot_0, dtau, dsig
     rho_dot_minus = zero if c.removal is None else c.removal.increment(c, sigma_f_s, ds, rho_tot, rho_tot_0, dtau, dsig)
     rho_s = c.rho + rho_dot_plus + rho_dot_minus
     if c.production is None:
-        return rho_s, c.F_r, sigma_f_s
+        return rho_s, c.F_r, sigma_f_s, c.material, c.sigma_pre
 
     rho_pre = rho_tot / J if c.sigma_pre_mode == "deposition" else rho_tot_0
     sigma_rate_euler = (rho_dot_plus / c.rho) * (rho_tot * sigma_s / J
                                                  - rho_pre * sigma_pre_s)
     F_r_s = c.material.F_r(F_e, J, c, sigma_rate_euler)
-    return rho_s, F_r_s, sigma_f_s
+    material, F_r_s, sigma_pre = reoriented(c, F_r_s, rho_dot_plus, rho_dot_minus)
+    return rho_s, F_r_s, sigma_f_s, material, sigma_pre
+
+
+def reoriented(c, F_r, rho_dot_plus, rho_dot_minus):
+    """(material, F_r, sigma_pre) with the fiber direction turned toward the deposition direction of a Reorienting
+    production: M(s+ds) ~ (rho + rho_dot_- ds) M + rho_dot_+ ds M_dep, remodeling stretch kept, deposition stress
+    along the new direction (material.reorient)"""
+    if not hasattr(c.production, "M_dep"):
+        return c.material, F_r, c.sigma_pre
+    M, M_dep = c.material.M, c.production.M_dep
+    M_s = (c.rho + rho_dot_minus) * M + rho_dot_plus * jnp.sign(M @ M_dep) * M_dep
+    return c.material.reorient(F_r, c.sigma_pre, M_s / jnp.linalg.norm(M_s))
 
 
 def wss(mixt, tau_w):
@@ -139,7 +158,7 @@ def wss(mixt, tau_w):
 
 
 def J_target(mixt):
-    """J = det F_g for incompressible constituents (det F_e = det F_r = 1)"""
+    """J = det F_g = rho_tot / rho_tot_0: mixture volume from mass (constant density)"""
     return det3(mixt.F_g)
 
 
@@ -152,7 +171,8 @@ def commit(mixt, F, aux):
     updates = [constituent_update(c, F_e, sigma_s, R, mixt.ds, J, mixt.rho_tot, mixt.rho_tot_0, dtau, dsig)
                for c, (F_e, sigma_s) in zip(mixt.constituents, aux)]
     rho_tot_s = sum(u[0] for u in updates)
-    constituents = [c.replace(rho=rho_s, F_r=F_r_s, phi=rho_s / rho_tot_s, sigma_f=sigma_f_s)
-                    for c, (rho_s, F_r_s, sigma_f_s) in zip(mixt.constituents, updates)]
+    constituents = [c.replace(rho=rho_s, F_r=F_r_s, phi=rho_s / rho_tot_s, sigma_f=sigma_f_s, material=material,
+                              sigma_pre=sigma_pre)
+                    for c, (rho_s, F_r_s, sigma_f_s, material, sigma_pre) in zip(mixt.constituents, updates)]
     return mixt.replace(constituents=constituents, rho_tot=rho_tot_s,
                         F_g=mixt.growth.F_g(rho_tot_s / mixt.rho_tot_0))

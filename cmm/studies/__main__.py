@@ -16,7 +16,7 @@ def value(v):
 
 ap = argparse.ArgumentParser(prog="python -m studies")
 ap.add_argument("study", choices=list(STUDIES))
-ap.add_argument("args", nargs="*", help="positional, or key=value for keyword arguments (pressure_step: any artery_par key)")
+ap.add_argument("args", nargs="*", help="positional, or key=value for keyword arguments (pressure_step: any artery_par key, e.g. k_tau=0.5 or circ.k1=0.6)")
 a = ap.parse_args()
 RESULTS.mkdir(parents=True, exist_ok=True)
 STUDIES[a.study](*[v for v in a.args if "=" not in v],

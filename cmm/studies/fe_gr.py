@@ -14,7 +14,7 @@ import hcmm
 import setups
 from fem import mesh as meshlib
 from setups import MODELS, TARGETS, VARIANTS
-from studies.artery import artery_mesh, artery_par, artery_simulate
+from studies.model_e import artery_mesh, artery_par, artery_simulate
 from studies.common import Log, outputs
 from verification import material_point
 
@@ -116,13 +116,13 @@ def element_formulations(steps=100):
     log = Log()
     log(f"1) artery G&R (model E, {steps} steps), elastin K/C10 as given or incompressible:"
         f" lambda_theta(day {10 * steps}), max spread of u_r(a) over theta")
-    C10_e = float(artery_par()["C10"])
+    C10_e = float(artery_par()["elastin.C10"])
     variants = [("standard", "compressible", 20.0), ("standard", "compressible", 1e3),
                 ("fbar", "compressible", 1e2), ("fbar", "compressible", 1e3), ("hybrid", "incompressible", None)]
     for n, subset in (((2, 15, 1), variants), ((8, 60, 4), [variants[i] for i in (0, 2, 4)])):
         for element, elastin, K in subset:
             m, sysm, Qloc = artery_mesh(n, element)
-            par = artery_par() if K is None else artery_par(K=K * C10_e)
+            par = artery_par() if K is None else artery_par(**{"elastin.K": K * C10_e})
             idx = m.nodes[(0, -1)]
             e_r = m.X[idx, :2] / np.linalg.norm(m.X[idx, :2], axis=1, keepdims=True)
             a0 = float(np.linalg.norm(m.X[idx[0], :2]))
@@ -134,7 +134,8 @@ def element_formulations(steps=100):
             label = f"  n={n}  {element:8s} K/C10 {'inc' if K is None else f'{K:g}':5s}"
             t0 = time.time()
             try:
-                lam_t, spread = artery_simulate(m, sysm, Qloc, par, n_steps=steps, elastin=elastin, measure=measure)
+                lam_t, spread = artery_simulate(m, sysm, Qloc, par, n_steps=steps, measure=measure,
+                                                  incompressible=elastin == "incompressible")
                 log(f"{label} lambda_theta {float(lam_t[-1]):.6f}  spread {float(spread.max()):.1e} mm  "
                     f"({time.time() - t0:.1f}s)")
             except (RuntimeError, np.linalg.LinAlgError) as e:
@@ -167,14 +168,14 @@ def element_formulations(steps=100):
     a = float(np.linalg.norm(m.X[idx[0], :2]))
     measure = lambda u: (1 + (u.reshape(-1, 3)[idx, :2] * e_r).sum(1).mean() / a,)
     sim = lambda par: artery_simulate(m, sysm, Q, par, n_steps=20, bc=bc, measure=measure, pre_tol=1e-10, tol=1e-12,
-                                      elastin="incompressible")[0][-1]
+                                      incompressible=True)[0][-1]
     par = artery_par()
     _, g = jax.value_and_grad(sim)(par)
-    for k in ("C10", "k_plus", "p_gr"):
+    for k in ("elastin.C10", "circ.k_plus", "p_gr"):
         h = 1e-5 * abs(float(par[k]))
         fd = (float(sim({**par, k: par[k] + h})) - float(sim({**par, k: par[k] - h}))) / (2 * h)
         err = abs(float(g[k]) - fd) / abs(fd)
-        log(f"  {k:7s} adjoint {float(g[k]): .8e}   FD {fd: .8e}   rel err {err:.1e}  "
+        log(f"  {k:12s} adjoint {float(g[k]): .8e}   FD {fd: .8e}   rel err {err:.1e}  "
             f"{'PASS' if err < 1e-5 else 'FAIL'}")
 
     log.save(outputs("fe_gr/element_formulations", "element_formulations.txt")[0])
@@ -205,7 +206,8 @@ def solution_verification(days=1000.0):
         for n in ((2, 15, 1), (4, 30, 1), (8, 60, 1), (16, 120, 1)):
             m, sysm, Qloc = artery_mesh(n, element)
             t0 = time.time()
-            lam, area = artery_simulate(m, sysm, Qloc, artery_par(), n_steps=int(days / 10), elastin=elastin)
+            lam, area = artery_simulate(m, sysm, Qloc, artery_par(), n_steps=int(days / 10),
+                                         incompressible=elastin == "incompressible")
             ends.append((float(lam[-1]), float(area[-1])))
             log(f"    n={n}  lambda_theta {ends[-1][0]:.7f}  area {ends[-1][1]:.6f} mm^2  ({time.time() - t0:.0f}s)")
         gci("lambda_theta", [e[0] for e in ends])

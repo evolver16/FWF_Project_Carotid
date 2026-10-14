@@ -3,7 +3,6 @@ identification, pressure step (elastic vs turnover widening), pressure buckling 
 
 import time
 from dataclasses import replace
-from functools import partial
 
 import jax
 import jax.numpy as jnp
@@ -11,107 +10,12 @@ import numpy as np
 
 import fem
 import hcmm
-import materials
 import plotting
-import setups
 from fem import mesh as meshlib
 from fem.tensor3 import det3
-from setups import ALPHA, FIBER, MATRIX_DE, G_fiber
-from studies.common import Log, outputs, surface_area, write_csv
+from studies.common import Log, outputs, write_csv
+from studies.model_e import artery_mesh, artery_par, artery_simulate, wall_area
 from verification.fem_tube import cylinder_bc, radial_u
-
-
-# ---------- model E on a tube: parameters, states, prestress + G&R run ----------
-
-def artery_par(**kw):
-    """Model E on the artery: elastin (C10, K), fibers (k1, k2, k_plus, k_minus, k_tau (WSS gain), k_sigma (mixture stress
-    gain), g, turnover T in days), axial prestretch g_ax, pressures; plaque (C_plaque, mean life T_plaque in days)"""
-    par = dict(C10=MATRIX_DE["C10"], K=MATRIX_DE["K"], k1=FIBER["k1"], k2=FIBER["k2"], k_plus=0.1, k_minus=0.0, k_tau=0.0,
-               k_sigma=1.0, T=setups.T_DAYS, g=FIBER["g"], g_ax=1.2, p_hom=0.010, p_gr=0.015, C_plaque=0.005,
-               T_plaque=300.0)
-    return {k: jnp.asarray(v, dtype=float) for k, v in {**par, **kw}.items()}
-
-
-@partial(jax.jit, static_argnames=("mode", "elastin", "stimulus"))
-def artery_states(G_e, Qloc, par, mode, ds=10.0, elastin="compressible", stimulus="fiber", plaque=None):
-    """HCMM per Gauss point: elastin (no turnover) + fibers along e_theta, e_z, +-alpha; growth along e_r.
-    elastin "incompressible" needs the hybrid element; stimulus "fiber": MaesProduction (k_plus, k_minus),
-    "mixture": MixtureProduction (k_sigma), constant removal.
-    plaque: fraction f per Gauss point, (1 - f) x the above + plaque of density f (neo-Hooke C_plaque, elastin
-    prestretch, removal only: rho = f exp(-s / T_plaque)); without plaque mass the point is back to normal tissue"""
-    laws = (hcmm.maes(par["T"], par["k_plus"], par["k_minus"], par["k_tau"]) if stimulus == "fiber" else
-            (hcmm.MixtureProduction(par["T"], par["k_sigma"], par["k_tau"]), hcmm.MaesRemoval(par["T"], 0.0)))
-
-    def make(Ge, Q, f):
-        e_r, e_t, e_z = Q[:, 0], Q[:, 1], Q[:, 2]
-        dirs = [e_t, e_z, jnp.cos(ALPHA) * e_t + jnp.sin(ALPHA) * e_z, jnp.cos(ALPHA) * e_t - jnp.sin(ALPHA) * e_z]
-        matrix = lambda C10: (materials.NeoHookean(C10, par["K"]) if elastin == "compressible"
-                              else materials.NeoHookeanInc(C10))
-        cs = [hcmm.constituent(matrix(par["C10"]), (1 - f) * MATRIX_DE["rho_0"], G=Ge, sigma_pre_mode=mode)]
-        cs += [hcmm.constituent(materials.Fung(par["k1"], par["k2"], M), (1 - f) * FIBER["rho_0"], *laws,
-                                G=G_fiber(par["g"], M), sigma_pre_mode=mode) for M in dirs]
-        if plaque is not None:
-            cs.append(hcmm.constituent(matrix(par["C_plaque"]), f, None, hcmm.MaesRemoval(par["T_plaque"], 0.0), G=Ge,
-                                       sigma_pre_mode=mode))
-        return hcmm.mixture(cs, ds=ds, growth=hcmm.Anisotropic(e_r))
-
-    f = jnp.zeros(G_e.shape[:2]) if plaque is None else plaque
-    st = jax.vmap(jax.checkpoint(make))(G_e.reshape(-1, 3, 3), Qloc.reshape(-1, 3, 3), f.reshape(-1))
-    return jax.tree.map(lambda x: x.reshape(G_e.shape[:2] + x.shape[1:]), st)
-
-
-def artery_mesh(n=(8, 60, 4), element="standard"):
-    """(mesh, System, local bases (e_r, e_theta, e_z) at the Gauss points)"""
-    m = meshlib.quarter_cylinder(n=n)
-    sysm = fem.System(m, hcmm, pressure_faces=m.faces[(0, -1)], element=element)
-    return m, sysm, jnp.asarray(meshlib.cylinder_basis(fem.gauss_points(m.X, m.conn)))
-
-
-def wall_area(m, u):
-    """4 x area of the deformed end face z = 0"""
-    return 4 * surface_area(m, u, m.faces[(2, -1)])
-
-
-def artery_simulate(m, sysm, Qloc, par, mode="deposition", n_steps=100, bc=None, measure=None,
-                    pre_tol=1e-6, pre_iter=60, anderson=5, tol=1e-10, log=None, final=False,
-                    elastin="compressible", checkpoint=None, record=None, bc_gr=None, insult=None, ds=10.0,
-                    stimulus="fiber", plaque=None):
-    """Prestress G_elas <- F G_elas at p_hom until u = 0 (Maes UMAT_DEP; Anderson-accelerated, 0 = plain),
-    G&R at p_gr, steps of ds days -> measure(u) per step (default lambda_theta(inner), wall area),
-    reverse-differentiable in par; final: also (u, states) at the end; record(k, u, states): after prestress (k = 0) and step k (forward only);
-    bc_gr: G&R BCs per step instead of bc(p_gr); insult(states) -> states: applied once after the prestress;
-    plaque: fraction per Gauss point (artery_states)"""
-    if bc is None:
-        bc = lambda p: cylinder_bc(m, p)
-    if measure is None:
-        a = float(np.linalg.norm(m.X[m.nodes[(0, -1)][0], :2]))
-        measure = lambda u: (1 + radial_u(m, u, -1) / a, wall_area(m, u))
-    g_ax = par["g_ax"]
-    G_e = Qloc @ jnp.diag(jnp.stack([g_ax ** -0.5, g_ax ** -0.5, g_ax])) @ jnp.swapaxes(Qloc, -1, -2)
-    zero = jnp.zeros(sysm.n_dof)
-    xs, fs = [], []
-    for it in range(1, pre_iter + 1):
-        states = artery_states(G_e, Qloc, par, mode, ds=ds, elastin=elastin, stimulus=stimulus, plaque=plaque)
-        u = sysm.equilibrium(states, bc(par["p_hom"]), zero, tol)
-        du = float(np.abs(sysm.last_u).max())
-        if log and (it % 5 == 0 or du < pre_tol):
-            log(f"  prestress iteration {it:2d}  max|u| {du:.2e} mm  (Newton {sysm.last_iterations})")
-        if du < pre_tol:
-            break
-        xs, fs = (xs + [G_e.ravel()])[-anderson - 1:], (fs + [(sysm.gauss_F(u) @ G_e - G_e).ravel()])[-anderson - 1:]
-        G_e = fem.anderson(xs, fs).reshape(G_e.shape)
-
-    if insult:
-        states = insult(states)
-    on_step = lambda u, _: measure(u)
-    if record:
-        record(0, u, states)
-        k = iter(range(1, n_steps + 1))
-        on_step = lambda u, st: (record(next(k), u, st), measure(u))[1]
-    u, states, hist = sysm.run(states, bc_gr or [bc(par["p_gr"])] * n_steps, u0=zero, tol=tol,
-                               on_step=on_step, checkpoint=checkpoint)
-    series = tuple(jnp.stack(v) for v in zip(*hist))
-    return (series, u, states) if final else series
 
 
 # ---------- G&R of the quarter cylinder (Maes & Famaey 2023 Fig. 4) ----------
@@ -145,7 +49,7 @@ def artery_gradients(n_check=(2, 12, 1), steps_check=20, n_full=(8, 60, 4), step
     """Adjoint gradients of lambda_theta(end) vs central differences, cost on the full mesh, identification."""
     import scipy.optimize as so
     log = Log()
-    names = ["C10", "K", "k1", "k2", "k_plus", "g", "g_ax", "p_gr"]
+    names = ["elastin.C10", "elastin.K", "circ.k1", "circ.k2", "circ.k_plus", "circ.g", "g_ax", "p_gr"]
     m, sysm, Qloc = artery_mesh(n_check)
     sim = lambda par: artery_simulate(m, sysm, Qloc, par, n_steps=steps_check, pre_tol=1e-10, tol=1e-12)
     par = artery_par()
@@ -158,13 +62,13 @@ def artery_gradients(n_check=(2, 12, 1), steps_check=20, n_full=(8, 60, 4), step
         h = 1e-5 * abs(float(par[k]))
         fd = (sim({**par, k: par[k] + h})[0][-1] - sim({**par, k: par[k] - h})[0][-1]) / (2 * h)
         err = abs(float(g[k]) - float(fd)) / max(abs(float(fd)), 1e-12)
-        log(f"  {k:7s} adjoint {float(g[k]): .8e}   FD {float(fd): .8e}   rel err {err:.1e}  "
+        log(f"  {k:12s} adjoint {float(g[k]): .8e}   FD {float(fd): .8e}   rel err {err:.1e}  "
             f"{'PASS' if err < 1e-5 else 'FAIL'}")
 
-    log(f"\n2) identification of (k1, k_plus) from lambda_theta(t), mesh {n_check}, L-BFGS in log space")
+    log(f"\n2) identification of (circ.k1, circ.k_plus) from lambda_theta(t), mesh {n_check}, L-BFGS in log space")
     true = artery_par()
     data = sim(true)[0]
-    x_ref = {k: true[k] for k in ("k1", "k_plus")}
+    x_ref = {k: true[k] for k in ("circ.k1", "circ.k_plus")}
 
     def loss(x):
         p = {**true, **{k: x_ref[k] * jnp.exp(x[i]) for i, k in enumerate(x_ref)}}
@@ -182,9 +86,10 @@ def artery_gradients(n_check=(2, 12, 1), steps_check=20, n_full=(8, 60, 4), step
     t0 = time.time()
     res = so.minimize(fun, x0, jac=True, method="L-BFGS-B", options=dict(ftol=1e-16, gtol=1e-10, maxiter=40))
     est = {k: float(x_ref[k]) * np.exp(res.x[i]) for i, k in enumerate(x_ref)}
-    log(f"  start k1 {float(true['k1']) * 0.7:.4f}  k_plus {float(true['k_plus']) * 0.5:.4f}   loss {trace[0]:.3e}")
-    log(f"  found k1 {est['k1']:.6f}  k_plus {est['k_plus']:.6f}   loss {res.fun:.3e}   "
-        f"(true {float(true['k1']):.6f}, {float(true['k_plus']):.6f})   {len(trace)} evaluations, {time.time() - t0:.1f}s")
+    log(f"  start k1 {float(true['circ.k1']) * 0.7:.4f}  k_plus {float(true['circ.k_plus']) * 0.5:.4f}   loss {trace[0]:.3e}")
+    log(f"  found k1 {est['circ.k1']:.6f}  k_plus {est['circ.k_plus']:.6f}   loss {res.fun:.3e}   "
+        f"(true {float(true['circ.k1']):.6f}, {float(true['circ.k_plus']):.6f})   {len(trace)} evaluations, "
+        f"{time.time() - t0:.1f}s")
 
     log(f"\n3) cost on mesh {n_full}, {steps_full} steps")
     m, sysm, Qloc = artery_mesh(n_full)
@@ -199,7 +104,7 @@ def artery_gradients(n_check=(2, 12, 1), steps_check=20, n_full=(8, 60, 4), step
         f"(central FD would need {2 * len(par)} forward runs, ~{2 * len(par) * t_fwd:.0f}s)")
     log(f"  lambda_theta(day {10 * steps_full}) {float(val):.6f}")
     for k in par:
-        log(f"  d/d{k:7s} {float(g[k]): .6e}   elasticity (p/lam) d lam/dp {float(g[k] * par[k] / val): .4f}")
+        log(f"  d/d{k:12s} {float(g[k]): .6e}   elasticity (p/lam) d lam/dp {float(g[k] * par[k] / val): .4f}")
 
     log.save(outputs("artery/artery_gradients", "gradients.txt")[0])
 
@@ -240,7 +145,7 @@ def pressure_step(days=2000.0, n_steps=200, n=(4, 30, 1), name="pressure_step", 
     log(f"quarter cylinder r_i 5, t 1.3 mm: {m.n_elem} hex8, {sysm.n_dof} dofs, HCMM model E")
     log("parameters: " + "  ".join(f"{k} {float(v):.4g}" for k, v in par.items()))
     log(f"pressure {float(par['p_hom']) * 1e3:.1f} -> {float(par['p_gr']) * 1e3:.1f} kPa, held for {days:.0f} days, "
-        f"{n_steps} steps of {ds:.3g} days (ds/T {ds / float(par['T']):.3f})")
+        f"{n_steps} steps of {ds:.3g} days (ds/T {ds / float(par['circ.T']):.3f})")
     t0 = time.time()
     artery_simulate(m, sysm, Qj, par, n_steps=n_steps, bc=bc, log=log, record=record,
                     measure=lambda u: (jnp.zeros(()),), ds=ds)

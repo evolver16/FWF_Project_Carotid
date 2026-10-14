@@ -368,7 +368,7 @@ where a Poiseuille WSS on the current lumen stands in for a fluid solution. The 
 the fiber stress of <code>MaesProduction</code>. The study passes the von Mises stress of the mixture (independent of the hybrid
 pressure) through <code>System.nonlocal_mean(values, length)</code>: a Gaussian kernel over element centroids,
 \(w = e^{-d^2/\ell^2}\), \(d &lt; 2.5\ell\). A pointwise stimulus localizes on the mesh scale: a point that gains collagen gets stiffer, draws load
-and produces more. \(\ell \approx \sqrt{r h}\) (shell bending length) removes this. Example: <code>stenosis_wss stimulus=mixture</code>.</p>
+and produces more. \(\ell \approx \sqrt{r h}\) (shell bending length) removes this. Example: <code>stenosis_wss stimulus=wall</code>.</p>
 
 <h3>Dirichlet, dead forces, slip</h3>
 <p><code>BC(fixed, values, f_dead, p, slip)</code>. Slip conditions \(u\cdot n = 0\) (inclined supports, symmetry planes

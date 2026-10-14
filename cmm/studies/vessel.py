@@ -14,8 +14,9 @@ import plotting
 from fem import mesh as meshlib
 from fem.elements import face_for
 from fem.tensor3 import det3
-from studies.artery import artery_par, artery_simulate
-from studies.common import Log, outputs, surface_area, write_csv
+from studies.common import Log, outputs, surface_area, wall_stress, write_csv
+from studies.model_e import WALL_E, artery_par, artery_simulate
+from wall import Part
 
 
 def dof_bc(m, p, fixed):
@@ -137,24 +138,30 @@ def stenotic_vessel(etype="hex8", n=None, n_steps=100, check_n=((2, 15, 1), (4, 
 
 # ---------- WSS-driven remodeling of a bent stenosis ----------
 
+PLAQUE = Part("plaque", "neo-hooke", laws="removal", lesion=True)
+
+
 def stenosis_wss(n=(4, 32, 80), n_steps=300, ds=10.0, k_tau=0.5, stenosis=0.25, record_every=5, name="stenosis_wss",
                  stimulus="fiber", k_sigma=1.0, length=2.5, plaque=False, t_intima=0.25, n_intima=2, T_plaque=300.0):
     """Bent stenotic half tube (hybrid hex8, incompressible elastin), prestressed at p_hom, then pressure and flow held.
     Flow as boundary condition BC.wss each step: Poiseuille along the centreline, tau_w = 4 mu Q / (pi a^3) with the
     current lumen radius a of each cross-section; target tau_w_h = WSS of the healthy tube (radius r_i), so the throat
     starts with tau_w / tau_w_h = (r_i / a_throat)^3 > 1 and all changes come from WSS-driven turnover (k_tau).
-    stimulus "fiber": fiber stress (MaesProduction), "mixture": wall stress (MixtureProduction, k_sigma), the von Mises
+    stimulus "fiber": fiber stress (MaesProduction), "wall": wall stress (MixtureProduction, k_sigma), the von Mises
     stress of the mixture, nonlocal mean over length ~ sqrt(r t) (a local stimulus localizes on the mesh scale), input
     each step like the WSS.
     plaque: outer radius constant, the stenosis is a plaque in an intima (t_intima, first n_intima layers) that is
-    removed with mean life T_plaque (artery_states(plaque=...)); WSS-driven turnover of the remaining tissue as above."""
+    removed with mean life T_plaque (PLAQUE: neo-Hooke C10 5 kPa, removal only); WSS-driven turnover of the remaining
+    tissue as above."""
     log = Log()
     txt, pvd, csv_path, fig = outputs("vessel/stenosis_wss", *(f"{name}{s}" for s in (".txt", ".pvd", ".csv", ".png")))
     m = meshlib.bent_tube(n=n, stenosis=stenosis, intima=(t_intima, n_intima) if plaque else None)
     Q = fem.wall_basis(m.X, m.conn, m.nodes["inner"], m.nodes["outer"], [m.nodes["inlet"]], [m.nodes["outlet"]])
     Qj = jnp.asarray(Q)
     sysm = fem.System(m, hcmm, pressure_faces=m.faces["inner"], element="hybrid")
-    par = artery_par(k_tau=k_tau, k_sigma=k_sigma, T_plaque=T_plaque)
+    par = artery_par(k_tau=k_tau, k_sigma=k_sigma)
+    if plaque:
+        par |= {f"plaque.{k}": jnp.asarray(v) for k, v in dict(rho=1.0, C10=0.005, T=T_plaque).items()}
     f_p = None
     if plaque:
         s = np.asarray(fem.gauss_points(m.param, m.conn))
@@ -181,23 +188,18 @@ def stenosis_wss(n=(4, 32, 80), n_steps=300, ds=10.0, k_tau=0.5, stenosis=0.25, 
         a = radius(u, inner)
         return 1.0 / a[face_lines].mean(axis=1) ** 3
 
-    def wall_stress(u, states):
-        """von Mises stress (independent of the hybrid pressure), nonlocal mean"""
-        sig = sysm.stress(u, states)
-        dev = sig - jnp.trace(sig, axis1=-2, axis2=-1)[..., None, None] / 3.0 * jnp.eye(3)
-        return sysm.nonlocal_mean(jnp.sqrt(1.5 * jnp.sum(dev * dev, axis=(-2, -1))), length)
-
     log(f"bent stenotic half tube ({100 * stenosis:.0f} % stenosis{', plaque' if plaque else ''}): {m.n_elem} hex8 (hybrid), {sysm.n_dof} dofs, "
         f"{sysm.n_p} pressures; HCMM model E with incompressible elastin, k_tau {k_tau}, {stimulus} stress stimulus"
-        + (f" (k_sigma {k_sigma})" if stimulus == "mixture" else ""))
+        + (f" (k_sigma {k_sigma})" if stimulus == "wall" else ""))
     log(f"prestress at {float(par['p_hom']) * 1e3:.0f} kPa, then pressure and flow held, {n_steps} steps of {ds:g} days"
         + (f"; plaque mean life {T_plaque:g} days" if plaque else ""))
     t0 = time.time()
     _, u, states = artery_simulate(m, sysm, Qj, par, n_steps=0, bc=lambda p: dof_bc(m, p, [("sym", 1), ("inlet", 2),
                                                                                             ("outlet", 0)]),
-                                   final=True, elastin="incompressible", log=log, ds=ds, stimulus=stimulus, plaque=f_p)
+                                   final=True, log=log, ds=ds, wall=WALL_E + ((PLAQUE,) if plaque else ()), lesion=f_p,
+                                   laws=stimulus, incompressible=True)
     log(f"  prestress done in {time.time() - t0:.0f}s")
-    sw = wall_stress(u, states)
+    sw = wall_stress(sysm, u, states, length)
     states = states.replace(tau_w_h=jnp.full_like(states.tau_w_h, 1.0 / r_i ** 3), sigma_w=sw, sigma_w_h=sw)
     rho0 = sum(np.asarray(c.rho) for c in states.constituents[1:5])
     a0, b0 = radius(u, inner), radius(u, outer)
@@ -221,7 +223,7 @@ def stenosis_wss(n=(4, 32, 80), n_steps=300, ds=10.0, k_tau=0.5, stenosis=0.25, 
     record(0, u, states.replace(tau_w=jnp.asarray(sysm.apply_wss(states, wss(u)).tau_w)))
     t0 = time.time()
     for k in range(1, n_steps + 1):
-        u, states, _ = sysm.run(states.replace(sigma_w=wall_stress(u, states)), [replace(bc, wss=wss(u))], u0=u)
+        u, states, _ = sysm.run(states.replace(sigma_w=wall_stress(sysm, u, states, length)), [replace(bc, wss=wss(u))], u0=u)
         a, b = radius(u, inner), radius(u, outer)
         rows.append(dict(day=ds * k, throat_radius=a[mid] / a0[mid], inlet_radius=a[2] / a0[2],
                          throat_outer_radius=b[mid] / b0[mid], throat_thickness=(b[mid] - a[mid]) / h0[mid],
@@ -280,7 +282,7 @@ def bending_redistribution(n_steps=100, theta=0.2, n_ramp=5, n=(3, 24, 60), L=60
     log(f"prestress at {float(par['p_hom']) * 1e3:.0f} kPa, then G&R at the same pressure with both ends rotated "
         f"by {theta} rad (ramp over {n_ramp} steps): axial strain ~ +-{200 * theta * 6.3 / L:.1f} % at the outer wall")
 
-    names = ("elastin", "circ", "axial", "helix+", "helix-")
+    names = tuple(p.name for p in WALL_E)
     w = np.asarray(sysm.wdet)
     middle = (xg[..., 2] > L / 4) & (xg[..., 2] < 3 * L / 4)
     sides = {"stretched": (xg[..., 0] < 0) & middle, "compressed": (xg[..., 0] > 0) & middle}
@@ -365,8 +367,10 @@ def setpoint_patch(n_steps=200, delta=0.3, n=(3, 24, 40), L=40.0, w_z=4.0, w_the
     g = np.exp(-((xg[..., 2] - L / 2) / w_z) ** 2 - ((theta - np.pi / 2) / w_theta) ** 2)
     insulted = []
 
-    def insult(states):
-        """lowered set point; the state before the insult is kept for the reference collagen mass"""
+    def insult(k, states):
+        """lowered set point after the prestress; the state before the insult is kept for the reference collagen mass"""
+        if k:
+            return states
         insulted.append(states)
         cs = states.constituents
         return states.replace(constituents=[cs[0]] + [c.replace(sigma_f_pre=c.sigma_f_pre * (1 - delta * g))
