@@ -2,6 +2,7 @@
 isometric vs isotonic ends."""
 
 import time
+from dataclasses import replace
 
 import jax.numpy as jnp
 import numpy as np
@@ -24,7 +25,7 @@ def weiss_tortuosity(ends="isometric", insult="both", n=(2, 16, 120), L=14.0, n_
     table S2 prestressed at 120 mmHg with
     fixed ends (elastin from G_e = diag(1/(G_theta G_z), G_theta, G_z), stress-free state fixed); insult ramped over
     n_ramp steps of ds days (slow against T: quasi-static, compared over dv / dv_KO as Weiss' equilibrated states),
-    then held n_hold steps (Eq. 8):
+    then held n_hold steps (Eq. 8); pressure ramped with the insult from p_hom to p_gr (kw, MPa; default both 120 mmHg):
         v(x) = v_WT + r (v_KO - v_WT) (1 + f(x)) / 2,   r = min(k / n_ramp, 1)
         f    = 1/2 (1 - cos(2 pi z / l_o)) exp(-((theta - theta_hat) / 2)^2),   theta_hat = pi (z < l_o), 0 (z > l_o)
     on c_e ("elastin") or c_e and alpha_0 ("both": diagonal collagen deposited at alpha(x), hcmm.Reorienting);
@@ -41,7 +42,7 @@ def weiss_tortuosity(ends="isometric", insult="both", n=(2, 16, 120), L=14.0, n_
     name = name or f"{ends}_{insult}"
     txt, pvd, csv_path, fig = outputs("weiss/tortuosity", *(f"{name}{s}" for s in (".txt", ".pvd", ".csv", ".png")))
     par = weiss_par(**kw)
-    a, h, p = float(par["a"]), float(par["h"]), float(par["p_gr"])
+    a, h, p0, p = float(par["a"]), float(par["h"]), float(par["p_hom"]), float(par["p_gr"])
     length = length or np.sqrt(a * h)
     m = meshlib.half_tube(r_i=a, t=h, L=L, n=n)
     sysm = fem.System(m, hcmm, pressure_faces=m.faces["inner"], element="hybrid")
@@ -61,20 +62,20 @@ def weiss_tortuosity(ends="isometric", insult="both", n=(2, 16, 120), L=14.0, n_
     log(f"Weiss 2020: straight half tube a {a} mm, h {h} mm, L {L} mm, {m.n_elem} hex8 (hybrid); table S2 wall "
         f"({', '.join(q.name for q in WALL_WEISS)}), {stimulus} wall stress stimulus (nonlocal {length:.3f} mm), {growth} growth")
     log(f"insult Eq. 8 on {'c_e' if insult == 'elastin' else 'c_e and alpha_0'} over {n_ramp} steps of {ds:g} days, "
-        f"{n_hold} steps held; {ends} ends; p {p / 1.33322e-4:.0f} mmHg")
+        f"{n_hold} steps held; {ends} ends; p {p0 / 1.33322e-4:.0f} -> {p / 1.33322e-4:.0f} mmHg with the insult")
     t0 = time.time()
     G_t, G_z = float(par["elastin.G_theta"]), float(par["elastin.G_z"])
     G_e = Q @ jnp.diag(jnp.array([1 / (G_t * G_z), G_t, G_z])) @ jnp.swapaxes(Q, -1, -2)
     _, u, states = artery_simulate(m, sysm, Q, par, n_steps=0, bc=bc_iso, final=True, log=log, ds=ds,
                                    wall=WALL_WEISS, laws="wall", incompressible=True, growth=growth, G_e=G_e)
     log(f"  prestress done in {time.time() - t0:.0f}s")
-    bc = bc_iso(p)
+    bc = bc_iso(p0)
     if ends == "isotonic":
         f_end = sysm.reaction(u, states, bc)
         f_dead = np.zeros(sysm.n_dof)
         f_dead[out_z] = f_end[out_z]
         free = np.unique(np.concatenate(held))
-        bc = fem.BC(free, np.zeros(len(free)), f_dead=f_dead, p=p)
+        bc = fem.BC(free, np.zeros(len(free)), f_dead=f_dead, p=p0)
         log(f"  isotonic: axial end force {2 * f_dead.sum() * 1e3:.3f} mN (full tube)")
     sw = wall_stress(sysm, u, states, length, e_r, stimulus == "trace")
     states = states.replace(sigma_w=sw, sigma_w_h=sw)
@@ -111,6 +112,7 @@ def weiss_tortuosity(ends="isometric", insult="both", n=(2, 16, 120), L=14.0, n_
                 cs[names.index(d)] = c.replace(production=c.production.replace(
                     M_dep=jnp.sin(al) * e_t + sign * jnp.cos(al) * e_z))
         states = states.replace(constituents=cs)
+        bc = replace(bc, p=p0 + min(k / n_ramp, 1.0) * (p - p0))
         u, states, _ = sysm.run(states.replace(sigma_w=wall_stress(sysm, u, states, length, e_r, stimulus == "trace")), [bc], u0=u)
         c = centerline(m, u)
         J_g = np.asarray(det3(states.F_g))
