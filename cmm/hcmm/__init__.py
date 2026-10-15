@@ -7,7 +7,7 @@ materials: shared library materials/ (passed in via the constituents)
 from hcmm.core import constituent, mixture, sigma_solver, commit, J_target, wss
 from hcmm.growth import Isotropic, Anisotropic, Fixed
 from hcmm.production import MaesProduction, MixtureProduction, Reorienting
-from hcmm.removal import MaesRemoval
+from hcmm.removal import MaesRemoval, MixtureRemoval
 
 
 def maes(T, k_plus, k_minus=0.0, k_tau=0.0):

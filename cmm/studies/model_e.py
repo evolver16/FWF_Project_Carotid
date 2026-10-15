@@ -46,15 +46,15 @@ def wall_area(m, u):
 def artery_simulate(m, sysm, Qloc, par, mode="deposition", n_steps=100, bc=None, measure=None,
                     pre_tol=1e-6, pre_iter=60, anderson=5, tol=1e-10, log=None, final=False,
                     checkpoint=None, record=None, bc_gr=None, insult=None, ds=10.0, wall=WALL_E, lesion=None,
-                    laws="fiber", incompressible=False, growth="radial", G_e=None):
+                    laws="fiber", incompressible=False, growth="radial", G_e=None, fields=None):
     """Prestress G_elas <- F G_elas at p_hom until u = 0 (Maes UMAT_DEP; Anderson-accelerated, 0 = plain), from G_e
     (per Gauss point; default diag(g_ax^-1/2, g_ax^-1/2, g_ax) in the local basis),
     G&R at p_gr, steps of ds days -> measure(u) per step (default lambda_theta(inner), wall area),
     reverse-differentiable in par; final: also (u, states) at the end; record(k, u, states): after prestress (k = 0) and step k (forward only);
     bc_gr: G&R BCs per step instead of bc(p_gr); insult(k, states) -> states: after the prestress (k = 0) and after
     each step k (e.g. a ramped material change; checkpoint unused);
-    wall: constituents, lesion: lesion fraction per Gauss point, laws / incompressible / growth: wall defaults
-    (wall.assemble)"""
+    wall: constituents, lesion: lesion fraction per Gauss point, laws / incompressible / growth / fields: wall defaults
+    and per-Gauss-point parameters (wall.assemble), in the prestress as well"""
     if bc is None:
         bc = lambda p: cylinder_bc(m, p)
     if measure is None:
@@ -67,7 +67,7 @@ def artery_simulate(m, sysm, Qloc, par, mode="deposition", n_steps=100, bc=None,
     xs, fs = [], []
     for it in range(1, pre_iter + 1):
         states = assemble(G_e, Qloc, par, wall, mode, ds=ds, lesion=lesion, laws=laws, incompressible=incompressible,
-                          growth=growth)
+                          growth=growth, fields=fields)
         u = sysm.equilibrium(states, bc(par["p_hom"]), zero, tol)
         du = float(np.abs(sysm.last_u).max())
         if log and (it % 5 == 0 or du < pre_tol):

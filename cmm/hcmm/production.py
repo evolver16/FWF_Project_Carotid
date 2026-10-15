@@ -27,13 +27,13 @@ class Reorienting:
         return self.law.increment(*args)
 
 
-@pytree(("T", "k", "k_tau"))
+@pytree(("T", "k", "k_tau", "k_turn"))
 class MixtureProduction:
     """stimulus from the wall stress (Latorre & Humphrey 2018): set by equilibrium (~ P r / h), so restored only by mass,
     not by remodeling of the constituents as the fiber stress in MaesProduction"""
-    def __init__(self, T, k, k_tau=0.0):
-        self.T, self.k, self.k_tau = T, k, k_tau
+    def __init__(self, T, k, k_tau=0.0, k_turn=0.0):
+        self.T, self.k, self.k_tau, self.k_turn = T, k, k_tau, k_turn
 
     def increment(self, c, sigma_f, ds, rho_tot, rho_tot_0, dtau, dsig):
-        """rho_dot_+ ds = (rho/T)(1 + k dsig - k_tau dtau) ds"""
-        return (c.rho / (self.T / ds)) * (1.0 + self.k * dsig - self.k_tau * dtau)
+        """rho_dot_+ ds = (rho/T)(1 + k_turn dsig^2)(1 + k dsig - k_tau dtau) ds   (Latorre & Humphrey 2018, Eq. 9, 11)"""
+        return (c.rho / (self.T / ds)) * (1.0 + self.k_turn * dsig ** 2) * (1.0 + self.k * dsig - self.k_tau * dtau)

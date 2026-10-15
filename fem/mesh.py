@@ -3,6 +3,7 @@
 import base64
 import itertools
 import pathlib
+import re
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -419,6 +420,33 @@ def write_vtu(path, X, conn, point_data=None, cell_data=None):
         out += [f"<{tag}>"] + [_data_array(k, v) for k, v in (data or {}).items()] + [f"</{tag}>"]
     out += ["</Piece>", "</UnstructuredGrid>", "</VTKFile>"]
     pathlib.Path(path).write_text("\n".join(out) + "\n")
+
+
+def read_vtu(path):
+    """(X, conn, point_data, cell_data) of a file written by write_vtu"""
+    text = pathlib.Path(path).read_text()
+    dtypes = {"Float64": np.float64, "Int64": np.int64, "UInt8": np.uint8}
+
+    def arrays(tag):
+        block = text.split(f"<{tag}>")[1].split(f"</{tag}>")[0] if f"<{tag}>" in text else ""
+        out = {}
+        for vtk_type, name, ncomp, data in re.findall(
+                r'<DataArray type="(\w+)" Name="(\w+)" NumberOfComponents="(\d+)" format="binary">([^<]*)</DataArray>',
+                block):
+            raw = base64.b64decode(data)
+            v = np.frombuffer(raw[4:4 + int(np.frombuffer(raw[:4], np.uint32)[0])], dtypes[vtk_type])
+            out[name] = v.reshape(-1, int(ncomp)) if int(ncomp) > 1 else v
+        return out
+
+    cells = arrays("Cells")
+    return (arrays("Points")["Points"], cells["connectivity"].reshape(len(cells["offsets"]), -1),
+            arrays("PointData"), arrays("CellData"))
+
+
+def read_pvd(pvd):
+    """[(t, path of the .vtu)] of a ParaView collection"""
+    pvd = pathlib.Path(pvd)
+    return [(float(t), pvd.parent / f) for t, f in re.findall(r'timestep="([^"]+)"[^>]*file="([^"]+)"', pvd.read_text())]
 
 
 class VTKSeries:
