@@ -19,12 +19,14 @@ vessel    stenotic_vessel     bent stenotic vessel from an .inp mesh, Laplace wa
           stenosis_wss        WSS-driven remodeling of a bent stenosis (flow as BC.wss, ParaView series)
           setpoint_patch      lowered collagen set point in a patch: growth-only displacement
 weiss     weiss_tortuosity    Weiss et al. 2020: tortuosity from an Eq. 8 insult (c_e, alpha_0), isometric vs isotonic ends
+carotid   bifurcation         idealized carotid bifurcation: mesh, Laplace wall basis, homeostatic prestress
+          bifurcation_tortuosity  Weiss wall on the bifurcation: elastin loss, emergent collagen angle, ICA tortuosity
 
 Shared by several studies: common (logging, outputs), model_e (model E artery: artery_par, WALL_E, artery_simulate).
 Study-specific walls and parameters live in the study; a study with several files gets its own subfolder.
 """
 
-from studies import artery, fe_gr, material, vessel
+from studies import artery, carotid, fe_gr, material, vessel
 from studies.weiss import tortuosity as weiss
 
 STUDIES = {f.__name__: f for f in (
@@ -34,4 +36,5 @@ STUDIES = {f.__name__: f for f in (
     artery.artery_gr, artery.artery_gradients, artery.pressure_step, artery.flow_step, artery.pressure_buckling,
     vessel.stenotic_vessel, vessel.stenosis_wss, vessel.bending_redistribution, vessel.setpoint_patch,
     weiss.weiss_tortuosity,
+    carotid.bifurcation, carotid.bifurcation_tortuosity,
 )}

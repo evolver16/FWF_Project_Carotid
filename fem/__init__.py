@@ -1,5 +1,6 @@
 """Total-Lagrangian FE framework, independent of the G&R models: core (assembly, Newton, time loop, buckling),
-elements, mesh (generators, Abaqus .inp, VTK output), tensor3 (3x3 helpers), pytree (state classes);
+elements, mesh (generators, Abaqus .inp, VTK output), tensor3 (3x3 helpers), pytree (state classes), umat (Abaqus
+UMATs in Fortran as models, gfortran + ctypes);
 System(mesh) without a model: plain materials"""
 
 import jax

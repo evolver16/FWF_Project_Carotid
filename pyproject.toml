@@ -6,6 +6,14 @@ build-backend = "setuptools.build_meta"
 name = "fwf-carotid"
 version = "0.1.0"
 requires-python = ">=3.12"
+dependencies = ["jax", "numpy", "scipy"]
+
+[project.optional-dependencies]
+pardiso = ["pypardiso"]
+
+[project.scripts]
+fem-abaqus = "fem.abaqus:main"
+fem-vs-abaqus = "fem.vs_abaqus:main"
 
 [tool.setuptools]
 packages = ["fem", "materials", "verification"]

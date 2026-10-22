@@ -23,10 +23,13 @@ from studies.weiss.model import KO, WALL_WEISS, weiss_par
 
 def weiss_tortuosity(ends="isometric", insult="both", local=True, tether=0.0, tether_z=(0.25, 0.75), tether_day=0.0,
                      tether_days=np.inf,
-                     insult_day=0.0, orient="prescribed", gamma=1.0, noise=0.01, n=(2, 16, 120), L=14.0, n_ramp=200,
+                     insult_day=0.0, orient="prescribed", gamma=1.0, noise=0.01, full=False, anderson=2, pre_iter=200, tol=1e-10, n=None, L=14.0, n_ramp=200,
                      n_hold=0, ds=1.0, growth="fixed", stimulus="trace", length=None, record_every=10, name=None, **kw):
-    """Straight half tube (in vivo a, h, length L = 2 l_o ~ 12 diameters as in Weiss Fig. 5/6, hybrid hex8), wall of
-    table S2 prestressed at 120 mmHg with
+    """Straight half tube with symmetry plane y = 0 (full=True: full tube, buckling in any direction, end nodes held
+    circumferentially, u . e_theta = 0, against twist; default n (2, 16, 120) / (2, 33, 120), odd around: an even
+    count on the closed tube admits a Q1/P0 checkerboard pressure mode) (in vivo a, h, length L = 2 l_o ~ 12
+    diameters as in Weiss Fig. 5/6, hybrid hex8),
+    wall of table S2 prestressed at 120 mmHg with
     fixed ends (elastin from G_e = diag(1/(G_theta G_z), G_theta, G_z), stress-free state fixed); insult ramped over
     n_ramp steps of ds days (slow against T: quasi-static, compared over dv / dv_KO as Weiss' equilibrated states),
     then held n_hold steps (Eq. 8); pressure ramped with the insult from p_hom to p_gr (kw, MPa; default both 120 mmHg):
@@ -60,24 +63,33 @@ def weiss_tortuosity(ends="isometric", insult="both", local=True, tether=0.0, te
     par = weiss_par(**kw)
     a, h, p0, p = float(par["a"]), float(par["h"]), float(par["p_hom"]), float(par["p_gr"])
     length = length or np.sqrt(a * h)
-    m = meshlib.half_tube(r_i=a, t=h, L=L, n=n)
+    n = n or (2, 33 if full else 16, 120)
+    m = (meshlib.tube if full else meshlib.half_tube)(r_i=a, t=h, L=L, n=n)
+    share = 1.0 if full else 0.5
     sysm = fem.System(m, hcmm, pressure_faces=m.faces["inner"], element="hybrid")
-    Q = jnp.asarray(meshlib.cylinder_basis(fem.gauss_points(m.X, m.conn)))
+    xg = np.asarray(fem.gauss_points(m.X, m.conn))
+    Q = jnp.asarray(meshlib.cylinder_basis(xg))
     e_r = Q[..., :, 0] if stimulus == "in-plane" else None
-    s = np.asarray(fem.gauss_points(m.param, m.conn))
-    th, z, l_o = np.pi * s[..., 1], L * s[..., 2], L / 2
+    th, z, l_o = np.mod(np.arctan2(xg[..., 1], xg[..., 0]), 2 * np.pi), xg[..., 2], L / 2
     th_hat = np.where(z < l_o, np.pi, 0.0)
     f = 0.5 * (1 - np.cos(2 * np.pi * z / l_o)) * np.exp(-(np.angle(np.exp(1j * (th - th_hat))) / 2) ** 2)
     shape = (1 + f) / 2 if local else np.ones_like(f)
     ramp = lambda k: float(np.clip((ds * k - insult_day) / (ds * n_ramp), 0.0, 1.0))
 
-    top = lambda end: m.nodes[end][np.isclose(m.param[m.nodes[end], 1], 0.5)]
-    held = [3 * m.nodes["sym"] + 1, 3 * m.nodes["inlet"] + 2, 3 * top("inlet"), 3 * top("outlet")]
+    at = lambda end, q: m.nodes[end][np.isclose(m.param[m.nodes[end], 1], q)]
+    if full:
+        held = [3 * m.nodes["inlet"] + 2]
+        rings = np.concatenate([m.nodes["inlet"], m.nodes["outlet"]])
+        t_end = np.arctan2(m.X[rings, 1], m.X[rings, 0])
+        slip = (rings, np.stack([-np.sin(t_end), np.cos(t_end), 0 * t_end], -1))
+    else:
+        held = [3 * m.nodes["sym"] + 1, 3 * m.nodes["inlet"] + 2, 3 * at("inlet", 0.5), 3 * at("outlet", 0.5)]
+        slip = None
     out_z = 3 * m.nodes["outlet"] + 2
     iso = np.unique(np.concatenate(held + [out_z]))
-    bc_iso = lambda p: fem.BC(iso, np.zeros(len(iso)), p=p)
+    bc_iso = lambda p: fem.BC(iso, np.zeros(len(iso)), p=p, slip=slip)
 
-    log(f"Weiss 2020: straight half tube a {a} mm, h {h} mm, L {L} mm, {m.n_elem} hex8 (hybrid); table S2 wall "
+    log(f"Weiss 2020: straight {'full' if full else 'half'} tube a {a} mm, h {h} mm, L {L} mm, {m.n_elem} hex8 (hybrid); table S2 wall "
         f"({', '.join(q.name for q in WALL_WEISS)}), {stimulus} wall stress stimulus (nonlocal {length:.3f} mm), {growth} growth")
     log(f"insult {'Eq. 8' if local else 'uniform'} on "
         f"{'c_e' if insult == 'elastin' or orient == 'stress' else 'c_e and alpha_0'}, collagen deposition angle "
@@ -103,7 +115,8 @@ def weiss_tortuosity(ends="isometric", insult="both", local=True, tether=0.0, te
     G_e = Q @ jnp.diag(jnp.array([1 / (G_t * G_z), G_t, G_z])) @ jnp.swapaxes(Q, -1, -2)
     _, u, states = artery_simulate(m, sysm, Q, par, n_steps=0, bc=bc_iso, final=True, log=log, ds=ds,
                                    wall=WALL_WEISS, laws="wall", incompressible=True, growth=growth, G_e=G_e,
-                                   fields={"elastin.C10": par["elastin.C10"] * scale} if noise else None)
+                                   fields={"elastin.C10": par["elastin.C10"] * scale} if noise else None,
+                                   anderson=anderson, pre_iter=pre_iter)
     log(f"  prestress done in {time.time() - t0:.0f}s")
     bc = bc_iso(p0)
     if ends == "isotonic":
@@ -111,14 +124,14 @@ def weiss_tortuosity(ends="isometric", insult="both", local=True, tether=0.0, te
         f_dead = np.zeros(sysm.n_dof)
         f_dead[out_z] = f_end[out_z]
         free = np.unique(np.concatenate(held))
-        bc = fem.BC(free, np.zeros(len(free)), f_dead=f_dead, p=p0)
-        log(f"  isotonic: axial end force {2 * f_dead.sum() * 1e3:.3f} mN (full tube)")
+        bc = fem.BC(free, np.zeros(len(free)), f_dead=f_dead, p=p0, slip=slip)
+        log(f"  isotonic: axial end force {f_dead.sum() / share * 1e3:.3f} mN (full tube)")
     f_base = np.zeros(sysm.n_dof) if bc.f_dead is None else bc.f_dead
     f_t = np.zeros(sysm.n_dof)
     for zt, sign in zip(tether_z, (1.0, -1.0) * len(tether_z)):
         zs = m.param[:, 2]
         ring = np.flatnonzero(np.isclose(zs, zs[np.argmin(np.abs(zs - zt))]))
-        f_t[3 * ring] += sign * 0.5e-3 * tether / len(ring)
+        f_t[3 * ring] += sign * share * 1e-3 * tether / len(ring)
     sw = wall_stress(sysm, u, states, length, e_r, stimulus == "trace")
     states = states.replace(sigma_w=sw, sigma_w_h=sw)
 
@@ -173,7 +186,8 @@ def weiss_tortuosity(ends="isometric", insult="both", local=True, tether=0.0, te
                     M_dep=jnp.sin(al) * e_t + sign * jnp.cos(al) * e_z))
         states = states.replace(constituents=cs)
         bc = replace(bc, p=p0 + ramp(k) * (p - p0), f_dead=f_base + (f_t if tether_day < ds * k <= tether_day + tether_days else 0.0))
-        u, states, _ = sysm.run(states.replace(sigma_w=wall_stress(sysm, u, states, length, e_r, stimulus == "trace")), [bc], u0=u)
+        u, states, _ = sysm.run(states.replace(sigma_w=wall_stress(sysm, u, states, length, e_r, stimulus == "trace")), [bc],
+                                u0=u, tol=tol)
         c = centerline(m, u)
         J_g = np.asarray(det3(states.F_g))
         diag = states.constituents[names.index("diag+")]
@@ -182,10 +196,10 @@ def weiss_tortuosity(ends="isometric", insult="both", local=True, tether=0.0, te
         lam_t = np.linalg.norm(np.einsum("egij,egj->egi", np.asarray(sysm.gauss_F(u)), np.asarray(e_t)), axis=-1)
         rows.append(dict(day=ds * k, ramp=ramp(k), TI=tortuosity(c),
                          L1=np.linalg.norm(np.diff(c, axis=0), axis=1).sum() / L, L2=np.linalg.norm(c[-1] - c[0]) / L,
-                         deflection=np.abs(c[:, 0]).max() / a, J_g_mean=J_g.mean(), J_g_max=J_g.max(),
+                         deflection=np.linalg.norm(c[:, :2], axis=1).max() / a, J_g_mean=J_g.mean(), J_g_max=J_g.max(),
                          circ_mean=lam_t.mean(), circ_max=lam_t.max(), alpha_mean=al_fib.mean(),
                          alpha_min=al_fib.min(), alpha_max=al_fib.max(), alpha_dep_mean=al_dep.mean(),
-                         axial_force_mN=2e3 * float((sysm.reaction(u, states, bc)
+                         axial_force_mN=1e3 / share * float((sysm.reaction(u, states, bc)
                                                      + (0.0 if bc.f_dead is None else bc.f_dead))[out_z].sum())))
         if k % record_every == 0 or k == n_steps:
             record(k, u, states)

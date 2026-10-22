@@ -1,0 +1,40 @@
+<mxfile host="65bd71144e">
+    <diagram id="carotid" name="Carotid notes">
+        <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1240" pageHeight="980" math="1" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="title" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fontSize=13;arcSize=20;fillColor=#e1d5e7;strokeColor=#9673a6;" value="&lt;b&gt;Carotid anatomy and tortuosity&lt;/b&gt;&lt;br&gt;unsorted notes" vertex="1">
+                    <mxGeometry height="60" width="360" x="10" y="10" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_sheath" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=12;fillColor=#f2f8f0;strokeColor=#82b366;align=left;spacingLeft=6;" value="&lt;b&gt;Carotid sheath&lt;/b&gt;&lt;br&gt;contains CCA / ICA, internal jugular vein (lateral) and vagus nerve (posterior); condensation of the deep cervical fascia, behind the sternocleidomastoid; the bifurcation divides it into a suprahyoid and an infrahyoid part [StatPearls]" vertex="1">
+                    <mxGeometry height="110" width="360" x="10" y="90" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_neighbours" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=12;fillColor=#f2f8f0;strokeColor=#82b366;align=left;spacingLeft=6;" value="&lt;b&gt;Neighbours of the sheath&lt;/b&gt;&lt;br&gt;pharynx medial, prevertebral fascia and sympathetic trunk posterior, ansa cervicalis anterior; trachea, larynx and thyroid lie between the two carotids; below the omohyoid covered by skin, platysma, deep fascia and strap muscles [StatPearls, Gray's]" vertex="1">
+                    <mxGeometry height="110" width="360" x="390" y="90" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_diameter" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=12;fillColor=#f2f8f0;strokeColor=#82b366;align=left;spacingLeft=6;" value="&lt;b&gt;Diameters&lt;/b&gt; (ultrasound, 500 patients)&lt;br&gt;CCA \(\approx\) 6.1 mm (women) / 6.5 mm (men)&lt;br&gt;ICA \(\approx\) 4.7 mm / 5.1 mm&lt;br&gt;smaller in women also after correcting for body and neck size [Krejza 2006]" vertex="1">
+                    <mxGeometry height="110" width="360" x="770" y="90" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_bifurcation" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=12;fillColor=#f2f8f0;strokeColor=#82b366;align=left;spacingLeft=6;" value="&lt;b&gt;Bifurcation geometry&lt;/b&gt;&lt;br&gt;angle \(48.5 \pm 6.3°\) (young) vs \(63.6 \pm 15.4°\) (older), much larger variation with age [Thomas 2005, MRI]&lt;br&gt;ICA/CCA diameter ratio 0.44–0.86, outflow/inflow area ratio varies 4-fold [Schulz &amp;amp; Rothwell 2001]" vertex="1">
+                    <mxGeometry height="110" width="360" x="10" y="220" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_ica" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=12;fillColor=#f2f8f0;strokeColor=#82b366;align=left;spacingLeft=6;" value="&lt;b&gt;Tortuosity is mostly in the cervical ICA&lt;/b&gt;&lt;br&gt;unbranched segment fixed at the bifurcation and the skull base (like isometric ends); ECA tethered by many branches; CCA larger, held in the sheath, buckles rarely (elderly, hypertension, near its origin); part of the ICA coils is developmental" vertex="1">
+                    <mxGeometry height="110" width="360" x="390" y="220" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_types" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=12;fillColor=#f2f8f0;strokeColor=#82b366;align=left;spacingLeft=6;" value="&lt;b&gt;Classification&lt;/b&gt; [Weibel &amp;amp; Fields 1965]&lt;br&gt;tortuosity: C- or S-shaped course&lt;br&gt;coiling: loop (360°)&lt;br&gt;kinking: sharp angle &amp;lt; 90° between segments" vertex="1">
+                    <mxGeometry height="110" width="360" x="770" y="220" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_prevalence" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=12;fillColor=#f2f8f0;strokeColor=#82b366;align=left;spacingLeft=6;" value="&lt;b&gt;Prevalence and risk factors&lt;/b&gt;&lt;br&gt;tortuosity in 63.6 % of 356 patients (CTA); age and duration of hypertension independent risk factors, antihypertensive drugs associated with less tortuosity [Frontiers Neurol 2024]; mostly asymptomatic" vertex="1">
+                    <mxGeometry height="110" width="360" x="10" y="350" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_mechanism" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;arcSize=12;fillColor=#f2f8f0;strokeColor=#82b366;align=left;spacingLeft=6;" value="&lt;b&gt;Mechanism&lt;/b&gt;&lt;br&gt;mechanical instability (buckling under pressure and reduced axial tension) plus wall remodeling that makes the bend persistent [Han 2012; Weiss 2020]" vertex="1">
+                    <mxGeometry height="110" width="360" x="390" y="350" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_refs" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=6;fillColor=#f5f5f5;strokeColor=#999999;align=left;spacingLeft=6;verticalAlign=top;" value="&lt;b&gt;References&lt;/b&gt;&lt;br&gt;Han HC 2012, Twisted blood vessels, J Vasc Res 49:185–197&lt;br&gt;Frontiers Neurol 2024, Age and duration of hypertension are associated with carotid artery tortuosity, doi 10.3389/fneur.2024.1307984&lt;br&gt;Weibel J, Fields WS 1965 (carotid kinking and coiling)&lt;br&gt;Thomas JB et al. 2005, Stroke 36:2450&lt;br&gt;Schulz UG, Rothwell PM 2001, Stroke 32:2522–2529&lt;br&gt;Krejza J et al. 2006, Stroke 37:1103–1105&lt;br&gt;Michalinos A et al. 2016, Anat Res Int 2016:6907472&lt;br&gt;Chengazi HU, Bhatt AA 2019, Insights Imaging 10:21&lt;br&gt;StatPearls, Anatomy, Head and Neck: Carotid Sheath&lt;br&gt;Weiss D et al. 2020, Sci Adv 6:eabd3574" vertex="1">
+                    <mxGeometry height="200" width="360" x="770" y="350" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>

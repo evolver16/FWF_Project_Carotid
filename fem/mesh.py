@@ -7,6 +7,7 @@ import re
 from dataclasses import dataclass, field
 
 import numpy as np
+import scipy.sparse as sp
 
 from fem.elements import HEX_CORNERS, ELEMENT_TYPES, element_for, face_for
 
@@ -113,8 +114,9 @@ def _ids(tokens):
 
 
 def read_inp(path):
-    """Abaqus .inp (single part, C3D8* or C3D10*) -> Mesh with *Nset, *Elset and element-based *Surface by name."""
-    node_id, X, elem_id, conn = [], [], [], []
+    """Abaqus .inp (single part, C3D8* or C3D10*) -> Mesh with *Nset, *Elset and element-based *Surface by name;
+    nodes in assembly coordinates (*Instance translation, then rotation about the axis a -> b by the angle in degrees)."""
+    node_id, X, elem_id, conn, instance = [], [], [], [], []
     nsets, elsets, surfaces = {}, {}, {}
     block, opts, pending, nen = None, {}, [], None
     for raw in pathlib.Path(path).read_text().splitlines():
@@ -136,6 +138,9 @@ def read_inp(path):
                 surfaces[opts["name"]] = []
             continue
         tok = [t.strip() for t in line.rstrip(",").split(",")]
+        if block == "instance":
+            instance.append([float(t) for t in tok])
+            continue
         if block == "node":
             node_id.append(int(tok[0]))
             X.append([float(t) for t in tok[1:4]])
@@ -161,6 +166,14 @@ def read_inp(path):
     nmap = {i: k for k, i in enumerate(node_id)}
     emap = {i: k for k, i in enumerate(elem_id)}
     X = np.array(X)
+    if instance:
+        X = X + np.array(instance[0][:3])
+    if len(instance) > 1:
+        a, b, ang = np.array(instance[1][:3]), np.array(instance[1][3:6]), np.radians(instance[1][6])
+        k = (b - a) / np.linalg.norm(b - a)
+        K = np.array([[0, -k[2], k[1]], [k[2], 0, -k[0]], [-k[1], k[0], 0]])
+        R = np.eye(3) + np.sin(ang) * K + (1 - np.cos(ang)) * K @ K
+        X = a + (X - a) @ R.T
     conn = np.vectorize(nmap.get)(np.array(conn))
     m = Mesh(X=X, conn=conn,
              nodes={k: np.array(sorted({nmap[i] for i in v})) for k, v in nsets.items()},
@@ -356,6 +369,33 @@ def half_tube(r_i=5.0, t=1.3, L=30.0, n=(3, 24, 30), etype="hex8"):
     return m
 
 
+def tube(r_i=5.0, t=1.3, L=30.0, n=(3, 48, 30), etype="hex8"):
+    """Full straight tube along z, closed in theta (nodes at theta = 2 pi merged into theta = 0, Mesh.param[:, 1] in
+    [0, 1)); named nodes/faces: inner, outer, inlet (z = 0), outlet (z = L)"""
+    def mapping(s):
+        r, th = r_i + t * s[:, 0], 2 * np.pi * s[:, 1]
+        return np.stack([r * np.cos(th), r * np.sin(th), L * s[:, 2]], axis=1)
+
+    m = structured(n, mapping, etype)
+    key = lambda i: (round(float(m.param[i, 0]), 9), round(float(m.param[i, 2]), 9))
+    seam = {key(i): i for i in m.nodes[(1, -1)]}
+    new = np.arange(m.n_nodes)
+    new[m.nodes[(1, 1)]] = [seam[key(i)] for i in m.nodes[(1, 1)]]
+    used = np.unique(new)
+    order = np.full(m.n_nodes, -1)
+    order[used] = np.arange(len(used))
+    remap = lambda a: order[new[a]]
+    m.X, m.param, m.conn = m.X[used], m.param[used], remap(m.conn)
+    for k in ((1, -1), (1, 1)):
+        m.nodes.pop(k)
+        m.faces.pop(k)
+    m.nodes = {k: np.unique(remap(v)) for k, v in m.nodes.items()}
+    m.faces = {k: remap(v) for k, v in m.faces.items()}
+    for name, k in (("inner", (0, -1)), ("outer", (0, 1)), ("inlet", (2, -1)), ("outlet", (2, 1))):
+        m.nodes[name], m.faces[name] = m.nodes[k], m.faces[k]
+    return m
+
+
 def bent_tube(r_i=5.0, t=1.3, R_c=20.0, L_in=10.0, L_out=10.0, stenosis=0.25, width=0.08, n=(3, 24, 40),
               etype="hex8", intima=None):
     """Half tube (y >= 0) along a centerline: straight z (inlet at z = 0), 90 deg arc of radius R_c, straight x.
@@ -391,6 +431,219 @@ def bent_tube(r_i=5.0, t=1.3, R_c=20.0, L_in=10.0, L_out=10.0, stenosis=0.25, wi
     for name, key in (("inner", (0, -1)), ("outer", (0, 1)), ("inlet", (2, -1)), ("outlet", (2, 1))):
         m.nodes[name], m.faces[name] = m.nodes[key], m.faces[key]
     m.nodes["sym"] = np.union1d(m.nodes[(1, -1)], m.nodes[(1, 1)])
+    return m
+
+
+def carotid_bifurcation(D=6.3, angles=(25.0, 25.0), sinus=1.11, ica=0.71, eca=0.57, s_sinus=(0.3, 0.8, 1.8),
+                        s_cca=0.5, lengths=(3.0, 5.0, 3.0), cuffs=(0.6, 1.5, 1.4), blend=(0.25, 0.08), kappa=0.26,
+                        kappa_junction=None, n_q=6, n_seam=8, n_r=2, n_smooth=20, thickness="curvature", half=False):
+    """Idealized planar carotid bifurcation, hex8 wall; bifurcation plane y = 0, centerlines meet at the origin,
+    CCA along z (z < 0), ICA / ECA at angles (deg) from z towards +x / -x.
+
+    Diameters / D (Bharadvaj et al. 1982, Ku et al. 1985): sinus, distal ICA, ECA. Radius along each axis, s = distance
+    from the origin (in D): ICA 0.9 R -> sinus R on [0, s1], sinus until s2, -> ica R at s3; ECA eca R; the CCA
+    cylinder (radius R) reaches s_cca beyond the origin, so the ECA tapers out of it without a waist, and the ICA
+    starts inside it (no coincident surfaces).
+    Lumen F = smin(d_cca, smin(d_ica, d_eca; k_0); k_1) < 0, d_j = |x - s_j e_j| - r_j(s_j) (s_j clipped to the
+    branch, spherical caps), smin quadratic with (k_0, k_1) = blend D: flow divider radius from k_0, small k_1 since
+    the CCA and ICA are nearly tangent at the origin (smin bulges by k / 4 where surfaces coincide).
+    Wall thickness kappa r_local along the lumen normal (averaged n_smooth times over the surface neighbours, so the
+    offset does not fold at the flow divider), n_r layers; thickness "radius": r_local = radius of the nearest tube,
+    "curvature": Laplace radius r_local = 1 / div n (mean curvature; = r in a tube), in [0.75, 3] x the tube radius,
+    smoothed: the flat front / back of the junction and the flow divider get a thicker wall, so a membrane at the
+    homeostatic stress of the tubes can carry the pressure there; kappa_junction: kappa on the junction patches instead
+    (smooth transition over n_smooth neighbour averages).
+    Surface: three tubes (4 n_q cells around, cuffs at s = cuffs D) joined per side (y > 0, y < 0) by three patches of
+    (n_q + n_seam)^2 quads meeting at one point; seams along the in-plane lumen outline (lateral walls, flow divider).
+    named nodes/faces: inner, outer, inlet (CCA), ica, eca, sym (half: y >= 0 only); elsets cca, ica, eca, junction
+    """
+    R, (k0, k1) = 0.5 * D, (v * D for v in blend)
+    a, b = np.radians(angles)
+    sm = lambda s, lo, hi: (lambda t: t * t * (3 - 2 * t))(np.clip((s - lo) / (hi - lo), 0.0, 1.0))
+    s1, s2, s3 = (v * D for v in s_sinus)
+    branches = [  # axis, frame e1 (phi = 0), clip of s, radius
+        (np.array([0.0, 0, 1]), np.array([1.0, 0, 0]), (-np.inf, s_cca * D), lambda s: R + 0 * s),
+        (np.array([np.sin(a), 0, np.cos(a)]), np.array([np.cos(a), 0, -np.sin(a)]), (0.0, np.inf),
+         lambda s: 0.9 * R + (sinus - 0.9) * R * sm(s, 0, s1) + (ica - sinus) * R * sm(s, s2, s3)),
+        (np.array([-np.sin(b), 0, np.cos(b)]), np.array([np.cos(b), 0, np.sin(b)]), (0.0, np.inf),
+         lambda s: eca * R + 0 * s)]
+    ey = np.array([0.0, 1, 0])
+
+    def dist(x):
+        out = []
+        for e, _, clip, r in branches:
+            s = np.clip(x @ e, *clip)
+            out.append(np.linalg.norm(x - s[:, None] * e, axis=1) - r(s))
+        return out
+
+    def smin(p, q, k):
+        h = np.maximum(k - np.abs(p - q), 0.0) / k
+        return np.minimum(p, q) - 0.25 * k * h * h
+
+    F = lambda x: (lambda d: smin(d[0], smin(d[1], d[2], k0), k1))(dist(x))
+
+    def grad(x, eps=1e-6 * D):
+        return np.stack([(F(x + eps * e) - F(x - eps * e)) / (2 * eps) for e in np.eye(3)], -1)
+
+    def project(x, it=12):
+        x = np.array(x, dtype=float).reshape(-1, 3)
+        for _ in range(it):
+            g = grad(x)
+            x = x - (F(x) / np.sum(g * g, -1))[:, None] * g
+        return x
+
+    def ring(j, s, n):
+        e, e1, _, r = branches[j]
+        ph = np.linspace(0.0, np.pi, n + 1)
+        return project(s * e + r(np.asarray(s)) * (np.cos(ph)[:, None] * e1 + np.sin(ph)[:, None] * ey))
+
+    s_cuff = (-cuffs[0] * D, cuffs[1] * D, cuffs[2] * D)
+    s_end = (-lengths[0] * D, lengths[1] * D, lengths[2] * D)
+    cuff = [ring(j, s_cuff[j], 2 * n_q) for j in range(3)]
+    h_el = 0.5 * np.pi * R / n_q
+
+    def seam(p, q, e_stop, t0, step=0.004 * D):
+        """in-plane lumen outline from p to the plane through q normal to e_stop, 2 n_seam + 1 points"""
+        pts, t = [p], t0
+        while (pts[-1] - q) @ e_stop < 0 and len(pts) < 100000:
+            g = grad(pts[-1][None])[0]
+            n = np.array([g[2], 0.0, -g[0]])
+            t = np.sign(n @ t) * n / np.linalg.norm(n)
+            pts.append(project(pts[-1] + step * t)[0])
+        pts[-1] = q
+        pts = np.array(pts)
+        l = np.concatenate([[0], np.cumsum(np.linalg.norm(np.diff(pts, axis=0), axis=1))])
+        out = project(np.stack([np.interp(np.linspace(0, l[-1], 2 * n_seam + 1), l, pts[:, i]) for i in range(3)], -1))
+        out[0], out[-1] = p, q
+        return out
+
+    e_c, e_i, e_e = (br[0] for br in branches)
+    seams = [seam(cuff[0][0], cuff[1][0], e_i, e_c),
+             seam(cuff[1][-1], cuff[2][0], e_e, -e_i),
+             seam(cuff[2][-1], cuff[0][-1], -e_c, -e_e)]
+    mid = [c[n_q] for c in cuff]
+    base = np.mean(mid, 0) * np.array([1.0, 0, 1])
+    lo, hi = 0.0, 2 * D
+    for _ in range(60):
+        lo, hi = ((lo + hi) / 2, hi) if F((base + (lo + hi) / 2 * ey)[None])[0] < 0 else (lo, (lo + hi) / 2)
+    center = base + lo * ey
+    M = n_q + n_seam
+
+    def coons(side_a, side_b):
+        """corners center, side_a[0], side_a[-1] = side_b[-1], side_b[0]; sides of M + 1 points"""
+        u = np.linspace(0, 1, M + 1)
+        B0 = center + u[:, None] * (side_a[0] - center)
+        L0 = center + u[:, None] * (side_b[0] - center)
+        U, V = np.meshgrid(u, u, indexing="ij")
+        P = ((1 - V)[..., None] * B0[:, None] + V[..., None] * side_b[:, None]
+             + (1 - U)[..., None] * L0[None] + U[..., None] * side_a[None]
+             - ((1 - U) * (1 - V))[..., None] * center - (U * (1 - V))[..., None] * side_a[0]
+             - ((1 - U) * V)[..., None] * side_b[0] - (U * V)[..., None] * side_a[-1])
+        return P
+
+    patches = [coons(np.concatenate([cuff[0][n_q::-1], seams[0][1:n_seam + 1]]),
+                     np.concatenate([cuff[1][n_q::-1], seams[0][:n_seam - 1:-1][1:]])),
+               coons(np.concatenate([cuff[1][n_q:], seams[1][1:n_seam + 1]]),
+                     np.concatenate([cuff[2][n_q::-1], seams[1][:n_seam - 1:-1][1:]])),
+               coons(np.concatenate([cuff[2][n_q:], seams[2][1:n_seam + 1]]),
+                     np.concatenate([cuff[0][n_q:], seams[2][:n_seam - 1:-1][1:]]))]
+
+    X, quads, region, free = [], [], [], []
+
+    def add(P, reg, interior):
+        """structured (n_i + 1, n_j + 1, 3) grid of surface nodes"""
+        ni, nj = P.shape[0] - 1, P.shape[1] - 1
+        idx = sum(len(x) for x in X) + np.arange((ni + 1) * (nj + 1)).reshape(ni + 1, nj + 1)
+        X.append(P.reshape(-1, 3))
+        free.append(np.full((ni + 1) * (nj + 1), interior))
+        quads.append(np.stack([idx[:-1, :-1], idx[1:, :-1], idx[1:, 1:], idx[:-1, 1:]], -1).reshape(-1, 4))
+        region.extend([reg] * ni * nj)
+
+    ends = []
+    for j in range(3):
+        n_ax = max(int(np.ceil(abs(s_end[j] - s_cuff[j]) / h_el)), 1)
+        s = np.linspace(s_cuff[j], s_end[j], n_ax + 1)
+        P = np.stack([cuff[j]] + [ring(j, v, 2 * n_q) for v in s[1:]])
+        add(P, j, False)
+        ends.append(P[-1])
+    for P in patches:
+        add(P, 3, True)
+    X, quads, free = np.concatenate(X), np.concatenate(quads), np.concatenate(free)
+
+    tag = lambda x: np.round(x / (1e-9 * D)).astype(np.int64)
+
+    def merge(X, quads, free):
+        """coincident nodes merged (shared lines are built from the same arrays)"""
+        _, first, inv = np.unique(tag(X), axis=0, return_index=True, return_inverse=True)
+        f = np.zeros(len(first), bool)
+        np.logical_or.at(f, inv.ravel(), free)
+        return X[first], inv.ravel()[quads], f
+
+    X, quads, free = merge(X, quads, free)
+    key = {tuple(v): i for i, v in enumerate(tag(X))}
+    lookup = lambda pts: np.array([key[tuple(v)] for v in tag(pts)])
+    for line in seams + cuff:
+        free[lookup(line)] = False
+    X[free] = project(X[free])
+    def average(quads, n):
+        """mean over the edge neighbours"""
+        e = np.concatenate([quads[:, [0, 1]], quads[:, [1, 2]], quads[:, [2, 3]], quads[:, [3, 0]]])
+        A = sp.coo_matrix((np.ones(2 * len(e)), (np.r_[e[:, 0], e[:, 1]], np.r_[e[:, 1], e[:, 0]])), (n, n)).tocsr()
+        A.data[:] = 1.0
+        return sp.diags(1.0 / np.asarray(A.sum(1)).ravel()) @ A
+
+    A = average(quads, len(X))
+    for _ in range(300):
+        X[free] = project(A[free] @ X, it=3)
+
+    region = np.array(region)
+    if not half:
+        Xm = X * np.array([1.0, -1, 1])
+        X, quads, _ = merge(np.concatenate([X, Xm]), np.concatenate([quads, quads[:, ::-1] + len(X)]),
+                            np.zeros(2 * len(X), bool))
+        region = np.concatenate([region, region])
+        ends = [np.concatenate([p, p * np.array([1.0, -1, 1])]) for p in ends]
+
+    unit = lambda v: v / np.linalg.norm(v, axis=1, keepdims=True)
+    n, A = unit(grad(X)), average(quads, len(X))
+    plane = np.abs(X[:, 1]) < 1e-9 * D
+    for _ in range(n_smooth):
+        n = unit(n + A @ n)
+        n[plane, 1] = 0.0
+    d = np.stack(dist(X), -1)
+    w = np.exp(-(d - d.min(1, keepdims=True)) / (0.1 * D))
+    r_loc = np.sum(w * np.stack([np.abs(br[3](np.clip(X @ br[0], *br[2]))) for br in branches], -1), 1) / w.sum(1)
+    if thickness == "curvature":
+        e_h = 1e-3 * D
+        div = sum((unit(grad(X + e_h * e))[:, i] - unit(grad(X - e_h * e))[:, i]) / (2 * e_h)
+                  for i, e in enumerate(np.eye(3)))
+        r_loc = np.clip(1.0 / np.maximum(div, 1e-12), 0.75 * r_loc, 3.0 * r_loc)
+        for _ in range(n_smooth // 4):
+            r_loc = 0.5 * (r_loc + A @ r_loc)
+    x = X[quads]
+    flip = np.einsum("ij,ij->i", np.cross(x[:, 1] - x[:, 0], x[:, 3] - x[:, 0]), n[quads].mean(1)) < 0
+    quads[flip] = quads[flip][:, ::-1]
+    ns = len(X)
+    k_loc = np.full(len(X), kappa)
+    if kappa_junction is not None:
+        k_loc[np.unique(quads[region == 3])] = kappa_junction
+        for _ in range(n_smooth):
+            k_loc = 0.5 * (k_loc + A @ k_loc)
+    X3 = np.concatenate([X + (j / n_r * k_loc * r_loc)[:, None] * n for j in range(n_r + 1)])
+    conn = np.concatenate([np.concatenate([quads + j * ns, quads + (j + 1) * ns], 1) for j in range(n_r)])
+    m = Mesh(X=X3, conn=conn)
+    m.elsets = {name: np.flatnonzero(np.tile(region, n_r) == j) for j, name in enumerate(("cca", "ica", "eca", "junction"))}
+    key = {tuple(v): i for i, v in enumerate(tag(X))}
+    surf = {name: np.unique(lookup(p)) for name, p in zip(("inlet", "ica", "eca"), ends)}
+    m.nodes["inner"], m.nodes["outer"] = np.arange(ns), n_r * ns + np.arange(ns)
+    for name, s in surf.items():
+        m.nodes[name] = np.concatenate([s + j * ns for j in range(n_r + 1)])
+    if half:
+        m.nodes["sym"] = np.flatnonzero(np.abs(X3[:, 1]) < 1e-9 * D)
+    elems, _, faces = boundary_faces(m)
+    for name in ("inner", "outer", "inlet", "ica", "eca") + (("sym",) if half else ()):
+        on = np.all(np.isin(faces, m.nodes[name]), 1)
+        m.faces[name] = faces[on]
     return m
 
 

@@ -20,9 +20,9 @@ def artery_video(pvd, out=None, field="J_g", angle="alpha_diag_deg", alpha_h=38.
     """<out>/frame_<k>.png, <out>/<name>.tex (animateinline, first and last frame held for hold seconds) and
     <out>/<name>.gif, out default videos/<pvd stem> next to the .pvd, name = out folder name; LaTeX: copy the folder
     next to the document and \\input{<name>/<name>.tex};
-    left: outer surface of the full tube (half tube mirrored at y = 0) coloured by field, fixed range over all frames;
+    left: outer surface of the tube (a half tube mirrored at y = 0) coloured by field, fixed range over all frames;
     right: the two diagonal families at +-angle from the axial direction (axial horizontal, circumferential vertical)
-    on the convex and concave side of the cross-section with the largest final deflection; dashed: alpha_h"""
+    on the convex and concave side (along the bending direction) of the cross-section with the largest final deflection; dashed: alpha_h"""
     pvd = pathlib.Path(pvd)
     out = pathlib.Path(out) if out else pvd.parent / "videos" / pvd.stem
     out.mkdir(parents=True, exist_ok=True)
@@ -37,22 +37,25 @@ def artery_video(pvd, out=None, field="J_g", angle="alpha_diag_deg", alpha_h=38.
     faces = faces[idx[cnt == 1]]
     faces = faces[np.hypot(*X[faces][..., :2].mean(1).T) > np.median(np.hypot(*X[faces][..., :2].mean(1).T))]
 
+    half = X[:, 1].min() > -1e-9 * np.abs(X).max()
     x_end = X + frames[-1][2]["u"]
     _, ring = np.unique(np.round(X[:, 2], 9), return_inverse=True)
-    cx = np.bincount(ring, x_end[:, 0]) / np.bincount(ring)
-    station = ring == np.argmax(np.abs(cx))
-    bow = np.sign(cx[np.argmax(np.abs(cx))]) or 1.0
-    in_plane = np.abs(X[:, 1]) < 0.5 * np.abs(X[:, 0])
-    sides = {"convex": station & in_plane & (np.sign(X[:, 0]) == bow),
-             "concave": station & in_plane & (np.sign(X[:, 0]) == -bow)}
+    c = np.stack([np.bincount(ring, x_end[:, i]) / np.bincount(ring) for i in (0, 1)], -1)
+    if half:
+        c[:, 1] = 0.0
+    k = np.argmax(np.linalg.norm(c, axis=1))
+    station = ring == k
+    bow = c[k] / (np.linalg.norm(c[k]) or 1.0)
     r = np.hypot(X[:, 0], X[:, 1])
+    towards = X[:, :2] @ bow / r
+    sides = {"convex": station & (towards > 0.9), "concave": station & (towards < -0.9)}
     ring_nodes = np.flatnonzero(station & (r > np.median(r[station])))
     ring_nodes = ring_nodes[np.argsort(np.arctan2(X[ring_nodes, 1], X[ring_nodes, 0]))]
 
     mirror = np.array([1.0, -1.0, 1.0])
-    polys = [np.concatenate([x[faces], x[faces] * mirror])[..., [2, 1, 0]]
+    polys = [(np.concatenate([x[faces], x[faces] * mirror]) if half else x[faces])[..., [2, 1, 0]]
              for x in (X + fr[2]["u"] for fr in frames)]
-    vals = [np.tile(fr[2][field][faces].mean(1), 2) for fr in frames]
+    vals = [np.tile(fr[2][field][faces].mean(1), 2 if half else 1) for fr in frames]
     lo = np.min([p.reshape(-1, 3).min(0) for p in polys], axis=0)
     hi = np.max([p.reshape(-1, 3).max(0) for p in polys], axis=0)
     norm = plt.Normalize(min(v.min() for v in vals), max(v.max() for v in vals))
@@ -80,7 +83,7 @@ def artery_video(pvd, out=None, field="J_g", angle="alpha_diag_deg", alpha_h=38.
         ax = fig.add_axes([-0.06, -0.05, 0.74, 1.1], projection="3d", computed_zorder=False)
         ax.add_collection3d(Poly3DCollection(poly, facecolors=cmap(norm(val)), edgecolors="none", zorder=1))
         x = X + fr[2]["u"]
-        ring = np.concatenate([x[ring_nodes], (x[ring_nodes] * mirror)[::-1]])[:, [2, 1, 0]]
+        ring = np.concatenate([x[ring_nodes], (x[ring_nodes] * mirror)[::-1] if half else x[ring_nodes[:1]]])[:, [2, 1, 0]]
         ax.plot(*ring.T, color="k", lw=1.5, zorder=2)
         ax.set_xlim(lo[0], hi[0]); ax.set_ylim(lo[1], hi[1]); ax.set_zlim(lo[2], hi[2])
         ax.set_box_aspect(hi - lo)
