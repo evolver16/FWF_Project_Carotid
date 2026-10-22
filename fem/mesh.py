@@ -1,4 +1,4 @@
-"""Meshes of hex8 or tet10: structured generators, boundary faces, Abaqus .inp and gmsh .msh I/O, VTK .vtu/.pvd."""
+"""Meshes of hex8, tet10 or tet4: structured generators, boundary faces, Abaqus .inp and gmsh .msh I/O, VTK .vtu/.pvd."""
 
 import base64
 import itertools
@@ -44,7 +44,7 @@ class Mesh:
 
 def structured(n, mapping, etype="hex8"):
     """Grid on the unit cube in index space, X = mapping(s), s in [0,1]^3 (kept as Mesh.param);
-    tet10: 6 Kuhn tets per cell, midside nodes mapped from index space (curved edges follow the mapping)."""
+    tet10 / tet4: 6 Kuhn tets per cell, midside nodes mapped from index space (curved edges follow the mapping)."""
     n = np.asarray(n)
     if etype == "hex8":
         ijk = np.stack(np.meshgrid(*[np.arange(n[a] + 1) for a in range(3)], indexing="ij"), -1).reshape(-1, 3)
@@ -62,14 +62,15 @@ def structured(n, mapping, etype="hex8"):
             paths.append(v)
         corners = (cells[:, None] + np.array(paths)[None]).reshape(-1, 4, 3)
         mids = np.stack([(corners[:, i] + corners[:, j]) // 2 for i, j in [(0, 1), (1, 2), (2, 0), (0, 3), (1, 3), (2, 3)]], 1)
-        grid, inv = np.unique(np.concatenate([corners, mids], 1).reshape(-1, 3), axis=0, return_inverse=True)
-        conn = inv.reshape(-1, 10)
+        nodes_e = np.concatenate([corners, mids], 1) if etype == "tet10" else corners
+        grid, inv = np.unique(nodes_e.reshape(-1, 3), axis=0, return_inverse=True)
+        conn = inv.reshape(len(nodes_e), -1)
         top = 2 * n
     X = mapping(grid / top.astype(float))
-    if etype == "tet10":
+    if etype != "hex8":
         x = X[conn[:, :4]]
         neg = np.linalg.det(np.stack([x[:, 1] - x[:, 0], x[:, 2] - x[:, 0], x[:, 3] - x[:, 0]], 1)) < 0
-        conn[neg] = conn[neg][:, TET10_SWAP]
+        conn[neg] = conn[neg][:, TET10_SWAP[:conn.shape[1]]]
 
     nodes = {(a, s): np.flatnonzero(grid[:, a] == (0 if s < 0 else top[a])) for a in range(3) for s in (-1, 1)}
     el = ELEMENT_TYPES[etype]
@@ -114,7 +115,7 @@ def _ids(tokens):
 
 
 def read_inp(path):
-    """Abaqus .inp (single part, C3D8* or C3D10*) -> Mesh with *Nset, *Elset and element-based *Surface by name;
+    """Abaqus .inp (single part, C3D8*, C3D10* or C3D4*) -> Mesh with *Nset, *Elset and element-based *Surface by name;
     nodes in assembly coordinates (*Instance translation, then rotation about the axis a -> b by the angle in degrees)."""
     node_id, X, elem_id, conn, instance = [], [], [], [], []
     nsets, elsets, surfaces = {}, {}, {}
@@ -132,7 +133,7 @@ def read_inp(path):
                 etype = str(opts.get("type", "")).upper()
                 el = next((e for e in ELEMENT_TYPES.values() if etype in e.abaqus), None)
                 if el is None or (nen is not None and el.n_nodes != nen):
-                    raise ValueError(f"element type {etype} not supported (one of C3D8*, C3D10*)")
+                    raise ValueError(f"element type {etype} not supported (one of C3D8*, C3D10*, C3D4*)")
                 nen = el.n_nodes
             if block == "surface":
                 surfaces[opts["name"]] = []
@@ -659,7 +660,7 @@ def _data_array(name, v, vtk_type="Float64"):
 
 
 def write_vtu(path, X, conn, point_data=None, cell_data=None):
-    """VTK XML unstructured grid (hex8: VTK_HEXAHEDRON, tet10: VTK_QUADRATIC_TETRA, same node order)"""
+    """VTK XML unstructured grid (hex8: VTK_HEXAHEDRON, tet10: VTK_QUADRATIC_TETRA, tet4: VTK_TETRA, same node order)"""
     el = element_for(conn.shape[1])
     n, e = len(X), len(conn)
     out = ['<?xml version="1.0"?>',

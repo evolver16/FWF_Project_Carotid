@@ -6,6 +6,8 @@ material  exact_solution      HCMM / FCMM vs the exact constrained mixture solut
           parameter_sweep     HCMM-FCMM gap over prestretch, gain and step size
           case_comparison     one model / case, HCMM vs FCMM over time (plot)
           fe_readiness        batching, objectivity, tangent and gradients of the models for the FE code
+          maes_abaqus         Fig. 2 from Maes' Abaqus UMATs, the same UMATs in fem.System and our HCMM / FCMM
+          maes_timing         run time per Maes case: Abaqus, UMAT in fem.System, our models in fem.System / point
 fe_gr     fe_vs_material_point  HCMM patch test, single (hybrid) elements vs the material point, hybrid adjoint
           element_formulations  artery G&R with standard / F-bar / hybrid / tet10, tet10 adjoint, inclined supports
           solution_verification  mesh and time step convergence of the artery G&R (GCI)
@@ -31,7 +33,7 @@ from studies.weiss import tortuosity as weiss
 
 STUDIES = {f.__name__: f for f in (
     material.exact_solution, material.maes_benchmark, material.parameter_sweep, material.case_comparison,
-    material.fe_readiness,
+    material.fe_readiness, material.maes_abaqus, material.maes_timing,
     fe_gr.fe_vs_material_point, fe_gr.element_formulations, fe_gr.solution_verification,
     artery.artery_gr, artery.artery_gradients, artery.pressure_step, artery.flow_step, artery.pressure_buckling,
     vessel.stenotic_vessel, vessel.stenosis_wss, vessel.bending_redistribution, vessel.setpoint_patch,

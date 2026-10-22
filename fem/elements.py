@@ -25,6 +25,8 @@ class Face:
             t = 1 + QUAD_CORNERS * eta
             return t[:, 0] * t[:, 1] / 4
         L = np.array([1 - eta[0] - eta[1], eta[0], eta[1]])
+        if self.name == "tri3":
+            return L
         return np.concatenate([L * (2 * L - 1), 4 * L * np.roll(L, -1)])
 
     def dN(self, eta):
@@ -35,6 +37,8 @@ class Face:
             return np.stack([QUAD_CORNERS[:, 0] * t[:, 1], t[:, 0] * QUAD_CORNERS[:, 1]], axis=1) / 4
         L = np.array([1 - eta[0] - eta[1], eta[0], eta[1]])
         dL = np.array([[-1.0, -1.0], [1.0, 0.0], [0.0, 1.0]])
+        if self.name == "tri3":
+            return dL
         corner = (4 * L - 1)[:, None] * dL
         Ln, dLn = np.roll(L, -1), np.roll(dL, -1, axis=0)
         mid = 4 * (dL * Ln[:, None] + L[:, None] * dLn)
@@ -58,6 +62,8 @@ class Element:
         if self.name == "hex8":
             return np.prod(1 + HEX_CORNERS * xi, axis=1) / 8
         L = np.array([1 - xi.sum(), *xi])
+        if self.name == "tet4":
+            return L
         return np.concatenate([L * (2 * L - 1), [4 * L[i] * L[j] for i, j in TET10_EDGES]])
 
     def dN(self, xi):
@@ -69,6 +75,8 @@ class Element:
                              t[:, 0] * t[:, 1] * c[:, 2]], axis=1) / 8
         L = np.array([1 - xi.sum(), *xi])
         dL = np.vstack([-np.ones(3), np.eye(3)])
+        if self.name == "tet4":
+            return dL
         corner = (4 * L - 1)[:, None] * dL
         mid = np.array([4 * (dL[i] * L[j] + L[i] * dL[j]) for i, j in TET10_EDGES])
         return np.concatenate([corner, mid])
@@ -79,6 +87,7 @@ _a, _b = 0.445948490915965, 0.091576213509771
 TRI6 = Face("tri6", 6, 3,
             np.array([[_a, _a], [1 - 2 * _a, _a], [_a, 1 - 2 * _a], [_b, _b], [1 - 2 * _b, _b], [_b, 1 - 2 * _b]]),
             np.array([0.223381589678011] * 3 + [0.109951743655322] * 3) / 2, (0, 2, 1, 5, 4, 3))
+TRI3 = Face("tri3", 3, 3, np.array([[1 / 3, 1 / 3]]), np.array([0.5]), (0, 2, 1))
 
 _ta, _tb = 0.5854101966249685, 0.1381966011250105
 HEX8 = Element("hex8", 8, HEX_CORNERS / np.sqrt(3.0), np.ones(8), np.zeros(3),
@@ -89,12 +98,14 @@ TET10 = Element("tet10", 10,
                 np.full(4, 1 / 24), np.full(3, 0.25),
                 {1: [0, 1, 2, 4, 5, 6], 2: [0, 3, 1, 7, 8, 4], 3: [1, 3, 2, 8, 9, 5], 4: [2, 3, 0, 9, 7, 6]},
                 TRI6, 24, ("C3D10", "C3D10H", "C3D10M", "C3D10MH"))
-ELEMENT_TYPES = {"hex8": HEX8, "tet10": TET10}
+TET4 = Element("tet4", 4, np.array([[0.25, 0.25, 0.25]]), np.array([1 / 6]), np.full(3, 0.25),
+               {1: [0, 1, 2], 2: [0, 3, 1], 3: [1, 3, 2], 4: [2, 3, 0]}, TRI3, 10, ("C3D4", "C3D4H"))
+ELEMENT_TYPES = {"hex8": HEX8, "tet10": TET10, "tet4": TET4}
 
 
 def element_for(n_nodes):
-    return {8: HEX8, 10: TET10}[n_nodes]
+    return {8: HEX8, 10: TET10, 4: TET4}[n_nodes]
 
 
 def face_for(n_nodes):
-    return {4: QUAD4, 6: TRI6}[n_nodes]
+    return {4: QUAD4, 6: TRI6, 3: TRI3}[n_nodes]

@@ -25,7 +25,8 @@ OUT = pathlib.Path(__file__).parent / "results"
 
 def meshes():
     return {"hex8": meshlib.box((2, 2, 2), (L, L, L), perturb=0.2),
-            "tet10": meshlib.box((2, 2, 2), (L, L, L), etype="tet10")}
+            "tet10": meshlib.box((2, 2, 2), (L, L, L), etype="tet10"),
+            "tet4": meshlib.box((2, 2, 2), (L, L, L), etype="tet4")}
 
 
 def bc_faces(m, F, faces):
@@ -94,7 +95,7 @@ def main(tol=1e-8):
     for name, material, F, sigma_exact, bc, elements in cases():
         for etype, m in meshes().items():
             for element in elements:
-                if element == "hybrid_p1" and etype == "hex8":
+                if (element == "hybrid_p1" and etype != "tet10") or (element == "hybrid" and etype == "tet4"):
                     continue
                 eu, es, it = check(m, material, F, sigma_exact, bc(m), element)
                 passed = eu < tol and es < tol

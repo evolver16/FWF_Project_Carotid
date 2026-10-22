@@ -12,8 +12,8 @@ dependencies = ["jax", "numpy", "scipy"]
 pardiso = ["pypardiso"]
 
 [project.scripts]
-fem-abaqus = "fem.abaqus:main"
-fem-vs-abaqus = "fem.vs_abaqus:main"
+fem-abaqus = "fem.abaqus_interface.inp:main"
+fem-vs-abaqus = "fem.abaqus_interface.vs_abaqus:main"
 
 [tool.setuptools]
-packages = ["fem", "materials", "verification"]
+packages = ["fem", "fem.abaqus_interface", "materials", "verification"]

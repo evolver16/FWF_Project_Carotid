@@ -1,4 +1,4 @@
-"""Abaqus UMAT interface (fem.umat) with the compressible neo-Hooke UMAT of verification/umat/neohooke.for against the
+"""Abaqus UMAT interface (fem.abaqus_interface.umat) with the compressible neo-Hooke UMAT of verification/umat/neohooke.for against the
 Python material (materials.NeoHookean, same W = C10 (I1bar - 3) + K/2 (J - 1)^2):
 
 1) material point   Cauchy stress, random F
@@ -24,7 +24,7 @@ import fem
 import materials
 from fem import mesh as meshlib
 from fem.tensor3 import det3
-from fem.umat import Uhyper, Umat
+from fem.abaqus_interface.umat import Uhyper, Umat
 
 C10, K, L = 0.305, 6.1, 1.0
 OUT = pathlib.Path(__file__).parent / "results"

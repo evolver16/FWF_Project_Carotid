@@ -1,5 +1,7 @@
-"""Abaqus UMAT and UHYPER (Fortran) as models of fem.System: compiled with gfortran into a shared library, called per
-batch of integration points through a bind(C) driver (ctypes) inside jax.pure_callback.
+"""Abaqus UMAT and UHYPER (Fortran) as models of fem.System: compiled with gfortran into a shared library with a bind(C)
+driver per batch of integration points and an XLA FFI handler (C++, g++), called as a custom call inside the compiled
+JAX program (no Python per call); kinematics (DROT, log strains, Voigt) in jax.numpy. Calls are serialized (legacy
+UMATs keep SAVE / COMMON state); the user code works on copies of the inputs.
 
 UMAT:
 
@@ -13,8 +15,8 @@ consistent Cauchy stress rate for fem.System's forward-mode tangent:
 STRESS and STRAN on entry are rotated by DROT (rotation of the polar decomposition of DFGRD1 DFGRD0^-1); STRAN, DSTRAN
 are logarithmic strains. Supported: PROPS, STATEV, PREDEF / DPRED per point, CMNAME, COORDS, NOEL, NPT, CELENT,
 KSTEP (also as JSTEP(4) = step, static, NLGEOM, no perturbation), KINC, TIME, DTIME, SDVINI, XIT (raises).
-Not supported: other Abaqus utility routines (SINV, SPRINC, ROTSIG, ...; the build fails with an undefined symbol), *ORIENTATION (stresses in global axes), temperature, PNEWDT < 1 (reported
-in Umat.last_pnewdt, no cutback), adjoints with respect to the state. Points with a non-finite F or det F <= 0 (trial
+Not supported: other Abaqus utility routines (SINV, SPRINC, ROTSIG, ...; the build fails with an undefined symbol),
+*ORIENTATION (stresses in global axes), temperature, PNEWDT < 1 (ignored), adjoints with respect to the state. Points with a non-finite F or det F <= 0 (trial
 iterates of a diverging Newton step) return NaN without calling the UMAT, so the solver's cutbacks take over.
 
 UHYPER (*Hyperelastic, user): see Uhyper.
@@ -139,6 +141,104 @@ subroutine sdvini_batch(n, nstatv, statev, coords, noel, npt) bind(C, name='sdvi
 end subroutine
 """
 
+FFI_HEAD = r"""
+#include <algorithm>
+#include <mutex>
+#include <string>
+#include <vector>
+#include "xla/ffi/api/ffi.h"
+namespace ffi = xla::ffi;
+using F64 = ffi::Buffer<ffi::F64>;
+using S32 = ffi::Buffer<ffi::S32>;
+using Out = ffi::ResultBuffer<ffi::F64>;
+static std::mutex mu;
+
+template <typename B> static auto copy(const B& b, size_t n) {
+  std::vector<std::remove_pointer_t<decltype(b.typed_data())>> v(b.typed_data(), b.typed_data() + b.element_count());
+  v.resize(std::max(v.size(), n));
+  return v;
+}
+
+static std::string name80(std::string_view s) {
+  std::string c(s.substr(0, 80));
+  c.resize(80, ' ');
+  return c;
+}
+"""
+
+UMAT_FFI = FFI_HEAD + r"""
+extern "C" void umat_batch(int*, int*, int*, int*, double*, double*, double*, double*, double*, double*, double*,
+                           double*, double*, double*, double*, double*, double*, double*, double*, double*, double*,
+                           int*, int*, int*, int*, char*, int*);
+
+static ffi::Error umat_impl(F64 stress0, F64 statev0, F64 stran, F64 dstran, F64 time, F64 dtime, F64 predef,
+                            F64 dpred, F64 props, F64 coords, F64 drot, F64 celent, F64 dfgrd0, F64 dfgrd1, S32 noel,
+                            S32 npt, S32 kstep, S32 kinc, Out stress, Out statev, Out ddsdde,
+                            std::string_view cmname) {
+  int n = dtime.element_count();
+  if (n == 0) return ffi::Error::Success();
+  int nstatv = statev0.element_count() / n, nprops = props.element_count() / n, npred = predef.element_count() / n;
+  int ierr = 0;
+  auto s = copy(stress0, n), sv = copy(statev0, n), e = copy(stran, n), de = copy(dstran, n), t = copy(time, n);
+  auto dt = copy(dtime, n), p = copy(predef, n), dp = copy(dpred, n), pr = copy(props, n), x = copy(coords, n);
+  auto r = copy(drot, n), c = copy(celent, n), f0 = copy(dfgrd0, n), f1 = copy(dfgrd1, n);
+  auto el = copy(noel, n), ip = copy(npt, n), ks = copy(kstep, n), ki = copy(kinc, n);
+  std::vector<double> sse(n), pnewdt(n, 1.0);
+  std::string name = name80(cmname);
+  std::fill_n(ddsdde->typed_data(), ddsdde->element_count(), 0.0);
+  {
+    std::lock_guard<std::mutex> lock(mu);
+    umat_batch(&n, &nstatv, &nprops, &npred, s.data(), sv.data(), ddsdde->typed_data(), sse.data(), e.data(),
+               de.data(), t.data(), dt.data(), p.data(), dp.data(), pr.data(), x.data(), r.data(), pnewdt.data(),
+               c.data(), f0.data(), f1.data(), el.data(), ip.data(), ks.data(), ki.data(), name.data(), &ierr);
+  }
+  if (ierr) return ffi::Error::Internal("UMAT called XIT at point " + std::to_string(ierr) + " of the batch");
+  std::copy_n(s.data(), stress->element_count(), stress->typed_data());
+  std::copy_n(sv.data(), statev->element_count(), statev->typed_data());
+  return ffi::Error::Success();
+}
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(umat_ffi, umat_impl, ffi::Ffi::Bind()
+    .Arg<F64>().Arg<F64>().Arg<F64>().Arg<F64>().Arg<F64>().Arg<F64>().Arg<F64>().Arg<F64>().Arg<F64>().Arg<F64>()
+    .Arg<F64>().Arg<F64>().Arg<F64>().Arg<F64>().Arg<S32>().Arg<S32>().Arg<S32>().Arg<S32>()
+    .Ret<F64>().Ret<F64>().Ret<F64>().Attr<std::string_view>("cmname"));
+"""
+
+UHYPER_FFI = FFI_HEAD + r"""
+extern "C" void uhyper_batch(int*, int*, int*, int*, double*, double*, double*, double*, double*, double*, double*,
+                             double*, double*, double*, double*, int*, char*, int*);
+
+static ffi::Error uhyper_impl(F64 inv, F64 props, F64 statev, F64 fieldv, S32 noel, Out u, Out ui1, Out ui2,
+                              std::string_view cmname) {
+  int n = noel.element_count();
+  if (n == 0) return ffi::Error::Success();
+  int nprops = props.element_count() / n, nstatv = statev.element_count() / n, nfield = fieldv.element_count() / n;
+  int ierr = 0;
+  std::vector<double> bi1(n), bi2(n), aj(n), ui3(6 * size_t(n)), dfield(std::max(nfield, 1) * size_t(n));
+  for (int i = 0; i < n; ++i) {
+    bi1[i] = inv.typed_data()[3 * i];
+    bi2[i] = inv.typed_data()[3 * i + 1];
+    aj[i] = inv.typed_data()[3 * i + 2];
+  }
+  auto pr = copy(props, n), sv = copy(statev, n), fv = copy(fieldv, n);
+  auto el = copy(noel, n);
+  std::string name = name80(cmname);
+  for (auto o : {&u, &ui1, &ui2}) std::fill_n((*o)->typed_data(), (*o)->element_count(), 0.0);
+  {
+    std::lock_guard<std::mutex> lock(mu);
+    uhyper_batch(&n, &nprops, &nstatv, &nfield, bi1.data(), bi2.data(), aj.data(), u->typed_data(),
+                 ui1->typed_data(), ui2->typed_data(), ui3.data(), pr.data(), sv.data(), fv.data(), dfield.data(),
+                 el.data(), name.data(), &ierr);
+  }
+  if (ierr) return ffi::Error::Internal("UHYPER called XIT at point " + std::to_string(ierr) + " of the batch");
+  return ffi::Error::Success();
+}
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(uhyper_ffi, uhyper_impl, ffi::Ffi::Bind()
+    .Arg<F64>().Arg<F64>().Arg<F64>().Arg<F64>().Arg<S32>().Ret<F64>().Ret<F64>().Ret<F64>()
+    .Attr<std::string_view>("cmname"));
+"""
+
 
 def build(sources, kind="umat", free_form=None, sdvini=False, flags=("-std=legacy",)):
     """Shared library of the user sources + driver of kind "umat" or "uhyper", cached by content (sources, every file
@@ -152,7 +252,8 @@ def build(sources, kind="umat", free_form=None, sdvini=False, flags=("-std=legac
         free_form = any("!dec$ freeform" in s.read_text(errors="ignore").lower() for s in sources)
     form = ["-ffree-form", "-ffree-line-length-none"] if free_form else ["-ffixed-form", "-ffixed-line-length-132"]
     driver = XIT + {"umat": UMAT_DRIVER, "uhyper": UHYPER_DRIVER}[kind] + (SDVINI_DRIVER if sdvini else "")
-    h = hashlib.sha256(repr((form, list(flags), driver, ABA_PARAM,
+    handler = {"umat": UMAT_FFI, "uhyper": UHYPER_FFI}[kind]
+    h = hashlib.sha256(repr((form, list(flags), driver, handler, jax.__version__, ABA_PARAM,
                              [str(s) for s in sources])).encode())
     for d in dirs:
         for f in sorted(d.iterdir()):
@@ -173,9 +274,12 @@ def build(sources, kind="umat", free_form=None, sdvini=False, flags=("-std=legac
             objs.append(tmp / f"user{i}.o")
             run(["gfortran", "-c", "-O2", "-fPIC", *form, *inc, *flags,
                  str(s), "-o", str(objs[-1])], cwd=tmp)
+        (tmp / "handler.cc").write_text(handler)
         run(["gfortran", "-c", "-O2", "-fPIC", str(tmp / "driver.f90"), "-o", str(tmp / "driver.o")], cwd=tmp)
-        run(["gfortran", "-shared", "-Wl,--no-undefined", *map(str, objs), str(tmp / "driver.o"), "-o", str(lib)],
-            cwd=tmp)
+        run(["g++", "-c", "-O2", "-fPIC", "-std=c++17", f"-I{jax.ffi.include_dir()}", str(tmp / "handler.cc"), "-o",
+             str(tmp / "handler.o")], cwd=tmp)
+        run(["gfortran", "-shared", "-Wl,--no-undefined", *map(str, objs), str(tmp / "driver.o"),
+             str(tmp / "handler.o"), "-lstdc++", "-o", str(lib)], cwd=tmp)
     return lib
 
 
@@ -196,19 +300,33 @@ class UmatState:
 
 def log_strain(F):
     """Logarithmic strain 1/2 ln(F F^T), (..., 3, 3)"""
-    lam, n = np.linalg.eigh(F @ np.swapaxes(F, -1, -2))
-    return np.einsum("...ik,...k,...jk->...ij", n, 0.5 * np.log(lam), n)
+    lam, n = jnp.linalg.eigh(F @ T(F))
+    return n * (0.5 * jnp.log(lam))[..., None, :] @ T(n)
 
 
-def to_voigt(T, shear=1.0):
-    return np.stack([T[..., i, j] * (shear if i != j else 1.0) for i, j in VOIGT], -1)
+def T(A):
+    return jnp.swapaxes(A, -1, -2)
+
+
+def to_voigt(A, shear=1.0):
+    return jnp.stack([A[..., i, j] * (shear if i != j else 1.0) for i, j in VOIGT], -1)
 
 
 def from_voigt(v):
-    T = np.zeros(v.shape[:-1] + (3, 3))
-    for k, (i, j) in enumerate(VOIGT):
-        T[..., i, j] = T[..., j, i] = v[..., k]
-    return T
+    """(..., 6) -> symmetric (..., 3, 3); also the UI2 order of UHYPER -> Hessian"""
+    return v[..., jnp.array([[0, 3, 4], [3, 1, 5], [4, 5, 2]])]
+
+
+def nan_where(ok, *arrays):
+    return tuple(jnp.where(ok.reshape(ok.shape + (1,) * (a.ndim - ok.ndim)), a, jnp.nan) for a in arrays)
+
+
+def register(lib, kind):
+    """XLA FFI target of a built library, named after its cache key"""
+    name = f"{kind}_{lib.parent.name}"
+    jax.ffi.register_ffi_target(name, jax.ffi.pycapsule(getattr(ctypes.CDLL(str(lib)), f"{kind}_ffi")),
+                                platform="cpu")
+    return name
 
 
 class Umat:
@@ -217,10 +335,9 @@ class Umat:
     sdvini: initial state variables from the user's SUBROUTINE SDVINI"""
 
     def __init__(self, sources, nstatv=0, cmname="", npred=1, sdvini=False, free_form=None, flags=("-std=legacy",)):
-        self.lib = ctypes.CDLL(str(build(sources, "umat", free_form, sdvini, flags)))
-        self.nstatv, self.npred, self.sdvini = nstatv, npred, sdvini
-        self.cmname = cmname.encode().ljust(80)[:80]
-        self.last_pnewdt = 1.0
+        lib = build(sources, "umat", free_form, sdvini, flags)
+        self.lib, self.target = ctypes.CDLL(str(lib)), register(lib, "umat")
+        self.nstatv, self.npred, self.sdvini, self.cmname = nstatv, npred, sdvini, cmname
         self._call = jax.custom_jvp(self._primal)
         self._call.defjvp(self._jvp)
 
@@ -254,52 +371,23 @@ class Umat:
             noel=jnp.asarray(noel), npt=jnp.asarray(npt), celent=jnp.asarray(np.cbrt(wdet.sum(1))[:, None]
                                                                               * np.ones((1, n_gp))))
 
-    def _host(self, F1, stress, statev, F0, props, predef, dpred, coords, time, dtime, kstep, kinc, noel, npt,
-              celent):
-        """UMAT at a batch of points (any leading shape) -> (Cauchy (3,3), STRESS, STATEV, DDSDDE (6,6), PNEWDT)"""
-        shape = F1.shape[:-2]
-        n = int(np.prod(shape))
-        f = lambda a, k=None, dt=np.float64: np.ascontiguousarray(np.asarray(a, dtype=dt).reshape((n,) + (
-            () if k is None else (k,))))
-        F0, F1 = np.asarray(F0).reshape(n, 3, 3).copy(), np.asarray(F1).reshape(n, 3, 3).copy()
-        with np.errstate(invalid="ignore"):
-            bad = ~(np.isfinite(F1).all((1, 2)) & (np.linalg.det(F1) > 0) & (np.linalg.det(F0) > 0))
-        F0[bad], F1[bad] = np.eye(3), np.eye(3)
-        dF = F1 @ np.linalg.inv(F0)
-        lam, v = np.linalg.eigh(np.swapaxes(dF, -1, -2) @ dF)
-        R = dF @ np.einsum("...ik,...k,...jk->...ij", v, lam ** -0.5, v)
-        rot = lambda T: R @ T @ np.swapaxes(R, -1, -2)
-        eps0 = rot(log_strain(F0))
-        sig0 = rot(from_voigt(f(stress, 6)))
-        stress_, statev_ = np.ascontiguousarray(to_voigt(sig0)), f(statev, self.nstatv).copy()
-        stran = np.ascontiguousarray(to_voigt(eps0, 2.0))
-        dstran = np.ascontiguousarray(to_voigt(log_strain(F1) - eps0, 2.0))
-        fortran33 = lambda A: np.ascontiguousarray(np.swapaxes(A, -1, -2))
-        ddsdde, sse, pnewdt = np.zeros((n, 6, 6)), np.zeros(n), np.ones(n)
-        ierr = ctypes.c_int(0)
-        args = [stress_, statev_, ddsdde, sse, stran, dstran, f(time, 2), f(dtime), f(predef, self.npred),
-                f(dpred, self.npred), f(props, props.shape[-1]), f(coords, 3), fortran33(R), pnewdt, f(celent),
-                fortran33(F0), fortran33(F1), f(noel, dt=np.int32), f(npt, dt=np.int32), f(kstep, dt=np.int32),
-                f(kinc, dt=np.int32)]
-        ints = [ctypes.c_int(v) for v in (n, self.nstatv, props.shape[-1], self.npred)]
-        self.lib.umat_batch(*[ctypes.byref(i) for i in ints], *[a.ctypes.data_as(ctypes.c_void_p) for a in args],
-                            ctypes.c_char_p(self.cmname), ctypes.byref(ierr))
-        if ierr.value:
-            raise RuntimeError(f"UMAT called XIT at point {ierr.value} of the batch")
-        self.last_pnewdt = min(self.last_pnewdt, float(pnewdt.min()))
-        C = np.swapaxes(ddsdde, -1, -2)
-        out = (from_voigt(stress_), stress_, statev_, C)
-        for a in out:
-            a[bad] = np.nan
-        return tuple(a.reshape(shape + a.shape[1:]) for a in out)
-
     def _primal(self, F, s):
-        out = (jax.ShapeDtypeStruct(F.shape, F.dtype), jax.ShapeDtypeStruct(F.shape[:-2] + (6,), F.dtype),
+        """UMAT at the end of the increment -> (Cauchy (3,3), STRESS, STATEV, DDSDDE (6,6)); bad points NaN"""
+        ok = jnp.isfinite(F).all((-2, -1)) & (jnp.linalg.det(F) > 0) & (jnp.linalg.det(s.F) > 0)
+        F1, F0 = jnp.where(ok[..., None, None], F, jnp.eye(3)), jnp.where(ok[..., None, None], s.F, jnp.eye(3))
+        dF = F1 @ jnp.linalg.inv(F0)
+        lam, v = jnp.linalg.eigh(T(dF) @ dF)
+        R = dF @ (v * lam[..., None, :] ** -0.5) @ T(v)
+        eps0 = R @ log_strain(F0) @ T(R)
+        out = (jax.ShapeDtypeStruct(F.shape[:-2] + (6,), F.dtype),
                jax.ShapeDtypeStruct(F.shape[:-2] + (self.nstatv,), F.dtype),
                jax.ShapeDtypeStruct(F.shape[:-2] + (6, 6), F.dtype))
-        return jax.pure_callback(self._host, out, F, s.stress, s.statev, s.F, s.props, s.predef, s.dpred, s.coords,
-                                 s.time, s.dtime, s.kstep, s.kinc, s.noel, s.npt, s.celent,
-                                 vmap_method="broadcast_all")
+        i32 = lambda a: a.astype(jnp.int32)
+        stress, statev, ddsdde = jax.ffi.ffi_call(self.target, out, vmap_method="broadcast_all")(
+            to_voigt(R @ from_voigt(s.stress) @ T(R)), s.statev, to_voigt(eps0, 2.0),
+            to_voigt(log_strain(F1) - eps0, 2.0), s.time, s.dtime, s.predef, s.dpred, s.props, s.coords, T(R),
+            s.celent, T(F0), T(F1), i32(s.noel), i32(s.npt), i32(s.kstep), i32(s.kinc), cmname=self.cmname)
+        return nan_where(ok, from_voigt(stress), stress, statev, T(ddsdde))
 
     def _jvp(self, primals, tangents):
         F, s = primals
@@ -308,10 +396,7 @@ class Umat:
         sig, C = out[0], out[3]
         L = dF @ inv3(F)
         D, W = 0.5 * (L + L.T), 0.5 * (L - L.T)
-        Dv = jnp.array([D[i, j] * (1.0 if i == j else 2.0) for i, j in VOIGT])
-        dv = C @ Dv
-        dsig = jnp.array([[dv[0], dv[3], dv[4]], [dv[3], dv[1], dv[5]], [dv[4], dv[5], dv[2]]])
-        dsig = dsig + W @ sig - sig @ W - sig * jnp.trace(D)
+        dsig = from_voigt(C @ to_voigt(D, 2.0)) + W @ sig - sig @ W - sig * jnp.trace(D)
         return out, (dsig, jnp.zeros_like(out[1]), jnp.zeros_like(out[2]), jnp.zeros_like(out[3]))
 
     def sigma_solver(self, state, F):
@@ -342,9 +427,8 @@ class Uhyper:
     J <= 0 or a non-finite F gives NaN (solver cutback)."""
 
     def __init__(self, sources, nstatv=0, nfield=0, cmname="", free_form=None, flags=("-std=legacy",)):
-        self.lib = ctypes.CDLL(str(build(sources, "uhyper", free_form, False, flags)))
-        self.nstatv, self.nfield = nstatv, nfield
-        self.cmname = cmname.encode().ljust(80)[:80]
+        self.target = register(build(sources, "uhyper", free_form, False, flags), "uhyper")
+        self.nstatv, self.nfield, self.cmname = nstatv, nfield, cmname
         self._U = jax.custom_jvp(lambda inv, s: self._call(inv, s)[0])
         self._U.defjvp(lambda p, t: (self._U(*p), self._dU(*p) @ t[0]))
         self._dU = jax.custom_jvp(lambda inv, s: self._call(inv, s)[1])
@@ -362,34 +446,15 @@ class Uhyper:
                            noel=jnp.asarray(np.broadcast_to(np.arange(1, n_el + 1, dtype=np.int32)[:, None],
                                                             (n_el, n_gp)).copy()))
 
-    def _host(self, inv, props, statev, fieldv, noel):
-        """UHYPER at a batch of invariants (..., 3) -> (U, dU (3), d2U (3, 3))"""
-        shape = inv.shape[:-1]
-        n = int(np.prod(shape))
-        f = lambda a, k=None, dt=np.float64: np.ascontiguousarray(np.asarray(a, dtype=dt).reshape((n,) + (
-            () if k is None else (k,))))
-        inv = f(inv, 3).copy()
-        bad = ~(np.isfinite(inv).all(1) & (inv[:, 2] > 0))
-        inv[bad] = [3.0, 3.0, 1.0]
-        bi1, bi2, aj = (np.ascontiguousarray(inv[:, i]) for i in range(3))
-        u, ui1, ui2, ui3 = np.zeros(n), np.zeros((n, 3)), np.zeros((n, 6)), np.zeros((n, 6))
-        args = [bi1, bi2, aj, u, ui1, ui2, ui3, f(props, props.shape[-1]), f(statev, self.nstatv).copy(),
-                f(fieldv, self.nfield), np.zeros((n, max(self.nfield, 1))), f(noel, dt=np.int32)]
-        ierr = ctypes.c_int(0)
-        ints = [ctypes.c_int(v) for v in (n, props.shape[-1], self.nstatv, self.nfield)]
-        self.lib.uhyper_batch(*[ctypes.byref(i) for i in ints], *[a.ctypes.data_as(ctypes.c_void_p) for a in args],
-                              ctypes.c_char_p(self.cmname), ctypes.byref(ierr))
-        if ierr.value:
-            raise RuntimeError(f"UHYPER called XIT at point {ierr.value} of the batch")
-        H = np.stack([ui2[:, [0, 3, 4]], ui2[:, [3, 1, 5]], ui2[:, [4, 5, 2]]], 1)
-        u[bad], ui1[bad], H[bad] = np.nan, np.nan, np.nan
-        return u.reshape(shape), ui1.reshape(shape + (3,)), H.reshape(shape + (3, 3))
-
     def _call(self, inv, s):
+        """UHYPER at invariants (..., 3) -> (U, dU (3), d2U (3, 3)); bad points NaN"""
+        ok = jnp.isfinite(inv).all(-1) & (inv[..., 2] > 0)
         out = (jax.ShapeDtypeStruct(inv.shape[:-1], inv.dtype), jax.ShapeDtypeStruct(inv.shape, inv.dtype),
-               jax.ShapeDtypeStruct(inv.shape + (3,), inv.dtype))
-        return jax.pure_callback(self._host, out, inv, s.props, s.statev, s.fieldv, s.noel,
-                                 vmap_method="broadcast_all")
+               jax.ShapeDtypeStruct(inv.shape[:-1] + (6,), inv.dtype))
+        u, ui1, ui2 = jax.ffi.ffi_call(self.target, out, vmap_method="broadcast_all")(
+            jnp.where(ok[..., None], inv, jnp.array([3.0, 3.0, 1.0])), s.props, s.statev, s.fieldv,
+            s.noel.astype(jnp.int32), cmname=self.cmname)
+        return nan_where(ok, u, ui1, from_voigt(ui2))
 
     def energy(self, state, F):
         J = jnp.linalg.det(F)

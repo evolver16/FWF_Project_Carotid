@@ -1,6 +1,6 @@
-"""Export an Abaqus .odb for comparison with fem.abaqus (runs in Abaqus' own Python 2.7, not in this project):
+"""Export an Abaqus .odb for comparison with abaqus_interface.inp (runs in Abaqus' own Python 2.7, not in this project):
 
-    abaqus python fem/odb_export.py job.odb [more.odb ...]
+    abaqus python fem/abaqus_interface/odb_export.py job.odb [more.odb ...]
 
 Writes next to each odb:
     <job>_odb.npz          per frame (all steps): time (total), step, frame; node labels, U, RF (n_frames, n_nodes, 3);

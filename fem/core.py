@@ -265,7 +265,8 @@ def pardiso_available():
 class LinearSolver:
     """K x = b or K^T x = b by GMRES preconditioned with the last LU of K; refactorized when that fails.
     backend "pardiso" (MKL, multithreaded) or "superlu" (scipy, serial); default pardiso when installed
-    target |Ax - b| <= 10 tol |b|; above accept |b| (e.g. pivoting failure): SuperLU, then error"""
+    target |Ax - b| <= 10 tol |b|; above accept |b| (e.g. pivoting failure): PARDISO without weighted matching (kept
+    from then on; matching can break hybrid saddle points, e.g. 34k unknowns: residual 1e42), SuperLU, then error"""
 
     def __init__(self, tol=1e-12, max_iter=20, refactor_after=5, ordering="MMD_AT_PLUS_A", backend=None,
                  accept=1e-6):
@@ -305,6 +306,12 @@ class LinearSolver:
         if ok(y):
             return y
         x = min((x, y), key=res)
+        if res(x) > self.accept and self.backend == "pardiso" and self._pardiso.p.iparm[12]:
+            self._pardiso.p.iparm[12] = 0
+            self._pardiso.release()
+            self.lu = self._factor(K)
+            self.factorizations += 1
+            x = min((x, self.lu.solve(b, trans=trans)), key=res)
         if res(x) > self.accept and self.backend != "superlu":
             self.lu = spla.splu(K.tocsc(), permc_spec=self.ordering)
             self.factorizations += 1
@@ -329,7 +336,7 @@ class Elastic:
 
 
 class System:
-    """Mesh of hex8 (2x2x2 Gauss) or tet10 (4-point); element formulation:
+    """Mesh of hex8 (2x2x2 Gauss), tet10 (4-point) or tet4 (1-point); element formulation:
     "standard", "fbar" (F^ = (J_0/J)^(1/3) F, J_0 at the element centre),
     "hybrid" (Q1/P0 or P2/P0: sigma - q I with one pressure q per element and J = J_target on average),
     "hybrid_p1" (tet10 only, P2/P1 Taylor-Hood: continuous linear q at the corner nodes, int L_a (J - J_target) = 0)
@@ -369,7 +376,8 @@ class System:
         self.J_target = getattr(model, "J_target", lambda s: jnp.ones(()))
         self.conn = jnp.asarray(mesh.conn)
         self.n_en, self.n_gp = mesh.conn.shape[1], wdet.shape[1]
-        faces = np.zeros((0, 4 if self.n_en == 8 else 6), dtype=int) if pressure_faces is None else pressure_faces
+        faces = (np.zeros((0, element_for(self.n_en).face.n_nodes), dtype=int) if pressure_faces is None
+                 else pressure_faces)
         self.faces = jnp.asarray(faces)
         self.X = jnp.asarray(mesh.X)
         self.length = float(np.ptp(mesh.X, axis=0).max())
@@ -399,6 +407,8 @@ class System:
         self.stress = jax.jit(self._stress)
         self._commit_jit = jax.jit(jax.checkpoint(self._commit))
         self.residual_vjp = jax.jit(self._residual_vjp)
+        self._residual_dir = jax.jit(lambda x, s, p, f, dx, dp, df: jax.jvp(
+            lambda x, p, f: self._residual(x, s, p, f), (x, p, f), (dx, dp, df))[1])
         self.linear = LinearSolver(ordering="COLAMD" if self.n_p else "MMD_AT_PLUS_A")
         self.last_u, self.last_iterations = None, 0
         self.last_p = np.zeros(self.n_p)
@@ -689,10 +699,26 @@ class System:
         return x, total
 
     def _newton(self, u0, states, bc, tol, max_iter):
+        """Newton from u0; a prescribed increment dx_p = project(x0) - x0 enters by the linear predictor
+        (as Abaqus): x = x0 + dx_p - Z (Z^T K0 Z)^-1 Z^T (r(x0) + K0 dx_p), K0 = K(x0)"""
         cons = self._constraints(bc)
-        x = cons.project(np.concatenate([np.array(u0, dtype=float), self.last_p]))
+        x0 = np.concatenate([np.array(u0, dtype=float), self.last_p])
+        x = cons.project(x0)
         f_dead = self._f_dead(bc)
-        scale = None
+        scale, predicted = None, False
+        dx_p = x - x0
+        if np.abs(dx_p[:self.n_dof]).max() > 1e-13 * self.length:
+            r0 = np.asarray(self.residual(jnp.asarray(x0), states, bc.p, f_dead) + self._residual_dir(
+                jnp.asarray(x0), states, bc.p, f_dead, jnp.asarray(dx_p), jnp.zeros_like(jnp.asarray(bc.p, dtype=float)),
+                jnp.zeros(self.n_dof)))
+            if np.isfinite(r0).all():
+                K0 = self._K_red(x0, states, bc.p, cons)
+                dy = self.linear(K0, cons.restrict(r0))
+                s_u = max(np.abs(r0[:self.n_dof]).max(), np.abs(np.asarray(f_dead)).max(), 1e-12)
+                w = cons.restrict_scale(np.concatenate([np.ones(self.n_dof), np.zeros(self.n_p)])) > 0.5
+                scale = cons.restrict_scale(np.concatenate([np.full(self.n_dof, s_u), self._p_scale]))
+                scale = np.where(w, np.maximum(scale, np.abs(K0.diagonal() * dy)[w].max()), scale)
+                x, predicted = x - cons.prolong(dy), True
         for it in range(1, max_iter + 1):
             r = np.asarray(self.residual(jnp.asarray(x), states, bc.p, f_dead))
             if not np.isfinite(r).all():
@@ -709,7 +735,7 @@ class System:
                 raise RuntimeError(f"FE Newton diverged, |r| = {err:.1e}")
             K = self._K_red(x, states, bc.p, cons)
             dy = self.linear(K, r_red)
-            if it == 1:
+            if it == 1 and not predicted:
                 w = cons.restrict_scale(np.concatenate([np.ones(self.n_dof), np.zeros(self.n_p)])) > 0.5
                 scale = np.where(w, np.maximum(scale, np.abs(K.diagonal() * dy)[w].max()), scale)
             dx = cons.prolong(dy)
@@ -719,7 +745,7 @@ class System:
         else:
             raise RuntimeError(f"FE Newton did not converge, |r| = {err:.2e}")
         self.last_p = x[self.n_dof:].copy()
-        return x, it
+        return x, it + predicted
 
     def _ptc(self, u0, states, bc, tol, max_iter=500, eta0=1.0):
         """Pseudo-transient continuation (damped relaxation, e.g. through a snap where Newton from u0 fails):
@@ -776,9 +802,6 @@ class System:
         cons, cons1 = self._constraints(bc0), self._constraints(bc1)
         f0, f1 = np.asarray(blend(0.0).f_dead), np.asarray(blend(1.0).f_dead)
         d_xp, d_p, d_f = cons1.x_p - cons.x_p, np.asarray(bc1.p, dtype=float) - np.asarray(bc0.p, dtype=float), f1 - f0
-        if not hasattr(self, "_residual_dir"):
-            self._residual_dir = jax.jit(lambda x, s, p, f, dx, dp, df: jax.jvp(
-                lambda x, p, f: self._residual(x, s, p, f), (x, p, f), (dx, dp, df))[1])
         x, _ = self._newton(np.zeros(self.n_dof) if u0 is None else u0, states, bc0, tol, 30)
         y, lam = cons.restrict(x - cons.x_p), 0.0
         w = cons.restrict_scale(np.concatenate([np.ones(self.n_dof), np.zeros(self.n_p)])) > 0.5

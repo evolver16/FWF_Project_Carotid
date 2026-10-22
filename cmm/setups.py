@@ -105,6 +105,7 @@ MODELS = {
     "E": dict(matrix=MATRIX_DE, inc=False, matrix_remodels=False, k_matrix=0.0, fibers=True, k_fiber=0.1, ag=AG_X),
 }
 TARGETS = {"U": 1.5, "S": 0.120, "F": 300.0}
+G_ZZ = 1.2
 
 
 def matrix_material(C10, K=None):
@@ -116,13 +117,15 @@ def bc_for(model, case):
     return material_point.BC(case, TARGETS[case], hybrid=MODELS[model]["inc"])
 
 
-def prestress_G(mat, rho_e, fibers, inc, target=0.100):
-    """G^elas with sigma_yy = target, sigma_xx = 0 at F = I   (sec. 2.5)
+def prestress_G(mat, rho_e, fibers, inc, target=0.100, g_zz=G_ZZ):
+    """G^elas with sigma_yy = target, sigma_xx = 0 at F = I   (sec. 2.5, Eq. 45); G_zz = g^elas_zz (Table 2) in the
+    confined direction, which the prestressing algorithm keeps (F_zz = 1)
 
-    inc: G = diag(g^-1/2, g, g^-1/2), sigma - p I with p = sigma_xx.
+    inc: G = diag(g_zz, g, 1/(g_zz g)) (det G = 1), sigma - p I with p = sigma_xx; else G = diag(g_zz, g_y, g_x).
     """
     sig_fib = sum((s.rho_0 * s.mat.sigma(s.G) for s in fibers), jnp.zeros((3, 3)))
-    G_of = (lambda x: G_matrix(x[0], 1.0 / jnp.sqrt(x[0]))) if inc else (lambda x: G_matrix(x[0], x[1]))
+    G_of = ((lambda x: jnp.diag(jnp.array([g_zz, x[0], 1.0 / (g_zz * x[0])]))) if inc
+            else (lambda x: jnp.diag(jnp.array([g_zz, x[0], x[1]]))))
 
     def r(x):
         s = rho_e * mat.sigma(G_of(x)) + sig_fib
@@ -130,7 +133,7 @@ def prestress_G(mat, rho_e, fibers, inc, target=0.100):
             return jnp.array([s[DRIVEN, DRIVEN] - s[FREE, FREE] - target])
         return jnp.array([s[DRIVEN, DRIVEN] - target, s[FREE, FREE]])
 
-    x = jnp.array([1.1]) if inc else jnp.array([1.1, 1.0])
+    x = jnp.array([1.1]) if inc else jnp.array([1.1, 0.8])
     for _ in range(50):
         x = x - jnp.linalg.solve(jax.jacfwd(r)(x), r(x))
     return G_of(x)

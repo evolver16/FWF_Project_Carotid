@@ -4,6 +4,7 @@
 .claude/
 .devcontainer/
 results/
+old_results/
 *.pyc
 *.log
 .context/

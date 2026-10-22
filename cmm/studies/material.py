@@ -1,11 +1,13 @@
 """Material point (homogeneous F): HCMM vs FCMM vs the exact solution, Maes & Famaey (2023) Fig. 2, parameter sweep,
 and the readiness of the models for the FE code (batching, objectivity, tangent, gradients)."""
 
+import pathlib
 import time
 from dataclasses import replace
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 
 import materials
 import plotting
@@ -356,3 +358,146 @@ def fe_readiness(n_points=64, n_steps=5, ds=10.0):
                 log(f"  {name} {model}  {which:6s} not reverse-differentiable ({type(ex).__name__})")
 
     log.save(outputs("material/fe_readiness", "fe_readiness.txt")[0])
+
+
+# ---------- Maes & Famaey (2023) Abaqus UMATs vs our models ----------
+
+MAES_JOBS = {"case": {"U": "Stretch", "S": "Stress", "F": "Force"},
+             "model": {"A": "_NH_i", "B": "_NH_c", "C": "_NH_g", "D": "_hom", "E": ""}}
+
+
+def maes_abaqus(folder=None, ds=10.0, n_steps=100):
+    """Paper Fig. 2 from three sources per model A-E, case U/S/F, theory HCM / CM:
+    Abaqus with Maes' UMAT (<folder>/vs_<job>/<job>_odb.npz, fem/abaqus_interface/vs_abaqus.py --abaqus-only),
+    the same UMAT in fem.System (<folder>/vs_<job>/fem/<job>_fem.npz, fem-abaqus) and our Python HCMM (deposition) /
+    FCMM; jobs <Stretch|Stress|Force>_<HCM|CM><_NH_i|_NH_c|_NH_g|_hom|> = models A, B, C, D, E.
+    Remodeling step: last n_steps frames; U: sigma_yy (element mean), S / F: lambda_y = 1 + max u_y / 50 mm.
+    Deviation from Abaqus: U max over time |d sigma| / sigma(day 10), S / F (lambda_end - lambda_end,Abaqus) /
+    (lambda_end,Abaqus - 1)."""
+    folder = pathlib.Path(folder) if folder else (pathlib.Path(__file__).resolve().parents[2]
+                                                  / ".context" / "Abaqus_test" / "Maes" / "InputFiles")
+    log = Log()
+    csv_path, fig_path, txt = outputs("material/maes_abaqus", "maes_abaqus.csv", "fig2_abaqus.png", "maes_abaqus.txt")
+
+    def series(npz, case):
+        if not npz.exists():
+            return None
+        d = np.load(npz)
+        k = slice(len(d["time"]) - n_steps, None)
+        return (d["S"][k, 0, 1] if case == "U" else 1.0 + d["U"][k, :, 1].max(1) / 50.0)
+
+    rows, panels = [], []
+    t = jnp.arange(1, n_steps + 1) * ds
+    for case in TARGETS:
+        for model in MODELS:
+            res = run_variants(setups.maes_specs(model, case), setups.bc_for(model, case), ds, n_steps,
+                               MODELS[model]["ag"], variants={k: VARIANTS[k] for k in ("FCMM", "HCMM dep")})
+            key = "sigma_driven" if case == "U" else "lam_driven"
+            curves = {}
+            for theory, ours in (("HCM", "HCMM dep"), ("CM", "FCMM")):
+                job = f"{MAES_JOBS['case'][case]}_{theory}{MAES_JOBS['model'][model]}"
+                ab = series(folder / f"vs_{job}" / f"{job}_odb.npz", case)
+                um = series(folder / f"vs_{job}" / "fem" / f"{job}_fem.npz", case)
+                py = np.asarray(res[ours][key])
+                def rel(a):
+                    if ab is None or a is None:
+                        return np.nan
+                    if case == "U":
+                        return float(np.abs(np.asarray(a) - ab).max() / abs(ab[0]))
+                    return float((a[-1] - ab[-1]) / (ab[-1] - 1.0))
+                rows.append(dict(model=model, case=case, theory=theory, job=job,
+                                 abaqus=float(ab[-1]) if ab is not None else np.nan,
+                                 umat_in_fem=float(um[-1]) if um is not None else np.nan, python=float(py[-1]),
+                                 umat_vs_abaqus=rel(um), python_vs_abaqus=rel(py)))
+                if ab is not None:
+                    curves[f"Abaqus {theory}"] = ab
+                if um is not None:
+                    curves[f"UMAT in fem {theory}"] = um
+                curves[f"ours {ours}"] = py
+                r = rows[-1]
+                log(f"  {model} {case} {theory:3s}  Abaqus {r['abaqus']:.5f}  UMAT in fem {r['umat_in_fem']:.5f}  "
+                    f"Python {r['python']:.5f}   rel. to the change: UMAT {r['umat_vs_abaqus']:+.2%}, "
+                    f"Python {r['python_vs_abaqus']:+.2%}")
+            panels.append(dict(t=t, series=curves, title=f"{model} {case}",
+                               ylabel="sigma_yy (MPa)" if case == "U" else "lam_y (-)", legend=model == "A"))
+    write_csv(rows, csv_path)
+    plotting.panels(panels, fig_path, ncols=5, size=(4.2, 3.4))
+    missing = [r["job"] for r in rows if np.isnan(r["abaqus"])]
+    log(f"missing Abaqus results ({len(missing)}): {' '.join(missing)}" if missing else "all Abaqus results present")
+    log.save(txt)
+
+
+def maes_timing(folder=None, n_steps=100, ds=10.0):
+    """Run time of each Maes case (1000 days) for Abaqus with Maes' UMAT (<job>_timing.json of vs_abaqus.py: start ->
+    completed, solver wallclock), the same UMAT in fem.System (fem.abaqus_interface.inp.run_inp), our HCMM / FCMM in
+    fem.System on one element with the Fig. 1 BCs (fe_gr.box_bc; hybrid for the incompressible models A, D) and our
+    HCMM / FCMM at the material point; ours run twice in the same process (first incl. JAX tracing / compilation, then
+    warm). The Abaqus and UMAT runs include the load step and the 20 deposition increments of Maes' inputs (121
+    increments), ours start in the homeostatic state (100 steps). Also checks our FE end value = material point."""
+    import json
+    import contextlib
+    import io
+    import fem
+    from fem import mesh as meshlib
+    from fem.abaqus_interface.inp import run_inp
+    from studies.fe_gr import DRIVEN as AX, L_BOX, box_bc
+
+    folder = pathlib.Path(folder) if folder else (pathlib.Path(__file__).resolve().parents[2]
+                                                  / ".context" / "Abaqus_test" / "Maes" / "InputFiles")
+    umat = folder.parent / "FortranFiles" / "UMAT_HCMvsCM.for"
+    log = Log()
+    csv_path, txt = outputs("material/maes_timing", "maes_timing.csv", "maes_timing.txt")
+    m = meshlib.box((1, 1, 1), (L_BOX, L_BOX, L_BOX))
+    top = m.nodes[(AX, 1)]
+
+    def timed(f, n=2):
+        out, ts = None, []
+        for _ in range(n):
+            t0 = time.time()
+            out = f()
+            ts.append(time.time() - t0)
+        return out, ts
+
+    rows = []
+    log("seconds; ours: first run (incl. compilation) / warm run")
+    for case in TARGETS:
+        for model in MODELS:
+            specs, ag, bc_mp = setups.maes_specs(model, case), MODELS[model]["ag"], setups.bc_for(model, case)
+            element = "hybrid" if MODELS[model]["inc"] else "standard"
+            for theory, var in (("HCM", "HCMM dep"), ("CM", "FCMM")):
+                job = f"{MAES_JOBS['case'][case]}_{theory}{MAES_JOBS['model'][model]}"
+                build, module = VARIANTS[var]
+                stamp = folder / f"vs_{job}" / f"{job}_timing.json"
+                ab = json.loads(stamp.read_text())["abaqus"] if stamp.exists() else {}
+                with contextlib.redirect_stdout(io.StringIO()):
+                    _, t_umat = timed(lambda: run_inp(folder / f"{job}.inp", [umat], folder / f"vs_{job}" / "fem",
+                                                      log=lambda s: None), n=1)
+                bc, faces = box_bc(m, case)
+                sysm = fem.System(m, module, pressure_faces=faces, element=element)
+                key = "sigma_driven" if case == "U" else "lam_driven"
+
+                def fe_run():
+                    u, st, _ = sysm.run(fem.broadcast_state(build(specs, ds, ag), m.n_elem), [bc] * n_steps)
+                    if case == "U":
+                        return float(sysm.total_stress(u, st)[0, 0, AX, AX])
+                    return 1.0 + float(np.asarray(u)[3 * top[0] + AX]) / L_BOX
+
+                fe_end, t_fe = timed(fe_run)
+                mp, t_mp = timed(lambda: material_point.run(build(specs, ds, ag), module, bc_mp, n_steps=n_steps))
+                mp_end = float(mp[key][-1])
+                rows.append(dict(model=model, case=case, theory=theory, job=job,
+                                 abaqus_completed_s=ab.get("until_completed_s"), abaqus_solver_s=ab.get("solver_wallclock_s"),
+                                 umat_in_fem_s=t_umat[0], ours_fe_first_s=t_fe[0], ours_fe_warm_s=t_fe[1],
+                                 ours_point_first_s=t_mp[0], ours_point_warm_s=t_mp[1], ours_fe_end=fe_end,
+                                 ours_point_end=mp_end))
+                r = rows[-1]
+                log(f"  {model} {case} {theory:3s}  Abaqus {r['abaqus_completed_s'] or float('nan'):5.1f} (solver "
+                    f"{r['abaqus_solver_s'] or float('nan'):4.1f})   UMAT in fem {t_umat[0]:5.1f}   ours in fem "
+                    f"{t_fe[0]:5.1f} / {t_fe[1]:5.1f}   ours point {t_mp[0]:5.1f} / {t_mp[1]:5.1f}   "
+                    f"FE = point: {abs(fe_end - mp_end):.1e}")
+    write_csv(rows, csv_path)
+    tot = lambda k: sum(r[k] or 0.0 for r in rows)
+    log(f"total over {len(rows)} cases: Abaqus {tot('abaqus_completed_s'):.0f} s (solver {tot('abaqus_solver_s'):.0f} s), "
+        f"UMAT in fem {tot('umat_in_fem_s'):.0f} s, ours in fem {tot('ours_fe_first_s'):.0f} / {tot('ours_fe_warm_s'):.0f} s, "
+        f"ours point {tot('ours_point_first_s'):.0f} / {tot('ours_point_warm_s'):.0f} s")
+    log.save(txt)

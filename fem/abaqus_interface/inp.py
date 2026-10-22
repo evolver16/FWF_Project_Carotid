@@ -1,7 +1,9 @@
-"""Run an Abaqus/Standard .inp with a UMAT or UHYPER (fem.umat) on fem.System: one part (one instance), one material,
-solid C3D8* / C3D10* elements, *Static steps (NLGEOM) with
+"""Run an Abaqus/Standard .inp with a UMAT or UHYPER (abaqus_interface.umat) or the built-in *Hyperelastic, neo hooke
+(materials.NeoHookean, U = C10 (I1bar - 3) + (J - 1)^2 / D1, K = 2 / D1; no user file) on fem.System: one part (one
+instance), one material, solid C3D8* / C3D10* / C3D4* elements, *Static steps (NLGEOM) with
     *Boundary        sets / node labels (instance prefix allowed), dof ranges, XSYMM / YSYMM / ZSYMM / ENCASTRE / PINNED
     *Dsload          P (follower pressure) on element-based surfaces
+    *Cload           dead nodal forces (sets / node labels, dofs 1-3)
     *Field, *Initial Conditions, type=FIELD     nodal predefined fields -> PREDEF / DPRED at the Gauss points
     *Initial Conditions, type=SOLUTION, user     STATEV from the user's SDVINI
     *Amplitude       TABULAR (linear) or SMOOTH STEP, step time
@@ -11,15 +13,20 @@ amplitude it is magnitude x A(step time); values not redefined in a step stay co
 definitions of that keyword. PREDEF is the field at the start of the increment, DPRED its increment (as in Abaqus).
 
 Element formulation from the element type: C3D8 -> "fbar" (Abaqus C3D8 integrates the volumetric part selectively
-reduced, F-bar is the closest), C3D8H / C3D10H -> "hybrid", C3D10 -> "standard", C3D8R -> "fbar".
-Increments: *Static, direct: fixed initial increment; otherwise fixed maximum increment (no automatic incrementation;
+reduced, F-bar is the closest), C3D8H / C3D10H / C3D4H -> "hybrid", C3D10 / C3D4 -> "standard" (same element as
+Abaqus), C3D8R -> "fbar". fem's "hybrid"
+enforces J = 1 (incompressible); Abaqus' hybrid elements keep a compressible material's K (perturbed Lagrangian), so
+C3D8H / C3D10H / C3D4H with a compressible built-in or UHYPER material -> "fbar" (exact for homogeneous deformation).
+Increments (Newton starts from the linear extrapolation of the previous two within a step): *Static, direct: fixed initial
+increment; otherwise fixed maximum increment (no automatic incrementation;
 the solver's load continuation handles non-converging increments). TIME(1) restarts in every step, KINC restarts at 1.
-Output: <out>/<job>.pvd (u, stress, SDV element means, every increment), <job>_rf.csv (reaction force sums per
-*Boundary set), <job>_fem.npz (layout of fem/odb_export.py: time, node / element labels, U, RF, element-mean S, SDV).
+Output (as Abaqus: stress of the converged increment, i.e. from the start-of-increment state, STATEV after the
+update): <out>/<job>.pvd (u, stress, SDV element means, every increment), <job>_rf.csv (reaction force sums per
+*Boundary set), <job>_fem.npz (layout of odb_export.py: time, node / element labels, U, RF, element-mean S, SDV).
 
-    fem-abaqus job.inp user.for [--out dir] [--element fbar]          (or python -m fem.abaqus ...)
-    fem-abaqus compare job_fem.npz job_odb.npz job.inp      (after: abaqus python fem/odb_export.py job.odb)
-    fem-vs-abaqus job.inp user.for                          (both, timed: fem/vs_abaqus.py)
+    fem-abaqus job.inp [user.for] [--out dir] [--element fbar]        (or python -m fem.abaqus_interface.inp ...)
+    fem-abaqus compare job_fem.npz job_odb.npz job.inp      (after: abaqus python fem/abaqus_interface/odb_export.py job.odb)
+    fem-vs-abaqus job.inp [user.for]                        (both, timed: vs_abaqus.py)
 """
 
 import csv
@@ -27,16 +34,23 @@ import math
 import pathlib
 import re
 
+import jax
 import numpy as np
 
 import fem
 from fem import mesh as meshlib
 from fem.elements import element_for
-from fem.umat import Uhyper, Umat
+from fem.abaqus_interface.umat import CACHE, Uhyper, Umat
+from materials import NeoHookean
+
+if jax.config.jax_compilation_cache_dir is None:
+    jax.config.update("jax_compilation_cache_dir", str(CACHE / "xla"))
+    jax.config.update("jax_persistent_cache_min_entry_size_bytes", -1)
+    jax.config.update("jax_persistent_cache_min_compile_time_secs", 0)
 
 SYMM = {"XSYMM": (1, 5, 6), "YSYMM": (2, 4, 6), "ZSYMM": (3, 4, 5), "ENCASTRE": (1, 2, 3, 4, 5, 6),
         "PINNED": (1, 2, 3)}
-UNSUPPORTED = ("contact pair", "contact", "rigid body", "coupling", "tie", "dynamic", "cload", "dload",
+UNSUPPORTED = ("contact pair", "contact", "rigid body", "coupling", "tie", "dynamic", "dload",
                "surface interaction", "orientation", "equation", "mpc", "temperature", "visco", "frequency",
                "buckle", "kinematic coupling", "distributing coupling")
 
@@ -147,13 +161,19 @@ def run_inp(inp, user, out=None, element=None, flags=("-std=legacy",), log=print
         if k == "hyperelastic" and "user" in o:
             kind, incompressible = "uhyper", str(o.get("type", "")).upper() == "INCOMPRESSIBLE"
             props = [float(v) for d in data for v in d if v]
+        elif k == "hyperelastic" and "neo hooke" in o:
+            kind = "neohooke"
+            props = [float(v) for v in data[0][:2]]
         elif k == "user material":
             kind = "umat"
             props = [float(v) for d in data for v in d if v]
         elif k == "depvar":
             nstatv = int(data[0][0])
     if kind is None:
-        raise NotImplementedError(f"{inp.name}: material {name} has neither *Hyperelastic, user nor *User Material")
+        raise NotImplementedError(f"{inp.name}: material {name} has neither *Hyperelastic, user / neo hooke nor "
+                                  f"*User Material")
+    if kind == "neohooke" and props[1] <= 0:
+        raise NotImplementedError(f"{inp.name}: incompressible *Hyperelastic, neo hooke (D1 = 0)")
 
     def nodes_of(token):
         t = bare(token)
@@ -174,15 +194,18 @@ def run_inp(inp, user, out=None, element=None, flags=("-std=legacy",), log=print
     gauss = lambda field: field[:, m.conn[:, :1]].transpose(1, 2, 0) + np.einsum(
         "ga,pea->egp", N, field[:, m.conn] - field[:, m.conn[:, :1]])
 
-    element = element or ("hybrid" if etype.endswith("H") or incompressible else
-                          "standard" if etype.startswith("C3D10") else "fbar")
-    users = [user] if isinstance(user, (str, pathlib.Path)) else list(user)
+    compressible = kind == "neohooke" or (kind == "uhyper" and not incompressible)
+    element = element or ("hybrid" if (etype.endswith("H") and not compressible) or incompressible else
+                          "standard" if etype[:5] in ("C3D10", "C3D4") and not etype.endswith("H") else "fbar")
+    users = [user] if isinstance(user, (str, pathlib.Path)) else list(user or [])
     if kind == "umat":
         model = Umat(users, nstatv=nstatv, cmname=name, npred=npred, sdvini=sdvini, flags=flags)
         states = model.state(m, props, predef=gauss(nodal))
-    else:
+    elif kind == "uhyper":
         model = Uhyper(users, cmname=name, flags=flags)
         states = model.state(m, props)
+    else:
+        model, states = None, fem.broadcast_state(NeoHookean(props[0], 2.0 / props[1]), m.n_elem, len(el.gauss))
     loaded = sorted({bare(d[0]) for k, _, data in kws if k == "dsload" for d in data})
     if any(d[1].upper() != "P" for k, _, data in kws if k == "dsload" for d in data):
         raise NotImplementedError(f"{inp.name}: *Dsload other than P")
@@ -205,6 +228,7 @@ def run_inp(inp, user, out=None, element=None, flags=("-std=legacy",), log=print
 
     bcs = History(lambda k: u[k])
     loads = History(lambda k: 0.0)
+    cloads = History(lambda k: 0.0)
     fields = History(lambda k: nodal[k[0] - 1, k[1]])
     series = meshlib.VTKSeries(out / f"{inp.stem}.pvd")
     u = np.zeros(sysm.n_dof)
@@ -227,6 +251,8 @@ def run_inp(inp, user, out=None, element=None, flags=("-std=legacy",), log=print
         n_inc = int(np.ceil(period / dt - 1e-9))
         bcs.step(block, "boundary", bc_entries, amps, period)
         loads.step(block, "dsload", lambda d, o: [(bare(d[0]), float(d[2]))], amps, period)
+        cloads.step(block, "cload", lambda d, o: [(3 * n + int(d[1]) - 1, float(d[2])) for n in nodes_of(d[0])
+                                                  if int(d[1]) <= 3], amps, period)
         fields.step(block, "field", lambda d, o: [((int(o.get("variable", 1)), n), float(d[1]))
                                                    for n in nodes_of(d[0])], amps, period)
         groups = {}
@@ -249,18 +275,25 @@ def run_inp(inp, user, out=None, element=None, flags=("-std=legacy",), log=print
                                     dtime=states.dtime * 0 + period / n_inc, time=time)
         for inc in range(1, n_inc + 1):
             f, ts = inc / n_inc, inc * period / n_inc
-            bc = fem.BC(dofs, np.array([bcs.value(d, f, ts) for d in dofs]))
+            p, f_dead = 0.0, None
             if loaded:
                 p = np.zeros(len(faces))
                 for s in loaded:
                     p[face_of[s]] = loads.value(s, f, ts) if s in loads.now else 0.0
-                bc = fem.BC(bc.fixed, bc.values, p=p)
+            if cloads.now:
+                f_dead = np.zeros(sysm.n_dof)
+                for k in cloads.now:
+                    f_dead[k] += cloads.value(k, f, ts)
+            bc = fem.BC(dofs, np.array([bcs.value(d, f, ts) for d in dofs]), f_dead=f_dead, p=p)
             if kind == "umat":
                 f0 = field_at(f - 1 / n_inc, ts - period / n_inc)
                 f1 = field_at(f, ts)
                 states = states.replace(predef=gauss(f0), dpred=gauss(f1 - f0))
-            u = np.asarray(sysm.equilibrium(states, bc, u))
+            guess = u + (u - u_prev) if inc > 1 else u
+            u_prev = u
+            u = np.asarray(sysm.equilibrium(states, bc, guess))
             rf = sysm.reaction(u, states, bc)
+            sig, pre = sysm.total_stress(u, states).mean(1), states
             states = sysm.commit(u, states)
             if kind == "umat":
                 nodal = f1
@@ -271,13 +304,12 @@ def run_inp(inp, user, out=None, element=None, flags=("-std=legacy",), log=print
                 for c in range(3):
                     row[f"RF{c + 1}_{g}"] = float(rf[ds[ds % 3 == c]].sum())
             rows.append(row)
-            sig = sysm.total_stress(u, states).mean(1)
             frames["time"].append(t)
             frames["U"].append(u.reshape(-1, 3))
             frames["RF"].append(rf.reshape(-1, 3))
             frames["S"].append(np.stack([sig[:, i, j] for i, j in ((0, 0), (1, 1), (2, 2), (0, 1), (0, 2), (1, 2))], -1))
             frames["SDV"].append(sdv(states))
-            series.write(t, m.X, m.conn, *sysm.fields(u, states, {"SDV": np.asarray(states.statev)}
+            series.write(t, m.X, m.conn, *sysm.fields(u, pre, {"SDV": np.asarray(states.statev)}
                                                        if kind == "umat" else None))
             if inc == n_inc or inc % max(n_inc // 10, 1) == 0:
                 U = u.reshape(-1, 3)
@@ -334,7 +366,7 @@ def main(argv=None):
         return
     p = argparse.ArgumentParser(prog="fem-abaqus", description="Run an Abaqus .inp with a UMAT / UHYPER on fem.System")
     p.add_argument("inp")
-    p.add_argument("user", nargs="+")
+    p.add_argument("user", nargs="*")
     p.add_argument("--out")
     p.add_argument("--element")
     a = p.parse_args(argv)
