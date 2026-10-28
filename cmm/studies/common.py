@@ -75,6 +75,15 @@ def wall_stress(sysm, u, states, length, e_r=None, trace=False):
     return sysm.nonlocal_mean(tr - 3.0 * jnp.einsum("...i,...ij,...j->...", n, sig, n), length)
 
 
+def hariton_angle(sysm, Q, u, states):
+    """(alpha, s_tt, s_zz) per Gauss point, Hariton 2007 Eqs. 8 + 11 in the wall basis Q = (e_r, e_theta, e_z):
+        tan alpha = s_tt / s_zz   (alpha from the axis; total Cauchy along the deformed wall directions)"""
+    e = sysm.gauss_F(u) @ Q
+    e = e / jnp.linalg.norm(e, axis=-2, keepdims=True)
+    s = np.asarray(jnp.einsum("egia,egij,egja->ega", e, sysm.total_stress(u, states), e))
+    return np.arctan(np.maximum(s[..., 1], 0.0) / np.maximum(s[..., 2], 1e-12)), s[..., 1], s[..., 2]
+
+
 def surface_area(m, u, faces):
     """Deformed area of quad4 or tri6 faces by their Gauss rule"""
     from fem.elements import face_for

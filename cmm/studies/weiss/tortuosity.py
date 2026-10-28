@@ -15,15 +15,15 @@ import materials
 import plotting
 from analysis import centerline, tortuosity
 from fem import mesh as meshlib
-from fem.tensor3 import det3
-from studies.common import Log, outputs, wall_stress, write_csv
+from fem.tensor3 import det3, inv3
+from studies.common import Log, hariton_angle, outputs, wall_stress, write_csv
 from studies.model_e import artery_simulate
 from studies.weiss.model import KO, WALL_WEISS, weiss_par
 
 
 def weiss_tortuosity(ends="isometric", insult="both", local=True, tether=0.0, tether_z=(0.25, 0.75), tether_day=0.0,
                      tether_days=np.inf,
-                     insult_day=0.0, orient="prescribed", gamma=1.0, noise=0.01, full=False, anderson=2, pre_iter=200, tol=1e-10, n=None, L=14.0, n_ramp=200,
+                     insult_day=0.0, orient="prescribed", gamma=1.0, angle_iter=40, angle_tol=1e-3, noise=0.01, full=False, anderson=2, pre_iter=200, tol=1e-10, n=None, L=14.0, n_ramp=200,
                      n_hold=0, ds=1.0, growth="fixed", stimulus="trace", length=None, record_every=10, name=None, **kw):
     """Straight half tube with symmetry plane y = 0 (full=True: full tube, buckling in any direction, end nodes held
     circumferentially, u . e_theta = 0, against twist; default n (2, 16, 120) / (2, 33, 120), odd around: an even
@@ -47,6 +47,8 @@ def weiss_tortuosity(ends="isometric", insult="both", local=True, tether=0.0, te
     orient: deposition angle of the diagonal collagen "prescribed" (alpha_0 insult) or "stress" (emergent, alpha_0 insult
     unused; Hariton 2007 relative to the homeostatic state, stresses as nonlocal means):
         tan alpha_dep = tan alpha_h ((s_tt / s_zz) / (s_tt / s_zz)_h)^gamma,   s_ii = sigma_ii - sigma_rr;
+    or "hariton" (Hariton 2007 absolute, common.hariton_angle per Gauss point, also in the homeostatic state: prestress
+    repeated from alpha_0 with the angle field, elastin state warm-started, until max|d alpha| < angle_tol deg);
     ends "isometric" (length fixed) or "isotonic" (axial end reactions of the prestressed state held as dead loads),
     end centerlines pinned laterally; wall stress stimulus (common.wall_stress: "trace" tr sigma with the pressure as in
     Weiss, "in-plane" (pressure-free), or
@@ -92,7 +94,7 @@ def weiss_tortuosity(ends="isometric", insult="both", local=True, tether=0.0, te
     log(f"Weiss 2020: straight {'full' if full else 'half'} tube a {a} mm, h {h} mm, L {L} mm, {m.n_elem} hex8 (hybrid); table S2 wall "
         f"({', '.join(q.name for q in WALL_WEISS)}), {stimulus} wall stress stimulus (nonlocal {length:.3f} mm), {growth} growth")
     log(f"insult {'Eq. 8' if local else 'uniform'} on "
-        f"{'c_e' if insult == 'elastin' or orient == 'stress' else 'c_e and alpha_0'}, collagen deposition angle "
+        f"{'c_e' if insult == 'elastin' or orient != 'prescribed' else 'c_e and alpha_0'}, collagen deposition angle "
         f"{orient}{f' (gamma {gamma:g})' if orient == 'stress' else ''} over "
         f"{n_ramp} steps of {ds:g} days, {n_hold} steps held; {ends} ends; insult from day {insult_day:g}; "
         f"elastin noise {noise:g} (elastin_field.npz); "
@@ -113,11 +115,26 @@ def weiss_tortuosity(ends="isometric", insult="both", local=True, tether=0.0, te
     scale = jnp.asarray(1.0 + noise * xi)
     G_t, G_z = float(par["elastin.G_theta"]), float(par["elastin.G_z"])
     G_e = Q @ jnp.diag(jnp.array([1 / (G_t * G_z), G_t, G_z])) @ jnp.swapaxes(Q, -1, -2)
-    _, u, states = artery_simulate(m, sysm, Q, par, n_steps=0, bc=bc_iso, final=True, log=log, ds=ds,
-                                   wall=WALL_WEISS, laws="wall", incompressible=True, growth=growth, G_e=G_e,
-                                   fields={"elastin.C10": par["elastin.C10"] * scale} if noise else None,
-                                   anderson=anderson, pre_iter=pre_iter)
+    fields = {"elastin.C10": par["elastin.C10"] * scale} if noise else {}
+    al = np.full(Q.shape[:2], float(par["diag+.alpha"]))
+    for it in range(1, angle_iter + 1 if orient == "hariton" else 2):
+        _, u, states = artery_simulate(m, sysm, Q, par, n_steps=0, bc=bc_iso, final=True, log=log if it == 1 else None,
+                                       ds=ds, wall=WALL_WEISS, laws="wall", incompressible=True, growth=growth, G_e=G_e,
+                                       fields=fields | ({"diag+.alpha": al, "diag-.alpha": al} if orient == "hariton" else {}),
+                                       anderson=anderson, pre_iter=pre_iter)
+        if orient != "hariton":
+            break
+        target = hariton_angle(sysm, Q, u, states)[0]
+        d = np.degrees(np.abs(target - al)).max()
+        log(f"  angle iteration {it:2d}  alpha {np.degrees(target).min():.2f}-{np.degrees(target).max():.2f} deg  "
+            f"max change {d:.2e} deg  ({time.time() - t0:.0f}s)")
+        G_e, al = inv3(states.constituents[0].F_r), target
+        if d < angle_tol:
+            break
     log(f"  prestress done in {time.time() - t0:.0f}s")
+    r_gp = np.linalg.norm(xg[..., :2], axis=-1)
+    layers, layer = np.unique(np.round((r_gp - a) / h, 6), return_inverse=True)
+    layer = layer.reshape(r_gp.shape)
     bc = bc_iso(p0)
     if ends == "isotonic":
         f_end = sysm.reaction(u, states, bc)
@@ -139,7 +156,7 @@ def weiss_tortuosity(ends="isometric", insult="both", local=True, tether=0.0, te
     C10 = states.constituents[0].material.C10
     alpha = par["diag+.alpha"]
     e_t, e_z = Q[..., :, 1], Q[..., :, 2]
-    series = meshlib.VTKSeries(pvd)
+    series = meshlib.VTKSeries(pvd, m)
     rows = []
     angle = lambda M: jnp.degrees(jnp.arccos(jnp.abs(jnp.sum(M * e_z, axis=-1))))
 
@@ -167,6 +184,7 @@ def weiss_tortuosity(ends="isometric", insult="both", local=True, tether=0.0, te
             wall_stress_rel=states.sigma_w / states.sigma_w_h, J_g=det3(states.F_g))))
 
     record(0, u, states)
+    al_0 = np.asarray(angle(states.constituents[names.index("diag+")].material.M))
     t0 = time.time()
     n_steps = round(insult_day / ds) + n_ramp + n_hold
     for k in range(1, n_steps + 1):
@@ -176,9 +194,11 @@ def weiss_tortuosity(ends="isometric", insult="both", local=True, tether=0.0, te
         if orient == "stress":
             s_tt, s_zz = in_plane(u, states)
             al = np.arctan(np.tan(alpha) * (np.maximum(s_tt, 0.0) / np.maximum(s_zz, 1e-12) / ratio_h) ** gamma)
+        elif orient == "hariton":
+            al = hariton_angle(sysm, Q, u, states)[0]
         elif insult == "both":
             al = alpha + w * (KO["alpha"] - alpha)
-        if orient == "stress" or insult == "both":
+        if orient != "prescribed" or insult == "both":
             al = jnp.asarray(al)[..., None]
             for d, sign in (("diag+", 1.0), ("diag-", -1.0)):
                 c = cs[names.index(d)]
@@ -210,6 +230,12 @@ def weiss_tortuosity(ends="isometric", insult="both", local=True, tether=0.0, te
                 f"  circ. stretch mean {r['circ_mean']:.3f} max {r['circ_max']:.3f}  axial force {r['axial_force_mN']:.2f} mN"
                 f"  alpha mean {r['alpha_mean']:.2f} ({r['alpha_min']:.2f}-{r['alpha_max']:.2f}) dep {r['alpha_dep_mean']:.2f} deg"
                 f"  ({time.time() - t0:.0f}s)")
+    al_end = np.asarray(angle(states.constituents[names.index("diag+")].material.M))
+    log(f"  diagonal collagen angle through the wall, (r - a) / h: day 0 mean, day {ds * n_steps:g} mean (min-max over "
+        f"the layer) deg")
+    for i, x in enumerate(layers):
+        v = al_end[layer == i]
+        log(f"    {x:.3f}  {al_0[layer == i].mean():6.2f}  {v.mean():6.2f} ({v.min():.2f}-{v.max():.2f})")
     log(f"  ParaView: {pvd.name} ({len(series.entries)} time steps)")
     write_csv(rows, csv_path)
     col = lambda key: np.array([r[key] for r in rows])

@@ -129,6 +129,49 @@ class History:
         return mag * amp(t) if amp is not None else start + f * (mag - start)
 
 
+def node_lookup(kws, m):
+    """nodes_of(token): node indices of a node set name or a node label"""
+    nsets = {k.lower(): v for k, v in m.nodes.items()}
+    label = {int(d[0]): i for i, d in enumerate(d for k, _, data in kws if k == "node" for d in data)}
+
+    def nodes_of(token):
+        t = bare(token)
+        return np.array([label[int(t)]]) if t.lstrip("-").isdigit() else nsets[t]
+    return nodes_of
+
+
+def bc_entries(d, nodes_of):
+    """[(dof, value)] of one *Boundary data line"""
+    if len(d) > 1 and d[1].upper() in SYMM:
+        dofs, value = [c for c in SYMM[d[1].upper()] if c <= 3], 0.0
+    else:
+        a = int(d[1])
+        b = int(d[2]) if len(d) > 2 and d[2] else a
+        dofs, value = [c for c in range(a, b + 1) if c <= 3], float(d[3]) if len(d) > 3 and d[3] else 0.0
+    return [(3 * n + c - 1, value) for n in nodes_of(d[0]) for c in dofs]
+
+
+def steps(kws, nodes_of, amps, bc_default=lambda k: 0.0):
+    """per *Step: (keywords of the step, period, number of increments, History of the *Boundary dofs, *Dsload
+    surfaces, *Cload dofs); the History objects are updated in place by the next step"""
+    bcs, loads, cloads = History(bc_default), History(lambda k: 0.0), History(lambda k: 0.0)
+    for s0 in [i for i, (k, _, _) in enumerate(kws) if k == "step"]:
+        block = []
+        for k, o, data in kws[s0 + 1:]:
+            if k == "end step":
+                break
+            block.append((k, o, data))
+        static = next(((o, d) for k, o, d in block if k == "static"), ({}, [["1.0", "1.0"]]))
+        vals = [float(v) for v in static[1][0] if v] if static[1] and static[1][0] and static[1][0][0] else [1., 1.]
+        period = vals[1] if len(vals) > 1 else 1.0
+        dt = vals[0] if "direct" in static[0] else (vals[3] if len(vals) > 3 else period)
+        bcs.step(block, "boundary", lambda d, o: bc_entries(d, nodes_of), amps, period)
+        loads.step(block, "dsload", lambda d, o: [(bare(d[0]), float(d[2]))], amps, period)
+        cloads.step(block, "cload", lambda d, o: [(3 * n + int(d[1]) - 1, float(d[2])) for n in nodes_of(d[0])
+                                                  if int(d[1]) <= 3], amps, period)
+        yield block, period, int(np.ceil(period / dt - 1e-9)), bcs, loads, cloads
+
+
 def run_inp(inp, user, out=None, element=None, flags=("-std=legacy",), log=print):
     """Run inp with the user subroutine file(s) user -> (u, states, rows of reaction forces per increment)"""
     inp = pathlib.Path(inp)
@@ -141,10 +184,9 @@ def run_inp(inp, user, out=None, element=None, flags=("-std=legacy",), log=print
     if bad or sum(k == "part" for k, _, _ in kws) > 1:
         raise NotImplementedError(f"{inp.name}: not supported: {', '.join('*' + b for b in bad) or 'several parts'}")
     m = meshlib.read_inp(inp)
-    nsets = {k.lower(): v for k, v in m.nodes.items()}
     surfaces = {k.lower(): v for k, v in m.faces.items()}
     labels = [int(d[0]) for k, _, data in kws if k == "node" for d in data]
-    label = {n: i for i, n in enumerate(labels)}
+    nodes_of = node_lookup(kws, m)
     elabels = [int(d[0]) for k, _, data in kws if k == "element" for d in data if d and d[0]]
     etype = next(str(o.get("type", "")).upper() for k, o, _ in kws if k == "element")
     amps = {o["name"].lower(): amplitude((o, data)) for k, o, data in kws if k == "amplitude"}
@@ -174,10 +216,6 @@ def run_inp(inp, user, out=None, element=None, flags=("-std=legacy",), log=print
                                   f"*User Material")
     if kind == "neohooke" and props[1] <= 0:
         raise NotImplementedError(f"{inp.name}: incompressible *Hyperelastic, neo hooke (D1 = 0)")
-
-    def nodes_of(token):
-        t = bare(token)
-        return np.array([label[int(t)]]) if t.lstrip("-").isdigit() else nsets[t]
 
     field_vars = sorted({int(o.get("variable", 1)) for k, o, _ in kws if k == "field"
                          or (k == "initial conditions" and str(o.get("type")).upper() == "FIELD")})
@@ -217,48 +255,21 @@ def run_inp(inp, user, out=None, element=None, flags=("-std=legacy",), log=print
         f"props {np.round(props, 6).tolist()}{f', {nstatv} state variables, {npred} fields' if kind == 'umat' else ''})"
         + (f", pressure on {', '.join(loaded)}" if loaded else ""))
 
-    def bc_entries(d, o):
-        if len(d) > 1 and d[1].upper() in SYMM:
-            dofs, value = [c for c in SYMM[d[1].upper()] if c <= 3], 0.0
-        else:
-            a = int(d[1])
-            b = int(d[2]) if len(d) > 2 and d[2] else a
-            dofs, value = [c for c in range(a, b + 1) if c <= 3], float(d[3]) if len(d) > 3 and d[3] else 0.0
-        return [(3 * n + c - 1, value) for n in nodes_of(d[0]) for c in dofs]
-
-    bcs = History(lambda k: u[k])
-    loads = History(lambda k: 0.0)
-    cloads = History(lambda k: 0.0)
     fields = History(lambda k: nodal[k[0] - 1, k[1]])
     series = meshlib.VTKSeries(out / f"{inp.stem}.pvd")
     u = np.zeros(sysm.n_dof)
     sdv = lambda st: np.asarray(st.statev).mean(1) if kind == "umat" else np.zeros((m.n_elem, 0))
     series.write(0.0, m.X, m.conn, *sysm.fields(u, states))
-    rows, t, kstep = [], 0.0, 0
+    rows, t = [], 0.0
     frames = {"time": [0.0], "U": [u.reshape(-1, 3)], "RF": [np.zeros((m.n_nodes, 3))],
               "S": [np.zeros((m.n_elem, 6))], "SDV": [sdv(states)]}
-    for s0 in [i for i, (k, _, _) in enumerate(kws) if k == "step"]:
-        kstep += 1
-        block = []
-        for k, o, data in kws[s0 + 1:]:
-            if k == "end step":
-                break
-            block.append((k, o, data))
-        static = next(((o, d) for k, o, d in block if k == "static"), ({}, [["1.0", "1.0"]]))
-        vals = [float(v) for v in static[1][0] if v] if static[1] and static[1][0] and static[1][0][0] else [1., 1.]
-        period = vals[1] if len(vals) > 1 else 1.0
-        dt = vals[0] if "direct" in static[0] else (vals[3] if len(vals) > 3 else period)
-        n_inc = int(np.ceil(period / dt - 1e-9))
-        bcs.step(block, "boundary", bc_entries, amps, period)
-        loads.step(block, "dsload", lambda d, o: [(bare(d[0]), float(d[2]))], amps, period)
-        cloads.step(block, "cload", lambda d, o: [(3 * n + int(d[1]) - 1, float(d[2])) for n in nodes_of(d[0])
-                                                  if int(d[1]) <= 3], amps, period)
+    for kstep, (block, period, n_inc, bcs, loads, cloads) in enumerate(steps(kws, nodes_of, amps, lambda k: u[k]), 1):
         fields.step(block, "field", lambda d, o: [((int(o.get("variable", 1)), n), float(d[1]))
                                                    for n in nodes_of(d[0])], amps, period)
         groups = {}
         for _, o, data in [b for b in block if b[0] == "boundary"]:
             for d in data:
-                groups.setdefault(d[0], set()).update(k for k, _ in bc_entries(d, o))
+                groups.setdefault(d[0], set()).update(k for k, _ in bc_entries(d, nodes_of))
         dofs = np.array(sorted(bcs.now))
         log(f"  step {kstep}: period {period:g}, {n_inc} increments, {len(dofs)} prescribed dofs")
 
@@ -318,7 +329,7 @@ def run_inp(inp, user, out=None, element=None, flags=("-std=legacy",), log=print
                         f"RF{c + 1} {g} {row[f'RF{c + 1}_{g}']:+.4g}" for g in groups for c in range(3)
                         if abs(row[f"RF{c + 1}_{g}"]) > 1e-9))
     with open(out / f"{inp.stem}_rf.csv", "w", newline="") as fh:
-        w = csv.DictWriter(fh, fieldnames=list(rows[0]))
+        w = csv.DictWriter(fh, fieldnames=list(dict.fromkeys(k for r in rows for k in r)))
         w.writeheader()
         w.writerows(rows)
     np.savez(out / f"{inp.stem}_fem.npz", node_labels=np.array(labels), element_labels=np.array(elabels),

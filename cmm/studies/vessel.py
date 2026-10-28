@@ -101,7 +101,7 @@ def stenotic_vessel(etype="hex8", n=None, n_steps=100, check_n=((2, 15, 1), (4, 
                          surface_area(m, u, m.faces["inner"]) / A0,
                          jnp.sum(sysm.wdet * det3(sysm.gauss_F(u))) / V0)
     par = artery_par()
-    series = meshlib.VTKSeries(pvd)
+    series = meshlib.VTKSeries(pvd, m)
     basis = {f"e_{k}": Q[..., i] for i, k in enumerate(("r", "theta", "z"))}
 
     def record(k, u, states):
@@ -206,7 +206,7 @@ def stenosis_wss(n=(4, 32, 80), n_steps=300, ds=10.0, k_tau=0.5, stenosis=0.25, 
     h0 = b0 - a0
     log(f"  initial lumen radius: throat {a0[mid]:.3f} mm, inlet {a0[2]:.3f} mm; WSS / target at the throat "
         f"{(r_i / a0[mid]) ** 3:.2f}")
-    series = meshlib.VTKSeries(pvd)
+    series = meshlib.VTKSeries(pvd, m)
     rows = []
 
     def record(k, u, states):
@@ -288,7 +288,7 @@ def bending_redistribution(n_steps=100, theta=0.2, n_ramp=5, n=(3, 24, 60), L=60
     sides = {"stretched": (xg[..., 0] < 0) & middle, "compressed": (xg[..., 0] > 0) & middle}
     e_z = Qj[..., 2:3]
     M, S, rho0 = [], [], []
-    series = meshlib.VTKSeries(pvd)
+    series = meshlib.VTKSeries(pvd, m)
 
     def record(k, u, states):
         """mass after the commit of step k (day 10 k); stresses from the equilibrium state"""
@@ -384,7 +384,7 @@ def setpoint_patch(n_steps=200, delta=0.3, n=(3, 24, 40), L=40.0, w_z=4.0, w_the
     w = np.asarray(sysm.wdet)
     in_patch = g > 0.5
     hist = []
-    series = meshlib.VTKSeries(pvd)
+    series = meshlib.VTKSeries(pvd, m)
 
     def record(k, u, states):
         """after the commit of step k (day 10 k)"""

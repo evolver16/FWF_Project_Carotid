@@ -45,11 +45,12 @@ def _advance(buf, value, k, shift):
     return jnp.where(shift, jnp.roll(buf, -1, axis=0), buf).at[k].set(value)
 
 
-@pytree(("m", "sigma_f", "K_cumu", "rho", "n", "sigma_f_0", "rho_0"))
+@pytree(("m", "sigma_f", "K_cumu", "rho", "n", "sigma_f_0", "rho_0", "G", "material"))
 class history:
-    """Rolling per-cohort buffers m^j, sigma_f^j, K_cumu^j, rho^j of one constituent."""
+    """Rolling per-cohort buffers m^j, sigma_f^j, K_cumu^j, rho^j of one constituent; G^j, material^j per cohort for a
+    reorienting production (each cohort along its deposition direction), else None."""
 
-    def __init__(self, m, sigma_f, K_cumu, rho, n, sigma_f_0, rho_0):
+    def __init__(self, m, sigma_f, K_cumu, rho, n, sigma_f_0, rho_0, G=None, material=None):
         self.m = m
         self.sigma_f = sigma_f
         self.K_cumu = K_cumu
@@ -57,10 +58,19 @@ class history:
         self.n = n
         self.sigma_f_0 = sigma_f_0
         self.rho_0 = rho_0
+        self.G = G
+        self.material = material
 
     @classmethod
-    def allocate(cls, n_max, m_0, sigma_f_0, rho_0):
+    def allocate(cls, n_max, m_0, sigma_f_0, rho_0, K_0=None, G=None, material=None):
+        """K_0: window filled with the homeostatic history (m_0, sigma_f_0, rho_0, removal K_0 per step), as a burn-in
+        at F = I with the gains off"""
         z = jnp.zeros(n_max)
+        per = lambda x: jax.tree.map(lambda v: jnp.broadcast_to(v, (n_max,) + jnp.shape(v)), x)
+        if K_0 is not None:
+            return cls(m=z + m_0, sigma_f=z + sigma_f_0, K_cumu=jnp.arange(n_max) * K_0, rho=z + rho_0,
+                       n=jnp.asarray(n_max - 1), sigma_f_0=jnp.asarray(sigma_f_0), rho_0=jnp.asarray(rho_0),
+                       G=per(G), material=per(material))
         return cls(
             m=z.at[0].set(m_0),
             sigma_f=z.at[0].set(sigma_f_0),
@@ -69,6 +79,7 @@ class history:
             n=jnp.asarray(0),
             sigma_f_0=jnp.asarray(sigma_f_0),
             rho_0=jnp.asarray(rho_0),
+            G=per(G), material=per(material),
         )
 
     @property
@@ -79,23 +90,13 @@ class history:
         """Shift the window if full; must stay in lockstep with mixture_history.advance."""
         shift = (self.n + 1) >= self.n_max
         roll = lambda b: jnp.where(shift, jnp.roll(b, -1, axis=0), b)
-        return history(
-            m=roll(self.m), sigma_f=roll(self.sigma_f),
-            K_cumu=roll(self.K_cumu), rho=roll(self.rho),
-            n=jnp.where(shift, self.n - 1, self.n),
-            sigma_f_0=self.sigma_f_0, rho_0=self.rho_0,
-        )
+        return self.replace(m=roll(self.m), sigma_f=roll(self.sigma_f), K_cumu=roll(self.K_cumu), rho=roll(self.rho),
+                            n=jnp.where(shift, self.n - 1, self.n), G=jax.tree.map(roll, self.G),
+                            material=jax.tree.map(roll, self.material))
 
     def write(self, k, m_s, sigma_f_s, K_cumu_s, rho_s):
-        return history(
-            m=self.m.at[k].set(m_s),
-            sigma_f=self.sigma_f.at[k].set(sigma_f_s),
-            K_cumu=self.K_cumu.at[k].set(K_cumu_s),
-            rho=self.rho.at[k].set(rho_s),
-            n=k,
-            sigma_f_0=self.sigma_f_0,
-            rho_0=self.rho_0,
-        )
+        return self.replace(m=self.m.at[k].set(m_s), sigma_f=self.sigma_f.at[k].set(sigma_f_s),
+                            K_cumu=self.K_cumu.at[k].set(K_cumu_s), rho=self.rho.at[k].set(rho_s), n=k)
 
 
 @pytree(("material", "G", "production", "removal"), static=("grows",))
@@ -121,10 +122,12 @@ class constituent:
         self.history = history
 
     @classmethod
-    def allocate(cls, params, rho_0, sigma_f_0, n_max, ds):
-        """m^j(0) = production at rel = 0, e.g. rho^j(0)/T^j   (Eq. 10)"""
-        m_0 = params.production.m(rho_0, sigma_f_0, sigma_f_0, ds, 1.0, 1.0) if params.remodels else 0.0
-        return cls(params, history.allocate(n_max, m_0, sigma_f_0, rho_0))
+    def allocate(cls, params, rho_0, sigma_f_0, n_max, ds, filled=False):
+        """m^j(0) = production at rel = 0, e.g. rho^j(0)/T^j   (Eq. 10); filled: homeostatic history in the whole window"""
+        m_0 = params.production.m(rho_0, sigma_f_0, sigma_f_0, ds, 1.0, 1.0, 0.0) if params.remodels else 0.0
+        K_0 = params.removal.K(sigma_f_0, sigma_f_0, ds, 1.0, 1.0, 0.0) if params.remodels else 0.0
+        dep = (params.G, params.material) if hasattr(params.production, "M_dep") else ()
+        return cls(params, history.allocate(n_max, m_0, sigma_f_0, rho_0, K_0 if filled else None, *dep))
 
 
 @pytree(("F", "Fg", "R", "n"))
@@ -138,9 +141,11 @@ class mixture_history:
         self.n = n
 
     @classmethod
-    def allocate(cls, n_max, F0):
+    def allocate(cls, n_max, F0, filled=False):
         eye = jnp.broadcast_to(jnp.eye(3), (n_max, 3, 3))
         F0 = jnp.asarray(F0)
+        if filled:
+            return cls(F=eye @ F0, Fg=eye, R=eye @ polar_rotation(F0), n=jnp.asarray(n_max - 1))
         return cls(F=eye.at[0].set(F0), Fg=eye, R=eye.at[0].set(polar_rotation(F0)),
                    n=jnp.asarray(0))
 
@@ -156,19 +161,21 @@ class mixture_history:
                                R=_advance(self.R, polar_rotation(F_s), k, shift), n=k)
 
 
-@pytree(("constituents", "ds", "history", "rho_tot_0", "growth"))
+@pytree(("constituents", "ds", "history", "rho_tot_0", "growth", "sigma_w", "sigma_w_h"))
 class mixture:
-    def __init__(self, constituents, ds, history, rho_tot_0, growth):
-        """growth: law from fcmm.growth, F_g from J_g = rho_tot / rho_tot_0"""
+    def __init__(self, constituents, ds, history, rho_tot_0, growth, sigma_w=0.0, sigma_w_h=0.0):
+        """growth: law from fcmm.growth, F_g from J_g = rho_tot / rho_tot_0;
+        sigma_w, sigma_w_h: wall stress and its homeostatic value (input as in hcmm.mixture; sigma_w_h = 0: none)"""
         self.constituents = constituents
         self.ds = ds
         self.history = history
         self.rho_tot_0 = rho_tot_0
         self.growth = growth
+        self.sigma_w, self.sigma_w_h = jnp.asarray(sigma_w, dtype=float), jnp.asarray(sigma_w_h, dtype=float)
 
     @classmethod
-    def allocate(cls, constituents, F0, ds, n_max, growth):
-        return cls(constituents, ds, mixture_history.allocate(n_max, F0),
+    def allocate(cls, constituents, F0, ds, n_max, growth, filled=False):
+        return cls(constituents, ds, mixture_history.allocate(n_max, F0, filled),
                    sum(c.history.rho_0 for c in constituents), growth)
 
     def F_g_calc(self):
@@ -200,11 +207,11 @@ def sigma_f_rel(sigma_f_s, sigma_f_0, rho_tot, rho_tot_0, eps=SIGMA_F_EPS):
 
 
 @jit
-def K_cumu_calc(par, hist, sigma_f_s, ds, rho_tot, rho_tot_0):
+def K_cumu_calc(par, hist, sigma_f_s, ds, rho_tot, rho_tot_0, dsig):
     """K_cumu(s) = K_cumu(s-1) + [K_-(s-1) + K_-(s)]/2   (Eq. 12)"""
     sigma_f_0 = hist.sigma_f_0
-    K_prev = par.removal.K(hist.sigma_f[hist.n], sigma_f_0, ds, rho_tot, rho_tot_0)
-    K_new = par.removal.K(sigma_f_s, sigma_f_0, ds, rho_tot, rho_tot_0)
+    K_prev = par.removal.K(hist.sigma_f[hist.n], sigma_f_0, ds, rho_tot, rho_tot_0, dsig)
+    K_new = par.removal.K(sigma_f_s, sigma_f_0, ds, rho_tot, rho_tot_0, dsig)
     return hist.K_cumu[hist.n] + 0.5 * (K_prev + K_new)
 
 
@@ -216,21 +223,23 @@ def q_calc(hist, K_cumu_s, k):
 
 
 @jit
-def rho_calc_from_sigma_f(par, hist, sigma_f_s, ds, rho_tot, rho_tot_0):
+def rho_calc_from_sigma_f(par, hist, sigma_f_s, ds, rho_tot, rho_tot_0, dsig):
     """rho^j(s) = rho^j(s-1) exp[int_{s-1}^s (m^j/rho^j - K_-^j) dtau]   (Eq. 1, trapezoid)"""
     sigma_f_0 = hist.sigma_f_0
-    net = lambda sf: (par.production.m(1.0, sf, sigma_f_0, ds, rho_tot, rho_tot_0)
-                      - par.removal.K(sf, sigma_f_0, ds, rho_tot, rho_tot_0))
+    net = lambda sf: (par.production.m(1.0, sf, sigma_f_0, ds, rho_tot, rho_tot_0, dsig)
+                      - par.removal.K(sf, sigma_f_0, ds, rho_tot, rho_tot_0, dsig))
     return hist.rho[hist.n] * jnp.exp(0.5 * (net(hist.sigma_f[hist.n]) + net(sigma_f_s)))
 
 
 @jit
-def cohort_sigmas(par, mix_hist):
-    """sigma(F_e^j(s,tau)) for every retained cohort   (Eq. 5, 29)"""
+def cohort_sigmas(par, hist, mix_hist):
+    """sigma(F_e^j(s,tau)) for every retained cohort   (Eq. 5, 29); per-cohort G^j, material^j if hist has them"""
     Fg_hist = (mix_hist.Fg if par.grows
                else jnp.broadcast_to(jnp.eye(3), mix_hist.Fg.shape))
-    F_e_history = F_e_calc(mix_hist.F, Fg_hist, mix_hist.R, par.G, mix_hist.n)
-    return jax.vmap(par.material.sigma)(F_e_history)
+    if hist.G is None:
+        return jax.vmap(par.material.sigma)(F_e_calc(mix_hist.F, Fg_hist, mix_hist.R, par.G, mix_hist.n))
+    F_e_history = F_e_calc(mix_hist.F, Fg_hist, mix_hist.R, hist.G, mix_hist.n)
+    return jax.vmap(lambda mat, F_e: mat.sigma(F_e))(hist.material, F_e_history)
 
 
 def cohort_weights(hist, m_s, K_cumu_s, k):
@@ -243,7 +252,7 @@ def sigma_j_calc(par, hist, m_s, K_cumu_s, mix_hist, J_g, sigma_values=None):
     """phi^j sigma^j = (1/J) int m^j(tau) q^j(s,tau) (dW^j/dF) F^T dtau   (Eq. 27 x 34, 35)"""
     k = mix_hist.n
     if sigma_values is None:
-        sigma_values = cohort_sigmas(par, mix_hist)
+        sigma_values = cohort_sigmas(par, hist, mix_hist)
     weights = cohort_weights(hist, m_s, K_cumu_s, k)[:, None, None]
     integral = jnp.trapezoid(sigma_values * weights, step_axis(k, mix_hist.n_max), axis=0)
     return integral / det3(mix_hist.F[k])
@@ -262,20 +271,20 @@ def sigma_j_elastic(par, hist, mix_hist):
 
 
 @jit
-def solve_sigma_f_newton(par, hist, mix_hist, J_g, ds, rho_tot, rho_tot_0,
+def solve_sigma_f_newton(par, hist, mix_hist, J_g, ds, rho_tot, rho_tot_0, dsig,
                          tol=1e-9, max_iter=50):
     """Newton on sigma_f (per unit mass) closing the m^j <-> sigma^j loop (sec. 2.4.1); implicit gradient via custom_root."""
     sigma_f_0 = hist.sigma_f_0
     k = mix_hist.n
-    sigma_values = cohort_sigmas(par, mix_hist)
+    sigma_values = cohort_sigmas(par, hist, mix_hist)
     tr_values = jax.vmap(par.material.sigma_f)(sigma_values)
     axis = step_axis(k, mix_hist.n_max)
     J = det3(mix_hist.F[k])
 
     def eval_state(sigma_f_s):
-        rho_s = rho_calc_from_sigma_f(par, hist, sigma_f_s, ds, rho_tot, rho_tot_0)
-        m_s = par.production.m(rho_s, sigma_f_s, sigma_f_0, ds, rho_tot, rho_tot_0)
-        K_cumu_s = K_cumu_calc(par, hist, sigma_f_s, ds, rho_tot, rho_tot_0)
+        rho_s = rho_calc_from_sigma_f(par, hist, sigma_f_s, ds, rho_tot, rho_tot_0, dsig)
+        m_s = par.production.m(rho_s, sigma_f_s, sigma_f_0, ds, rho_tot, rho_tot_0, dsig)
+        K_cumu_s = K_cumu_calc(par, hist, sigma_f_s, ds, rho_tot, rho_tot_0, dsig)
         w = cohort_weights(hist, m_s, K_cumu_s, k)
         sigma_f_new = jnp.trapezoid(w * tr_values, axis) / (J * rho_s)
         return sigma_f_new, rho_s, m_s, K_cumu_s
@@ -304,15 +313,27 @@ def solve_sigma_f_newton(par, hist, mix_hist, J_g, ds, rho_tot, rho_tot_0,
 
 @jit
 def sigma_solver(mix, F):
-    """sigma_tot = sum_j phi^j sigma^j at trial F, state untouched   (Eq. 27)"""
+    """sigma_tot = sum_j phi^j sigma^j at trial F, state untouched   (Eq. 27);
+    dsig = sigma_w / sigma_w_h - 1 (0 while sigma_w_h is unset); a reorienting production deposits this step's cohort
+    along M_dep: G^j, material^j turned by material.reorient (deposition stretch kept)"""
     J_g = J_g_calc(mix)
     Fg_s = mix.F_g_calc()
     mix_hist_trial = mix.history.advance(F, Fg_s)
-    rolled = [c.history.roll_if_full() for c in mix.constituents]
+    k = mix_hist_trial.n
+    unset = jnp.abs(mix.sigma_w_h) < 1e-12
+    dsig = jnp.where(unset, 0.0, mix.sigma_w / jnp.where(unset, 1.0, mix.sigma_w_h) - 1.0)
+    rolled = []
+    for c in mix.constituents:
+        h = c.history.roll_if_full()
+        if h.G is not None:
+            mat, F_r, _ = c.params.material.reorient(inv3(c.params.G), jnp.zeros((3, 3)), c.params.production.M_dep)
+            h = h.replace(G=h.G.at[k].set(inv3(F_r)),
+                          material=jax.tree.map(lambda b, v: b.at[k].set(v), h.material, mat))
+        rolled.append(h)
     rho_tot = rho_tot_prev_calc(mix)
 
     results = [solve_sigma_f_newton(c.params, h, mix_hist_trial, J_g, mix.ds,
-                                    rho_tot, mix.rho_tot_0)
+                                    rho_tot, mix.rho_tot_0, dsig)
                if c.params.remodels else sigma_j_elastic(c.params, h, mix_hist_trial)
                for c, h in zip(mix.constituents, rolled)]
 
@@ -321,6 +342,11 @@ def sigma_solver(mix, F):
         sigma_total += sigma_j
 
     return sigma_total, (results, mix_hist_trial, rolled)
+
+
+def J_target(mix):
+    """J = J_g = rho_tot / rho_tot_0: mixture volume from mass (constant density, hybrid element)"""
+    return J_g_calc(mix)
 
 
 @jit

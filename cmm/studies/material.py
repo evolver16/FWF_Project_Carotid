@@ -375,7 +375,7 @@ def maes_abaqus(folder=None, ds=10.0, n_steps=100):
     Deviation from Abaqus: U max over time |d sigma| / sigma(day 10), S / F (lambda_end - lambda_end,Abaqus) /
     (lambda_end,Abaqus - 1)."""
     folder = pathlib.Path(folder) if folder else (pathlib.Path(__file__).resolve().parents[2]
-                                                  / ".context" / "Abaqus_test" / "Maes" / "InputFiles")
+                                                  / ".context" / "maes" / "InputFiles")
     log = Log()
     csv_path, fig_path, txt = outputs("material/maes_abaqus", "maes_abaqus.csv", "fig2_abaqus.png", "maes_abaqus.txt")
 
@@ -443,7 +443,7 @@ def maes_timing(folder=None, n_steps=100, ds=10.0):
     from studies.fe_gr import DRIVEN as AX, L_BOX, box_bc
 
     folder = pathlib.Path(folder) if folder else (pathlib.Path(__file__).resolve().parents[2]
-                                                  / ".context" / "Abaqus_test" / "Maes" / "InputFiles")
+                                                  / ".context" / "maes" / "InputFiles")
     umat = folder.parent / "FortranFiles" / "UMAT_HCMvsCM.for"
     log = Log()
     csv_path, txt = outputs("material/maes_timing", "maes_timing.csv", "maes_timing.txt")

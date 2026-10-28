@@ -3,18 +3,20 @@ elastin loss with the Weiss 2020 wall."""
 
 import time
 
+import jax
 import jax.numpy as jnp
 import matplotlib
 import numpy as np
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
+import fcmm
 import fem
 import hcmm
 import materials
 import plotting
 from analysis import tortuosity as ti
 from fem import mesh as meshlib
-from fem.tensor3 import det3
+from fem.tensor3 import det3, inv3
 from studies.common import Log, outputs, wall_stress, write_csv
 from studies.model_e import artery_par, artery_simulate
 from studies.weiss.model import KO, WALL_WEISS, weiss_par
@@ -99,7 +101,7 @@ def bifurcation(half=False, D=6.3, angles=(25.0, 25.0), n_q=6, n_seam=8, n_r=2, 
     s_loc = np.asarray(1e3 * (jnp.swapaxes(Qj, -1, -2) @ s @ Qj))
     dev = s - jnp.trace(s, axis1=-2, axis2=-1)[..., None, None] / 3 * jnp.eye(3)
     mises = np.asarray(1e3 * jnp.sqrt(1.5 * jnp.sum(dev ** 2, (-2, -1))))
-    meshlib.VTKSeries(pvd).write(0.0, m.X, m.conn, *sysm.fields(u, states, dict(
+    meshlib.VTKSeries(pvd, m).write(0.0, m.X, m.conn, *sysm.fields(u, states, dict(
         sigma_tt_kPa=s_loc[..., 1, 1], sigma_zz_kPa=s_loc[..., 2, 2], mises_kPa=mises,
         **{f"e_{k}": Q[..., i] for i, k in enumerate(("r", "theta", "z"))})))
     log("  homeostatic stress (kPa), mean / min / max over the Gauss points:")
@@ -114,7 +116,8 @@ def bifurcation(half=False, D=6.3, angles=(25.0, 25.0), n_q=6, n_seam=8, n_r=2, 
 
 def bifurcation_tortuosity(D=6.3, angles=(25.0, 25.0), lengths=(3.0, 8.0, 3.0), n_q=4, n_seam=5, n_r=2, noise=0.01,
                            ell=0.88, kappa_junction=0.10, insult_day=10.0, n_hold=400, gamma=1.0, ds=1.0,
-                           record_every=10, tol=1e-10, length=None, ends="isometric", half=False, name=None, **kw):
+                           record_every=10, tol=1e-10, length=None, ends="isometric", half=False, model="hcmm",
+                           fcmm_prestress=1, name=None, **kw):
     """Weiss 2020 wall (table S2) on the idealized bifurcation, wall thickness h / a of Weiss in the tubes (the
     mechanics are scale-free, so this is the mouse wall on a scaled carotid), kappa_junction r on the junction patches
     (with h / a = 0.06 there the prestress stalls; a thicker wall everywhere turns the response to the elastin loss
@@ -126,6 +129,9 @@ def bifurcation_tortuosity(D=6.3, angles=(25.0, 25.0), lengths=(3.0, 8.0, 3.0), 
     in the Laplace wall basis (theta, z); classical kinematics (growth "fixed"), tr sigma stimulus, nonlocal over
     length (default max(sqrt(R h), 1.2 x element size): a mean shorter than the elements is pointwise and localizes); symmetry breaking: c_e (1 + noise xi(X)), xi a fixed 3D Gaussian random field (seed 0, 256 random
     Fourier modes, correlation length ell R, max|xi| = 1), already in the prestress.
+    model "fcmm": full constrained mixture (cohorts over the window of T, each diagonal cohort along its deposition
+    angle, alpha output: mass-weighted mean direction), from the HCMM prestress with fcmm_prestress further prestress
+    iterations (1: equilibrium only, the FCMM cohort quadrature leaves a small u; the G&R starts there).
     Output per step: TI, deflection and axial force of the ICA tube (cuff to the distal end)"""
     log = Log()
     name = name or "bifurcation_tortuosity"
@@ -164,6 +170,34 @@ def bifurcation_tortuosity(D=6.3, angles=(25.0, 25.0), lengths=(3.0, 8.0, 3.0), 
                                    fields={"elastin.C10": par["elastin.C10"] * scale} if noise else None,
                                    anderson=2, pre_iter=200)
     log(f"  prestress done in {time.time() - t0:.0f}s")
+    fc = model == "fcmm"
+    if fc:
+        T = max(float(v) for k, v in par.items() if k.endswith(".T"))
+        n_max = fcmm.window_for(T, ds) + 2
+        sysm = fem.System(m, fcmm, pressure_faces=m.faces["inner"], element="hybrid")
+        t0 = time.time()
+        _, u, states = artery_simulate(m, sysm, Q, par, n_steps=0, bc=lambda p: bc, final=True, log=log, ds=ds,
+                                       wall=WALL_WEISS, laws="wall", incompressible=True, growth="fixed",
+                                       G_e=inv3(states.constituents[0].F_r), measure=lambda u: (jnp.zeros(()),),
+                                       fields={"elastin.C10": par["elastin.C10"] * scale} if noise else None,
+                                       anderson=2, pre_iter=fcmm_prestress, n_max=n_max)
+        u = jnp.asarray(sysm.last_u)
+        log(f"  FCMM ({n_max} cohorts, T {T:g} d) from the HCMM elastin state, {fcmm_prestress} prestress iteration(s): "
+            f"max|u| {float(jnp.abs(u).max()):.2e} mm  ({time.time() - t0:.0f}s)")
+    part = lambda c: c.params if fc else c
+    set_part = lambda c, **f: c.replace(params=c.params.replace(**f)) if fc else c.replace(**f)
+    J_g = lambda st: np.asarray(jax.vmap(jax.vmap(sysm.J_target))(st))
+
+    def fiber(c):
+        """fiber direction; FCMM: mass-weighted mean over the cohorts"""
+        if not fc:
+            return c.material.M
+        h = c.history
+        w = (h.m * jnp.exp(h.K_cumu - jnp.take_along_axis(h.K_cumu, h.n[..., None], -1))
+             * (jnp.arange(h.m.shape[-1]) <= h.n[..., None]))
+        M = jnp.einsum("...k,...ki->...i", w, h.material.M)
+        return M / jnp.linalg.norm(M, axis=-1, keepdims=True)
+
     states = states.replace(sigma_w=(sw := wall_stress(sysm, u, states, length, None, True)), sigma_w_h=sw)
     internal = lambda u, states: np.asarray(sysm.residual(jnp.concatenate([jnp.asarray(u), jnp.asarray(sysm.last_p)]),
                                                           states, p0, jnp.zeros(sysm.n_dof)))[:sysm.n_dof].reshape(-1, 3)
@@ -177,7 +211,7 @@ def bifurcation_tortuosity(D=6.3, angles=(25.0, 25.0), lengths=(3.0, 8.0, 3.0), 
             f"{end} {1e3 * float(f_dead[m.nodes[end]].sum(0) @ axes(angles)[end]):.1f} mN" for end in ("ica", "eca")))
 
     names = [q.name for q in WALL_WEISS]
-    C10, alpha = states.constituents[0].material.C10, par["diag+.alpha"]
+    alpha = par["diag+.alpha"]
     e_t, e_z = Q[..., :, 1], Q[..., :, 2]
     angle = lambda M: jnp.degrees(jnp.arccos(jnp.abs(jnp.sum(M * e_z, axis=-1))))
 
@@ -190,7 +224,7 @@ def bifurcation_tortuosity(D=6.3, angles=(25.0, 25.0), lengths=(3.0, 8.0, 3.0), 
 
     s_tt, s_zz = in_plane(u, states)
     ratio_h = s_tt / s_zz
-    series = meshlib.VTKSeries(pvd)
+    series = meshlib.VTKSeries(pvd, m)
 
     def record(k, u, states):
         diag = states.constituents[names.index("diag+")]
@@ -199,10 +233,9 @@ def bifurcation_tortuosity(D=6.3, angles=(25.0, 25.0), lengths=(3.0, 8.0, 3.0), 
         biaxial = np.einsum("egia,egij,egja->ega", e, sysm.total_stress(u, states), e)
         series.write(ds * k, m.X, m.conn, *sysm.fields(u, states, dict(
             sigma_tt_kPa=1e3 * biaxial[..., 1], sigma_zz_kPa=1e3 * biaxial[..., 2],
-            c_e_rel=states.constituents[0].material.C10 / par["elastin.C10"], elastin_field=xi,
-            alpha_diag_deg=angle(diag.material.M), alpha_dep_deg=angle(getattr(diag.production, "M_dep",
-                                                                                 diag.material.M)),
-            wall_stress_rel=states.sigma_w / states.sigma_w_h, J_g=det3(states.F_g),
+            c_e_rel=part(states.constituents[0]).material.C10 / par["elastin.C10"], elastin_field=xi,
+            alpha_diag_deg=angle(fiber(diag)), alpha_dep_deg=angle(part(diag).production.M_dep),
+            wall_stress_rel=states.sigma_w / states.sigma_w_h, J_g=J_g(states),
             **{f"e_{c}": Q[..., :, i] for i, c in enumerate(("r", "theta", "z"))})))
 
     record(0, u, states)
@@ -212,14 +245,14 @@ def bifurcation_tortuosity(D=6.3, angles=(25.0, 25.0), lengths=(3.0, 8.0, 3.0), 
     for k in range(1, n_steps + 1):
         cs = list(states.constituents)
         if ds * k >= insult_day:
-            cs[0] = cs[0].replace(material=materials.NeoHookeanInc(KO["C10"] * scale))
+            cs[0] = set_part(cs[0], material=materials.NeoHookeanInc(KO["C10"] * scale))
         s_tt, s_zz = in_plane(u, states)
         al = jnp.asarray(np.arctan(np.tan(alpha) * (np.maximum(s_tt, 0.0) / np.maximum(s_zz, 1e-12) / ratio_h)
                                    ** gamma))[..., None]
         for d, sign in (("diag+", 1.0), ("diag-", -1.0)):
             c = cs[names.index(d)]
-            cs[names.index(d)] = c.replace(production=c.production.replace(M_dep=jnp.sin(al) * e_t
-                                                                           + sign * jnp.cos(al) * e_z))
+            cs[names.index(d)] = set_part(c, production=part(c).production.replace(M_dep=jnp.sin(al) * e_t
+                                                                                   + sign * jnp.cos(al) * e_z))
         states = states.replace(constituents=cs, sigma_w=wall_stress(sysm, u, states, length, None, True))
         u, states, _ = sysm.run(states, [bc], u0=u, tol=tol)
         x = m.X + np.asarray(u).reshape(-1, 3)
@@ -229,10 +262,10 @@ def bifurcation_tortuosity(D=6.3, angles=(25.0, 25.0), lengths=(3.0, 8.0, 3.0), 
         chord = (c[-1] - c[0]) / np.linalg.norm(c[-1] - c[0])
         off = (c - c[0]) - ((c - c[0]) @ chord)[:, None] * chord
         r = internal(u, states)
-        J_g = np.asarray(det3(states.F_g))
-        al_fib = np.asarray(angle(states.constituents[names.index("diag+")].material.M))
+        jg = J_g(states)
+        al_fib = np.asarray(angle(fiber(states.constituents[names.index("diag+")])))
         rows.append(dict(day=ds * k, TI_ica=ti(c), deflection_ica=np.linalg.norm(off, axis=1).max() / R,
-                         J_g_mean=J_g.mean(), J_g_max=J_g.max(), alpha_mean=al_fib.mean(), alpha_min=al_fib.min(),
+                         J_g_mean=jg.mean(), J_g_max=jg.max(), alpha_mean=al_fib.mean(), alpha_min=al_fib.min(),
                          alpha_max=al_fib.max(), axial_force_ica_mN=-1e3 * float(r[ring_ica].sum(0) @ e_ica),
                          ica_end_shift_mm=float(np.asarray(u).reshape(-1, 3)[ring_ica].mean(0) @ e_ica)))
         if k % record_every == 0 or k == n_steps:
@@ -253,6 +286,6 @@ def bifurcation_tortuosity(D=6.3, angles=(25.0, 25.0), lengths=(3.0, 8.0, 3.0), 
                           ylabel="(-)"),
                      dict(t=t, series={"mean": col("alpha_mean"), "min": col("alpha_min"), "max": col("alpha_max")},
                           title="Diagonal collagen angle", ylabel="deg")], fig)
-    outer_image(m, m.X + np.asarray(u).reshape(-1, 3), np.asarray(det3(states.F_g)).mean(1), img, "J_g",
+    outer_image(m, m.X + np.asarray(u).reshape(-1, 3), J_g(states).mean(1), img, "J_g",
                 f"{name}, day {ds * n_steps:g}")
     log.save(txt)

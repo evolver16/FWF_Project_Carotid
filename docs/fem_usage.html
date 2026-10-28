@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FE Usage Guide</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js"
+        onload="renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+<style>
+:root {
+  --bg: #fbfaf7; --panel: #ffffff; --text: #1f2328; --muted: #5d6670; --line: #e3e0d8;
+  --accent: #1f6f8b; --accent-soft: #e5f1f5; --warn: #9a5b00; --warn-soft: #fbf0dc;
+  --ok: #2f7a3e; --ok-soft: #e4f3e7; --code: #f3f1ec;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #15181c; --panel: #1c2026; --text: #e4e6e9; --muted: #9aa3ad; --line: #2e343c;
+    --accent: #6cb6d0; --accent-soft: #1b2e36; --warn: #e2a74f; --warn-soft: #33281a;
+    --ok: #7cc68a; --ok-soft: #1c2e21; --code: #23282f;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #15181c; --panel: #1c2026; --text: #e4e6e9; --muted: #9aa3ad; --line: #2e343c;
+  --accent: #6cb6d0; --accent-soft: #1b2e36; --warn: #e2a74f; --warn-soft: #33281a;
+  --ok: #7cc68a; --ok-soft: #1c2e21; --code: #23282f;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { margin: 0; background: var(--bg); color: var(--text);
+  font: 16px/1.65 "Source Sans 3", "Segoe UI", system-ui, -apple-system, sans-serif; }
+.layout { display: grid; grid-template-columns: 250px minmax(0, 1fr); max-width: 1200px; margin: 0 auto; }
+nav.toc { position: sticky; top: 0; align-self: start; height: 100vh; overflow-y: auto;
+  padding: 28px 16px 28px 20px; border-right: 1px solid var(--line); font-size: 14px; }
+nav.toc .title { font-weight: 700; margin-bottom: 10px; }
+nav.toc a { display: block; color: var(--muted); text-decoration: none; padding: 3px 0; }
+nav.toc a:hover { color: var(--accent); }
+nav.toc .sep { border-top: 1px solid var(--line); margin: 12px 0 8px; }
+main { padding: 32px 40px 80px; min-width: 0; }
+h1 { font-size: 2rem; margin: 0 0 6px; line-height: 1.2; }
+h2 { font-size: 1.45rem; margin: 52px 0 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+h3 { font-size: 1.1rem; margin: 26px 0 8px; }
+p, li { max-width: 80ch; }
+.lead { color: var(--muted); font-size: 1.05rem; max-width: 80ch; }
+code { font: 0.88em/1.4 "JetBrains Mono", "Fira Code", Consolas, monospace; background: var(--code);
+       padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+pre { background: var(--code); padding: 14px 16px; border-radius: 8px; overflow-x: auto; font-size: 0.85rem; line-height: 1.5; }
+pre code { background: none; padding: 0; overflow-wrap: normal; }
+a { color: var(--accent); }
+.katex { position: relative; }
+.katex-display { position: relative; overflow-x: auto; overflow-y: hidden; padding: 4px 0; }
+.box { border-left: 4px solid var(--accent); background: var(--accent-soft); padding: 12px 16px;
+       border-radius: 0 8px 8px 0; margin: 16px 0; max-width: 84ch; }
+.box.warn { border-color: var(--warn); background: var(--warn-soft); }
+.box.ok { border-color: var(--ok); background: var(--ok-soft); }
+.box > :first-child { margin-top: 0; } .box > :last-child { margin-bottom: 0; }
+.box .tag { font-weight: 700; font-size: 0.8rem; letter-spacing: .04em; text-transform: uppercase; display: block; margin-bottom: 4px; }
+.table-wrap { overflow-x: auto; margin: 14px 0; }
+table { border-collapse: collapse; font-size: 0.92rem; min-width: 520px; background: var(--panel); }
+th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; vertical-align: top; }
+th { background: var(--code); font-weight: 600; }
+.flow { display: flex; flex-wrap: wrap; gap: 8px; align-items: stretch; margin: 18px 0; }
+.flow .step { flex: 1 1 140px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; font-size: 0.9rem; }
+.flow .step b { display: block; color: var(--accent); margin-bottom: 2px; }
+.flow .arrow { align-self: center; color: var(--muted); font-size: 1.2rem; }
+.meta { color: var(--muted); font-size: 0.9rem; }
+@media (max-width: 860px) {
+  .layout { display: block; }
+  nav.toc { position: static; height: auto; border-right: none; border-bottom: 1px solid var(--line); padding: 16px; }
+  nav.toc a { display: inline-block; margin-right: 12px; }
+  main { padding: 20px 16px 60px; }
+  h1 { font-size: 1.6rem; }
+}
+</style>
+</head>
+<body>
+<div class="layout">
+<nav class="toc">
+  <div class="title">FE usage guide</div>
+  <a href="#install">1. Install</a>
+  <a href="#quick">2. Quick start</a>
+  <a href="#mesh">3. Meshes</a>
+  <a href="#material">4. Materials and state</a>
+  <a href="#element">5. Element formulation</a>
+  <a href="#bc">6. Boundary conditions</a>
+  <a href="#solve">7. Solving</a>
+  <a href="#output">8. Output and ParaView</a>
+  <a href="#grad">9. Gradients</a>
+  <a href="#model">10. G&amp;R and own models</a>
+  <a href="#buckling">11. Buckling</a>
+  <a href="#vessel">12. Vessel tools</a>
+  <a href="#abaqus">13. Abaqus input and UMATs</a>
+  <a href="#studies">14. Studies and verification</a>
+  <a href="#trouble">15. Troubleshooting</a>
+  <div class="sep"></div>
+  <a href="fem_verification.html">Verification overview →</a>
+  <a href="fem.html">Design of the FE code →</a>
+</nav>
+
+<main>
+<h1>Using the FE code</h1>
+<p class="lead">How to set up and run a simulation with <code>fem/</code>: mesh, material, boundary conditions, solve, output,
+gradients, G&amp;R models and Abaqus input files. All code blocks on this page have been run as shown.</p>
+<p class="meta">Units: mm, MPa, days. Quasi-static, finite strain, total Lagrangian. Why the code is built this way: <a href="fem.html">fem.html</a>.</p>
+
+<div class="flow">
+  <div class="step"><b>Mesh</b><code>fem.mesh</code>: generator, .inp or .msh</div>
+  <div class="arrow">→</div>
+  <div class="step"><b>States</b>one material / mixture per Gauss point</div>
+  <div class="arrow">→</div>
+  <div class="step"><b>System</b><code>fem.System(mesh, model, pressure_faces, element)</code></div>
+  <div class="arrow">→</div>
+  <div class="step"><b>BC</b>fixed dofs, values, pressure, forces</div>
+  <div class="arrow">→</div>
+  <div class="step"><b>Solve</b><code>equilibrium</code> or <code>run</code></div>
+  <div class="arrow">→</div>
+  <div class="step"><b>Output</b>stresses, reactions, VTK</div>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="install">1. Install</h2>
+<pre><code>python -m venv ~/venvs/cmm &amp;&amp; source ~/venvs/cmm/bin/activate
+pip install -r cmm/requirements.txt
+pip install -e .                 # fem, materials, verification importable; commands fem-abaqus, fem-vs-abaqus
+pip install pypardiso            # optional: MKL PARDISO (much faster); without it SciPy SuperLU is used</code></pre>
+<ul>
+<li>Python ≥ 3.12, JAX, NumPy, SciPy. <code>import fem</code> switches JAX to float64, which the solver needs.</li>
+<li>gfortran only for Abaqus user subroutines (UMAT, UHYPER).</li>
+<li>G&amp;R models live in <code>cmm/</code> (<code>hcmm</code>, <code>fcmm</code>); run scripts that use them from <code>cmm/</code>.</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="quick">2. Quick start: uniaxial tension of a cube</h2>
+<pre><code>import numpy as np
+import fem
+import materials
+from fem import mesh as meshlib
+
+m = meshlib.box((4, 4, 4), (1.0, 1.0, 1.0))                 # 64 hex8, unit cube
+states = fem.broadcast_state(materials.NeoHookean(0.5, 50.0), m.n_elem, len(m.element.gauss))
+sysm = fem.System(m, element="fbar")
+
+x0, y0, z0, x1 = m.nodes[(0, -1)], m.nodes[(1, -1)], m.nodes[(2, -1)], m.nodes[(0, 1)]
+fixed = np.concatenate([3 * x0 + 0, 3 * y0 + 1, 3 * z0 + 2, 3 * x1 + 0])     # dof = 3 node + component
+end = np.concatenate([np.zeros(len(x0) + len(y0) + len(z0)), np.full(len(x1), 0.5)])
+bcs = [fem.BC(fixed, s * end) for s in np.linspace(0.1, 1.0, 10)]          # 10 load steps
+
+u, states, _ = sysm.run(states, bcs)
+sig = sysm.total_stress(u, states)                          # Cauchy, (n_el, n_gp, 3, 3)
+print(sig[..., 0, 0].mean())                                # 1.54967 (Abaqus: 1.54967)</code></pre>
+
+<!-- ============================================================ -->
+<h2 id="mesh">3. Meshes</h2>
+<p>A <code>Mesh</code> holds <code>X</code> (n_nodes, 3), <code>conn</code> (n_el, 8 | 10 | 4), and dictionaries <code>nodes</code> (node indices),
+<code>faces</code> (outward-oriented quad4 / tri6 / tri3 node lists) and <code>elsets</code>. Indices are 0-based.</p>
+<div class="table-wrap"><table>
+<tr><th>function</th><th>what</th><th>named sets</th></tr>
+<tr><td><code>box(n, L, perturb, etype)</code></td><td>box, optionally distorted interior</td><td rowspan="2"><code>(axis, side)</code>, e.g. <code>(0, -1)</code> = x = 0, <code>(2, 1)</code> = z = max (structured index axes)</td></tr>
+<tr><td><code>quarter_cylinder(r_i, t, L, n, etype)</code></td><td>quarter tube, axes (r, θ, z)</td></tr>
+<tr><td><code>half_tube</code>, <code>tube</code></td><td>straight half / full tube</td><td><code>"inner"</code>, <code>"outer"</code>, <code>"inlet"</code>, <code>"outlet"</code> (+ <code>"sym"</code>)</td></tr>
+<tr><td><code>bent_tube(..., stenosis, intima)</code></td><td>90° bend with stenosis, optional plaque layer</td><td>same as tube</td></tr>
+<tr><td><code>carotid_bifurcation(...)</code></td><td>idealized carotid bifurcation, hex8</td><td>see its docstring</td></tr>
+<tr><td><code>read_inp(path)</code> / <code>write_inp</code></td><td>Abaqus, one part, C3D8*, C3D10*, C3D4*</td><td><code>*Nset</code>, <code>*Elset</code>, element-based <code>*Surface</code> by name</td></tr>
+<tr><td><code>read_msh(path)</code> / <code>write_msh</code></td><td>gmsh 2.2 / 4.1 ASCII</td><td>physical surfaces → faces + nodes, volumes → elsets</td></tr>
+</table></div>
+<p>The structured generators take <code>etype="hex8" | "tet10" | "tet4"</code> (tets: 6 per cell, curved tet10 edges); <code>carotid_bifurcation</code> is hex8 only. Imported faces are reoriented outward automatically.
+Elements with \(\det(\partial X/\partial\xi) \le 0\) are rejected when the <code>System</code> is built.</p>
+<pre><code>m = meshlib.read_inp("vessel.inp")
+inner_faces, inlet_nodes = m.faces["INNER"], m.nodes["INLET"]     # names as in the file</code></pre>
+
+<!-- ============================================================ -->
+<h2 id="material">4. Materials and the state per Gauss point</h2>
+<p>The solver asks the <em>model</em> for the Cauchy stress at each Gauss point; the <em>state</em> holds what the model needs there.
+Without a model (<code>System(mesh)</code>) the state is simply a material object with <code>sigma(F)</code>.</p>
+<div class="table-wrap"><table>
+<tr><th>material</th><th>energy</th><th>use with</th></tr>
+<tr><td><code>materials.NeoHookean(C10, K)</code></td><td>\(C_{10}(\bar I_1 - 3) + \tfrac K2 (J-1)^2\)</td><td>standard, fbar</td></tr>
+<tr><td><code>materials.NeoHookeanInc(C10)</code></td><td>\(C_{10}(I_1 - 3)\), deviatoric stress only</td><td>hybrid, hybrid_p1 (incompressible)</td></tr>
+<tr><td><code>materials.Fung(k1, k2, M)</code></td><td>\(\tfrac{k_1}{2k_2}[e^{k_2(I_4-1)^2}-1]\), tension only, fiber direction <code>M</code></td><td>any</td></tr>
+</table></div>
+<pre><code>n_gp = len(m.element.gauss)                       # 8 hex8, 4 tet10, 1 tet4
+states = fem.broadcast_state(materials.NeoHookean(0.5, 50.0), m.n_elem, n_gp)   # leaves (n_el, n_gp, ...)</code></pre>
+<p>Parameters that vary in space: build the state with arrays of shape <code>(n_el, n_gp)</code> instead of broadcasting
+(Gauss point coordinates: <code>fem.gauss_points(m.X, m.conn)</code>). The state is a JAX pytree, so it can be differentiated (section 9).</p>
+
+<!-- ============================================================ -->
+<h2 id="element">5. Choosing the element formulation</h2>
+<div class="table-wrap"><table>
+<tr><th><code>element=</code></th><th>meshes</th><th>when</th></tr>
+<tr><td><code>"standard"</code></td><td>hex8, tet10, tet4</td><td>compressible material (\(K/\mu \lesssim 20\)); tests</td></tr>
+<tr><td><code>"fbar"</code></td><td>hex8, tet10, tet4</td><td>nearly incompressible, short runs; not for long G&amp;R with \(K/\mu \gtrsim 10^3\)</td></tr>
+<tr><td><code>"hybrid"</code></td><td>hex8 (Q1/P0), tet10 (P2/P0)</td><td><b>default for arterial G&amp;R on hex8</b>, with <code>NeoHookeanInc</code>; enforces \(J = J_\text{target}\)</td></tr>
+<tr><td><code>"hybrid_p1"</code></td><td>tet10 only (P2/P1)</td><td><b>default on tet10</b>; smooth, convergent pressure and wall stress</td></tr>
+</table></div>
+<div class="box warn"><span class="tag">Note</span><p><code>hybrid</code> makes the material exactly incompressible (up to growth via the model's <code>J_target</code>).
+It is not Abaqus' compressible hybrid; for a compressible material use <code>fbar</code>.</p></div>
+
+<!-- ============================================================ -->
+<h2 id="bc">6. Boundary conditions</h2>
+<pre><code>fem.BC(fixed, values, f_dead=None, p=0.0, slip=None, wss=None)</code></pre>
+<div class="table-wrap"><table>
+<tr><th>field</th><th>meaning</th></tr>
+<tr><td><code>fixed</code>, <code>values</code></td><td>prescribed global dofs (\(3\,\text{node} + c\), \(c\) = 0, 1, 2) and their displacements</td></tr>
+<tr><td><code>f_dead</code></td><td>dead nodal forces, length <code>n_dof</code></td></tr>
+<tr><td><code>p</code></td><td>follower pressure on <code>System(..., pressure_faces=...)</code>: a number, one per face, or one per face Gauss point</td></tr>
+<tr><td><code>slip</code></td><td><code>(nodes, normals)</code>: \(u\cdot n = 0\), for inclined supports and symmetry planes not aligned with the axes</td></tr>
+<tr><td><code>wss</code></td><td>wall shear stress on the pressure faces (G&amp;R stimulus, passed to the model's <code>wss</code>; not a traction)</td></tr>
+</table></div>
+<p>Example, pressurized quarter cylinder (symmetry planes, plane strain):</p>
+<pre><code>m = meshlib.quarter_cylinder(n=(4, 24, 1))
+states = fem.broadcast_state(materials.NeoHookeanInc(0.305), m.n_elem, len(m.element.gauss))
+sysm = fem.System(m, pressure_faces=m.faces[(0, -1)], element="hybrid")
+fixed = np.unique(np.concatenate([3 * m.nodes[(1, -1)] + 1, 3 * m.nodes[(1, 1)] + 0,
+                                  3 * m.nodes[(2, -1)] + 2, 3 * m.nodes[(2, 1)] + 2]))
+bc = fem.BC(fixed, np.zeros(len(fixed)), p=0.016)            # 16 kPa
+u = sysm.equilibrium(states, bc, np.zeros(sysm.n_dof))</code></pre>
+<p>Support forces in an equilibrium: <code>sysm.reaction(u, states, bc)</code> (length <code>n_dof</code>, nonzero at the fixed dofs).
+Adding them to <code>f_dead</code> and releasing the support holds the same state with force control (e.g. isotonic vessel ends).</p>
+
+<!-- ============================================================ -->
+<h2 id="solve">7. Solving</h2>
+<div class="table-wrap"><table>
+<tr><th>call</th><th>returns</th><th>use</th></tr>
+<tr><td><code>sysm.equilibrium(states, bc, u0, tol=1e-10)</code></td><td><code>u</code></td><td>one load state; differentiable</td></tr>
+<tr><td><code>sysm.run(states, bcs, u0=None, on_step=None, checkpoint=None)</code></td><td><code>(u, states, history)</code></td><td>sequence of steps: equilibrium, then <code>commit</code> of the state; <code>history</code> = <code>on_step(u, states)</code> per step</td></tr>
+<tr><td><code>sysm.solve(u0, states, bc)</code></td><td><code>(u, iterations)</code></td><td>plain Newton, not differentiable</td></tr>
+<tr><td><code>sysm.commit(u, states)</code></td><td><code>states</code></td><td>close a step by hand (after <code>equilibrium</code>)</td></tr>
+</table></div>
+<p>Newton converges when the scaled residual is below <code>tol</code>. If it fails, the solver automatically falls back to load continuation
+(halving the step from the last converged BC), then pseudo-transient relaxation (for snapping without a load change). Diagnostics:
+<code>sysm.last_iterations</code>, <code>sysm.cutbacks</code>, <code>sysm.relaxations</code>. Hybrid pressures: <code>sysm.last_p</code>.</p>
+<p>Results: <code>sysm.total_stress(u, states)</code> (Cauchy incl. hybrid pressure, per Gauss point), <code>sysm.gauss_F(u)</code>
+(deformation gradient), <code>sysm.to_nodes(values)</code> (Gauss → nodes).</p>
+
+<!-- ============================================================ -->
+<h2 id="output">8. Output and ParaView</h2>
+<pre><code>series = meshlib.VTKSeries("out/box.pvd")                   # .pvd + one .vtu per call
+on_step = lambda u, st: series.write(len(series.entries), m.X, m.conn, *sysm.fields(u, st))
+u, states, _ = sysm.run(states, bcs, on_step=on_step)</code></pre>
+<p><code>sysm.fields(u, states, gauss=None)</code> returns <code>(point_data, cell_data)</code> with u, J, σ, von Mises (and \(\rho/\rho_0\), \(J_g\) for mixtures);
+extra Gauss-point fields go in <code>gauss={"name": array (n_el, n_gp, ...)}</code>. In ParaView open the <code>.pvd</code> and use
+<em>Warp By Vector</em> on <code>u</code> (<code>docs/paraview/warp_u.py</code>).</p>
+
+<!-- ============================================================ -->
+<h2 id="grad">9. Gradients</h2>
+<p><code>equilibrium</code> and <code>run</code> are reverse-differentiable with respect to the states (all material and model parameters) and the pressure
+<code>bc.p</code>, through an adjoint solve per step. Use <code>jax.grad</code> as usual:</p>
+<pre><code>import jax
+inner = m.nodes[(0, -1)]
+
+def f(C10, p):
+    st = fem.broadcast_state(materials.NeoHookeanInc(C10), m.n_elem, len(m.element.gauss))
+    u = sysm.equilibrium(st, fem.BC(fixed, np.zeros(len(fixed)), p=p), np.zeros(sysm.n_dof))
+    return u.reshape(-1, 3)[inner, 0].mean()
+
+dC10, dp = jax.grad(f, argnums=(0, 1))(0.305, 0.016)</code></pre>
+<ul>
+<li>Prescribed displacement values and <code>f_dead</code> are not differentiated; put a parameter into the state or the pressure instead.</li>
+<li>Long runs: <code>run(..., checkpoint=k)</code> stores only every \(k\)-th state and recomputes in the reverse pass (memory \(\sim n/k\)).
+<code>on_step</code> must then return JAX values.</li>
+<li>Cost: about 2–3 forward runs for the full gradient, independent of the number of parameters.</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="model">10. G&amp;R models and your own model</h2>
+<p>A model is any object or module with</p>
+<pre><code>sigma, aux = model.sigma_solver(state, F)   # Cauchy stress at a trial F; must not change state
+state      = model.commit(state, F, aux)    # once per step, on the converged F
+J_target(state)                             # optional: target volume ratio for the hybrid element (growth)
+wss(state, tau_w) -> state                  # optional: receives BC.wss</code></pre>
+<p>Both functions are written for <em>one</em> Gauss point; the FE code vectorizes them. The tangent comes from AD.</p>
+
+<h3>G&amp;R with the HCMM</h3>
+<pre><code>import hcmm                                      # from cmm/
+sysm = fem.System(m, hcmm, pressure_faces=m.faces[(0, -1)], element="hybrid")
+# states: one mixture per Gauss point, see studies/model_e.py (assemble, artery_simulate):
+# prestress the imaged geometry at p_hom, then run G&amp;R steps of ds days at p_gr
+u, states, history = sysm.run(states, [bc] * n_steps, u0=u, on_step=measure)</code></pre>
+<p>Working templates: <code>cmm/studies/model_e.py</code> (<code>artery_simulate</code>: prestress with Anderson acceleration, G&amp;R loop, gradients),
+<code>cmm/studies/artery.py</code> (pressure and flow steps), <code>cmm/studies/carotid.py</code> (bifurcation).</p>
+
+<h3>Own model, minimal example</h3>
+<pre><code>from fem.pytree import pytree
+from fem.tensor3 import det3
+
+@pytree(("C10", "K"))                            # leaves of the state
+class Soft:
+    def __init__(self, C10, K):
+        self.C10, self.K = C10, K
+
+class Softening:                                 # neo-Hooke whose C10 drops 10 % per step
+    @staticmethod
+    def sigma_solver(state, F):
+        return materials.NeoHookean(state.C10, state.K).sigma(F) / det3(F), None
+
+    @staticmethod
+    def commit(state, F, aux):
+        return state.replace(C10=0.9 * state.C10)
+
+sysm = fem.System(m, Softening)
+states = fem.broadcast_state(Soft(0.5, 50.0), m.n_elem)
+u, states, hist = sysm.run(states, [bc] * 3)</code></pre>
+
+<!-- ============================================================ -->
+<h2 id="buckling">11. Buckling</h2>
+<pre><code>mu, modes = sysm.stability(u, states, bc, k=4)        # eigenvalues nearest 0; mu &lt; 0: unstable
+path = sysm.arc_length(states, bc0, bc1, n_steps=20)  # [(lam, u)] for bc(lam) = (1-lam) bc0 + lam bc1</code></pre>
+<p>Both freeze the G&amp;R state and are not differentiable. <code>bc0</code> and <code>bc1</code> must fix the same dofs.
+A perfect structure stays on the symmetric branch under Newton: add a scaled mode from <code>stability</code> as imperfection.</p>
+
+<!-- ============================================================ -->
+<h2 id="vessel">12. Tools for vessel geometries</h2>
+<div class="table-wrap"><table>
+<tr><th>function</th><th>what</th></tr>
+<tr><td><code>fem.wall_basis(X, conn, inner, outer, inlets, outlets)</code></td><td>local \((e_r, e_\theta, e_z)\) per Gauss point from two Laplace solves; for fiber directions on any geometry</td></tr>
+<tr><td><code>fem.laplace(X, conn, fixed)</code></td><td>nodal Laplace field with Dirichlet values on node sets</td></tr>
+<tr><td><code>sysm.face_points(u)</code></td><td>deformed lumen Gauss points and normals, where to sample a fluid solution</td></tr>
+<tr><td><code>fem.transfer(points, values, targets)</code></td><td>nearest-neighbour mapping (fluid data → face points, lumen WSS → wall)</td></tr>
+<tr><td><code>sysm.nonlocal_mean(values, length)</code></td><td>Gaussian-weighted mean of a Gauss-point field (stimulus smoothing)</td></tr>
+<tr><td><code>fem.anderson(xs, fs)</code></td><td>Anderson acceleration step for fixed-point loops (prestress)</td></tr>
+</table></div>
+
+<!-- ============================================================ -->
+<h2 id="abaqus">13. Abaqus input files and user subroutines</h2>
+
+<h3>13.1 Run an .inp with fem.System</h3>
+<pre><code>fem-abaqus job.inp [umat.for more.for] [--out dir] [--element fbar]</code></pre>
+<p>Supported: one part, one material (<code>*User Material</code>, <code>*Hyperelastic, user</code> (UHYPER) or <code>*Hyperelastic, neo hooke</code>),
+C3D8*, C3D10*, C3D4*; <code>*Static</code> steps with <code>*Boundary</code> (incl. XSYMM … ENCASTRE), <code>*Dsload P</code>, <code>*Cload</code>,
+<code>*Field</code>, <code>*Initial Conditions</code> (FIELD, SOLUTION via SDVINI), <code>*Amplitude</code> (tabular, smooth step), <code>*Parameter</code>.
+Unsupported keywords (contact, ties, dynamics, …) raise an error instead of being ignored.</p>
+<div class="table-wrap"><table>
+<tr><th>Abaqus element</th><th>fem formulation</th></tr>
+<tr><td>C3D8, C3D8R</td><td><code>fbar</code></td></tr>
+<tr><td>C3D10, C3D4</td><td><code>standard</code></td></tr>
+<tr><td>C3D8H, C3D10H, C3D4H, incompressible material</td><td><code>hybrid</code></td></tr>
+<tr><td>C3D8H, C3D10H with a compressible material</td><td><code>fbar</code></td></tr>
+</table></div>
+<p>Increments are fixed (initial increment with <code>direct</code>, else the maximum increment); non-converging increments are cut back internally.
+Output in <code>&lt;out&gt;</code>: <code>job.pvd</code>, <code>job_rf.csv</code> (reaction sums per boundary set), <code>job_fem.npz</code>.</p>
+
+<h3>13.2 Compare with Abaqus</h3>
+<p>Abaqus runs on the host, JAX in the container. The script splits accordingly:</p>
+<pre><code># host (needs only Abaqus and Python 3 standard library)
+python3 fem/abaqus_interface/vs_abaqus.py job.inp umat.for --abaqus-only        # → vs_job/job_odb.npz, timing
+
+# container
+fem-vs-abaqus job.inp umat.for --skip-abaqus                                     # runs fem, compares, vs_job/job_vs_abaqus.txt</code></pre>
+<p>The comparison prints, per common time, \(\max|\Delta U|/\max|U|\), \(\max|\Delta S|/\max|S|\) (element means), SDV and reaction sums.
+Options: <code>--cpus</code>, <code>--repeat</code>, <code>--out</code>, <code>--export-only</code> (only re-export an existing .odb). Already-run comparison:
+<code>fem-abaqus compare job_fem.npz job_odb.npz job.inp</code>.</p>
+
+<h3>13.3 UMAT / UHYPER directly in Python</h3>
+<pre><code>from fem.abaqus_interface.umat import Umat, Uhyper
+
+umat = Umat(["verification/umat/neohooke.for"], nstatv=4, sdvini=True)   # compiled with gfortran, cached
+states = umat.state(m, [0.305, 6.1], dtime=1.0)                           # PROPS; per point: (n_el, n_gp, n_props)
+sysm = fem.System(m, umat, element="fbar")
+u = sysm.equilibrium(states, bc, np.zeros(sysm.n_dof))
+states = sysm.commit(u, states)                                           # STATEV, TIME, KINC advanced
+# states.statev: (n_el, n_gp, nstatv)
+
+uhyper = Uhyper(["verification/umat/mooney_rivlin.for"])                 # *Hyperelastic, user</code></pre>
+<ul>
+<li>The tangent is built from DDSDDE (Jaumann rate, as in Abaqus); for UHYPER from UI1 / UI2.</li>
+<li>Fixed or free form is detected (<code>!dec$ freeform</code>); other files in the folder can be <code>INCLUDE</code>d.</li>
+<li>Stress is evaluated from the start-of-increment STATEV, STATEV are written at <code>commit</code>, as Abaqus does.</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="studies">14. Studies and verification</h2>
+<pre><code>cd cmm
+python -m studies -h                                       # list
+python -m studies pressure_step p_gr=0.012 days=3000 name=p12
+sbatch jobs/run.sh pressure_step p_gr=0.012                # VSC-5
+
+cd .. &amp;&amp; python -m verification.fem_tube                   # FE checks, logs in verification/results/</code></pre>
+<p>Outputs go to <code>cmm/results/&lt;group&gt;/&lt;study&gt;/</code>. What each verification checks: <a href="fem_verification.html">verification overview</a>.
+After changing <code>fem/</code>, rerun at least <code>fem_analytic</code>, <code>fem_consistency</code> and <code>fem_umat</code>.</p>
+
+<!-- ============================================================ -->
+<h2 id="trouble">15. Troubleshooting</h2>
+<div class="table-wrap"><table>
+<tr><th>symptom</th><th>cause / fix</th></tr>
+<tr><td><code>elements with det(dX/dxi) &lt;= 0</code></td><td>inverted or wrongly ordered elements in the mesh; check the node order of the imported element type</td></tr>
+<tr><td>Newton slow, many cutbacks</td><td>load steps too large, or <code>standard</code> with a nearly incompressible material (locking): use <code>fbar</code> / <code>hybrid</code></td></tr>
+<tr><td>Newton fails in a long G&amp;R run with F-bar</td><td>hourglass-type modes for \(K/\mu \gtrsim 10^3\): switch to <code>hybrid</code> + <code>NeoHookeanInc</code></td></tr>
+<tr><td><code>linear solve: relative residual …</code></td><td>singular system: rigid-body modes not fixed, or a stress-free hybrid mesh without enough supports</td></tr>
+<tr><td>slow linear solves</td><td><code>pip install pypardiso</code>; without it SuperLU runs serially</td></tr>
+<tr><td>out of memory on fine meshes</td><td><code>System(..., batch=32)</code> (elements per evaluation batch, default 128)</td></tr>
+<tr><td>residual stalls around 1e-7</td><td>float32: import <code>fem</code> before creating JAX arrays (it enables float64)</td></tr>
+<tr><td>UMAT does not compile</td><td>gfortran missing, or Intel-only extensions; extra flags via <code>Umat(..., flags=(...))</code></td></tr>
+</table></div>
+</main>
+</div>
+</body>
+</html>

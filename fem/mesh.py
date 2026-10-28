@@ -704,15 +704,18 @@ def read_pvd(pvd):
 
 
 class VTKSeries:
-    """ParaView time series: <stem>/<k>.vtu per call and <stem>.pvd indexing them by time (rewritten each call)"""
+    """ParaView time series: <stem>/<k>.vtu per call and <stem>.pvd indexing them by time (rewritten each call);
+    mesh: its named sets to <stem>.inp (FEM Sets filter of fem/paraview_plugin.py)"""
 
-    def __init__(self, pvd):
+    def __init__(self, pvd, mesh=None):
         self.pvd = pathlib.Path(pvd)
         self.dir = self.pvd.with_suffix("")
         self.dir.mkdir(parents=True, exist_ok=True)
         for f in self.dir.glob("*.vtu"):
             f.unlink()
         self.entries = []
+        if mesh is not None:
+            write_inp(self.pvd.with_suffix(".inp"), mesh)
 
     def write(self, t, X, conn, point_data=None, cell_data=None):
         name = f"{self.dir.name}/{len(self.entries):04d}.vtu"

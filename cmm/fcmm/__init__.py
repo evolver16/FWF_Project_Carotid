@@ -4,10 +4,11 @@ core: cohort histories, constituent, mixture, commit;  growth: F_g laws;  produc
 materials: shared library materials/ (passed in via params)
 """
 
-from fcmm.core import params, constituent, mixture, history, mixture_history, sigma_solver, commit, window_for
+from fcmm.core import (params, constituent, mixture, history, mixture_history, sigma_solver, commit, window_for,
+                       J_target)
 from fcmm.growth import Isotropic, Anisotropic
-from fcmm.production import MaesProduction
-from fcmm.removal import MaesRemoval
+from fcmm.production import MaesProduction, MixtureProduction, Reorienting
+from fcmm.removal import MaesRemoval, MixtureRemoval
 
 
 def maes(T, k_plus, k_minus=0.0):

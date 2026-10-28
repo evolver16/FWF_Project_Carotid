@@ -28,7 +28,7 @@ Links are relative to this file and clickable in the preview.
   - wall thickness and other structural / mechanical properties
 - [ ] Compare the convex and the concave side of curved segments (same quantities)
 - these data would inform the model inputs: prestretch (section 4), constituents and fiber directions (section 1);
-  similar experimental-computational approach: Weiss 2020 in [.context/Papers](.context/Papers)
+  similar experimental-computational approach: Weiss 2020 in [.context/weiss](.context/weiss)
 
 ## 4. Prestretch / in-vivo axial stretch
 
@@ -42,7 +42,7 @@ Links are relative to this file and clickable in the preview.
   in a straight tube with axially fixed ends the axial component stays at `g_ax`, in curved geometry it can change
 - idea: virtual excision (remove pressure and axial constraint), fit `g_ax` so the retraction matches the measured 1/λ_iv
 
-**Laubrie et al. 2022** ([.context/Papers](.context/Papers)):
+**Laubrie et al. 2022** ([.context/theory](.context/theory)):
 - also only the elastin prestretch is unknown; collagen and SMC at fixed deposition stretch (1.1)
 - elastin prestretch diagonal in the local frame with a linear gradient from inner to outer curvature (torus approximation)
 - axial value at the outer curvature fixed to the in-vivo axial stretch; inner axial and circumferential values adjusted
@@ -65,7 +65,7 @@ Links are relative to this file and clickable in the preview.
   - element mapping: tet10 standard = C3D10, hybrid_p1 ≈ C3D10H (linear pressure), hybrid hex8 ≈ C3D8H,
     Abaqus C3D8 uses selectively reduced integration (closer to our fbar than to standard)
   - cases: Lamé / finite-strain tube, patch tests, Cook's membrane, arch
-- [ ] G&R against the Maes UMATs ([.context/FortranFiles](.context/FortranFiles); needs Abaqus + Fortran compiler)
+- [ ] G&R against the Maes UMATs ([.context/maes/FortranFiles](.context/maes/FortranFiles); needs Abaqus + Fortran compiler)
 
 ## 6. End point: modeling workflow
 

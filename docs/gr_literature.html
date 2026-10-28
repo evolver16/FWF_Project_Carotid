@@ -111,7 +111,7 @@ dl.facts dd { margin: 0; max-width: 90ch; }
 
 <main>
 <h1>Growth &amp; remodeling literature: what was modelled, how, and how it relates to our code</h1>
-<p class="lead">A summary of the 13 papers in <code>.context/Papers</code> (plus the Drews and Weiss supplements). For each paper:
+<p class="lead">A summary of the 13 papers in <code>.context/theory</code>, <code>applications</code>, <code>fsg</code>, <code>maes</code>, <code>weiss</code>, <code>drews</code>. For each paper:
 what was modelled, which constrained-mixture variant, constituents, production and removal laws, the growth kinematics, the FE method (code, elements,
 integration), the dimension and geometry, fluid coupling, the solver and how convergence was ensured, and how convincing the results are.
 After that come a cross-paper comparison, the relation to our JAX code, and the effort needed to replicate each paper in it.</p>
@@ -194,7 +194,7 @@ S (prescribed stress) and F (prescribed force), plus an arterial example.</dd>
 Forward Euler for \(\rho\) and \(F_r\); stress with the old \(F_r\), then the update (same as our explicit HCMM). A step-size convergence study (\(T\) = 101 d, steps up to \(T\)).</dd>
 <dt>Results</dt><dd>HCMM and FCMM agree well; HCMM is much faster. The step size matters, especially for the FCMM.</dd>
 <dt>Assessment</dt><dd><span class="pill g">reproduced</span> Our <code>maes_benchmark</code> reproduces models A–E (HCMM vs FCMM 0.2–3 %) and Fig. 4 of the artery (λ<sub>θ</sub>(1000 d) = 1.184).
-Their UMATs are in <code>.context/FortranFiles</code>.</dd>
+Their UMATs are in <code>.context/maes/FortranFiles</code>.</dd>
 </dl>
 </div>
 

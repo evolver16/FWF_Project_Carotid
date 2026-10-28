@@ -1,0 +1,871 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FE Verification Overview</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js"
+        onload="renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+<style>
+:root {
+  --bg: #fbfaf7; --panel: #ffffff; --text: #1f2328; --muted: #5d6670; --line: #e3e0d8;
+  --accent: #1f6f8b; --accent-soft: #e5f1f5; --warn: #9a5b00; --warn-soft: #fbf0dc;
+  --ok: #2f7a3e; --ok-soft: #e4f3e7; --bad: #a33a2a; --bad-soft: #f8e5e1; --code: #f3f1ec;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #15181c; --panel: #1c2026; --text: #e4e6e9; --muted: #9aa3ad; --line: #2e343c;
+    --accent: #6cb6d0; --accent-soft: #1b2e36; --warn: #e2a74f; --warn-soft: #33281a;
+    --ok: #7cc68a; --ok-soft: #1c2e21; --bad: #e6826f; --bad-soft: #3a211d; --code: #23282f;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #15181c; --panel: #1c2026; --text: #e4e6e9; --muted: #9aa3ad; --line: #2e343c;
+  --accent: #6cb6d0; --accent-soft: #1b2e36; --warn: #e2a74f; --warn-soft: #33281a;
+  --ok: #7cc68a; --ok-soft: #1c2e21; --bad: #e6826f; --bad-soft: #3a211d; --code: #23282f;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { margin: 0; background: var(--bg); color: var(--text);
+  font: 16px/1.65 "Source Sans 3", "Segoe UI", system-ui, -apple-system, sans-serif; }
+.layout { display: grid; grid-template-columns: 250px minmax(0, 1fr); max-width: 1240px; margin: 0 auto; }
+nav.toc { position: sticky; top: 0; align-self: start; height: 100vh; overflow-y: auto;
+  padding: 28px 16px 28px 20px; border-right: 1px solid var(--line); font-size: 14px; }
+nav.toc .title { font-weight: 700; margin-bottom: 10px; }
+nav.toc a { display: block; color: var(--muted); text-decoration: none; padding: 3px 0; }
+nav.toc a:hover { color: var(--accent); }
+nav.toc .sep { border-top: 1px solid var(--line); margin: 12px 0 8px; }
+main { padding: 32px 40px 80px; min-width: 0; }
+h1 { font-size: 2rem; margin: 0 0 6px; line-height: 1.2; }
+h2 { font-size: 1.45rem; margin: 52px 0 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+h3 { font-size: 1.1rem; margin: 26px 0 8px; }
+p, li { max-width: 80ch; }
+.lead { color: var(--muted); font-size: 1.05rem; max-width: 80ch; }
+code { font: 0.88em/1.4 "JetBrains Mono", "Fira Code", Consolas, monospace; background: var(--code);
+       padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+pre { background: var(--code); padding: 14px 16px; border-radius: 8px; overflow-x: auto; font-size: 0.85rem; }
+pre code { background: none; padding: 0; }
+a { color: var(--accent); }
+.katex { position: relative; }
+.katex-display { position: relative; overflow-x: auto; overflow-y: hidden; padding: 4px 0; }
+.box { border-left: 4px solid var(--accent); background: var(--accent-soft); padding: 12px 16px;
+       border-radius: 0 8px 8px 0; margin: 16px 0; max-width: 84ch; }
+.box.warn { border-color: var(--warn); background: var(--warn-soft); }
+.box.ok { border-color: var(--ok); background: var(--ok-soft); }
+.box > :first-child { margin-top: 0; } .box > :last-child { margin-bottom: 0; }
+.box .tag { font-weight: 700; font-size: 0.8rem; letter-spacing: .04em; text-transform: uppercase; display: block; margin-bottom: 4px; }
+.table-wrap { overflow-x: auto; margin: 14px 0; }
+table { border-collapse: collapse; font-size: 0.92rem; min-width: 520px; background: var(--panel); }
+th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; vertical-align: top; }
+th { background: var(--code); font-weight: 600; }
+td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.good { color: var(--ok); font-weight: 600; } .bad { color: var(--bad); font-weight: 600; } .open { color: var(--warn); font-weight: 600; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin: 20px 0; }
+.stat { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; }
+.stat b { display: block; font-size: 1.5rem; color: var(--accent); line-height: 1.2; }
+.stat span { font-size: 0.88rem; color: var(--muted); }
+.ladder { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin: 16px 0; }
+.ladder div { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; font-size: 0.92rem; }
+.ladder div b { display: block; color: var(--accent); }
+.meta { color: var(--muted); font-size: 0.9rem; }
+
+:root { --disp: #2a78d6; --load: #eb6834; --meas: #1baf7a; --grid: #e1e0d9; --axis: #c3c2b7;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --disp: #3987e5; --load: #d95926; --meas: #199e70; --grid: #2c2c2a; --axis: #383835;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; }
+}
+:root[data-theme="dark"] { --disp: #3987e5; --load: #d95926; --meas: #199e70; --grid: #2c2c2a; --axis: #383835;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; }
+figure { margin: 18px 0; }
+figcaption { font-size: 0.88rem; color: var(--muted); max-width: 84ch; margin-top: 6px; }
+figure.sk svg { width: 100%; max-width: 680px; height: auto; display: block; color: var(--text); }
+figure.sk.narrow svg { max-width: 460px; }
+.fig-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; margin: 18px 0; align-items: start; }
+.fig-grid figure { margin: 0; }
+.sk-face { fill: var(--panel); }
+.sk-face-disp { fill: var(--disp); fill-opacity: 0.12; }
+.sk-face-load { fill: var(--load); fill-opacity: 0.12; }
+.sk-outline { fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linejoin: round; }
+.sk-edge { fill: none; stroke: currentColor; stroke-width: 1.2; }
+.sk-mesh { stroke: var(--muted); stroke-width: 0.6; opacity: 0.55; fill: none; }
+.sk-hidden { fill: none; stroke: var(--muted); stroke-width: 1; stroke-dasharray: 4 3; }
+.sk-dim { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 2 3; }
+.sk-mode { fill: none; stroke: var(--muted); stroke-width: 1.6; stroke-dasharray: 6 4; }
+.sk-load { stroke: var(--load); stroke-width: 2; } .sk-load-head { fill: var(--load); }
+.sk-disp { stroke: var(--disp); stroke-width: 2; } .sk-disp-head { fill: var(--disp); }
+.sk-ink { stroke: currentColor; stroke-width: 1.2; } .sk-ink-head { fill: currentColor; }
+.sk-hatch { stroke: var(--muted); stroke-width: 1.2; }
+.sk-ground { stroke: currentColor; stroke-width: 1.6; }
+.sk-roller { fill: var(--bg); stroke: currentColor; stroke-width: 1.2; }
+.sk-dispdot { fill: var(--disp); }
+.sk-freedot { fill: var(--bg); stroke: currentColor; stroke-width: 1.5; }
+.sk-inkdot { fill: currentColor; }
+.sk-measure { fill: var(--meas); stroke: var(--bg); stroke-width: 2; }
+.sk-sep { stroke: var(--line); stroke-width: 1; }
+.sk-text { fill: currentColor; font-size: 13px; }
+.sk-small { fill: var(--muted); font-size: 11.5px; }
+.sk-title { fill: currentColor; font-size: 13px; font-weight: 600; }
+.sk-it { font-style: italic; }
+.sk-big { fill: currentColor; font-size: 30px; }
+.sketch tspan.sub { baseline-shift: sub; font-size: 75%; }
+.sketch tspan.sup { baseline-shift: super; font-size: 75%; }
+figure.chart { position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px 8px; }
+figure.chart h4 { margin: 0 0 4px; font-size: 0.92rem; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 0.82rem; color: var(--muted); min-height: 4px; }
+.legend .key { display: inline-flex; align-items: center; gap: 6px; }
+.plot svg { display: block; overflow: visible; }
+.grid { stroke: var(--grid); stroke-width: 1; }
+.base { stroke: var(--axis); stroke-width: 1; }
+.tick { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.axlabel { fill: var(--muted); font-size: 12px; }
+.rowlabel { fill: var(--text); font-size: 12px; }
+.ln { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.ln.dash { stroke-dasharray: 6 4; }
+.ln.s1 { stroke: var(--s1); } .ln.s2 { stroke: var(--s2); } .ln.s3 { stroke: var(--s3); }
+.ln.s4 { stroke: var(--s4); } .ln.s5 { stroke: var(--s5); } .ln.s6 { stroke: var(--s6); }
+.ln.exact { stroke: var(--text); stroke-width: 1.5; }
+.ln.thin { stroke-width: 1.2; }
+.ref.exactref { stroke: var(--text); stroke-dasharray: none; opacity: 0.75; }
+.mk { stroke: var(--panel); stroke-width: 2; }
+.mk.s1 { fill: var(--s1); } .mk.s2 { fill: var(--s2); } .mk.s3 { fill: var(--s3); }
+.mk.s4 { fill: var(--s4); } .mk.s5 { fill: var(--s5); } .mk.s6 { fill: var(--s6); }
+.mk.hot { stroke: var(--text); }
+.legend .mk { stroke-width: 1; }
+.ref { stroke: var(--muted); stroke-width: 1.2; stroke-dasharray: 5 4; }
+.reflabel { fill: var(--muted); font-size: 11px; }
+.slope { fill: none; stroke: var(--muted); stroke-width: 1; }
+.tip { position: absolute; pointer-events: none; background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+  padding: 6px 8px; font-size: 0.8rem; line-height: 1.4; box-shadow: 0 2px 8px rgba(0,0,0,.14); z-index: 5; white-space: nowrap; }
+.tip[hidden] { display: none; }
+@media (max-width: 640px) {
+  figure.sk { overflow-x: auto; }
+  figure.sk svg { min-width: 560px; }
+  figure.sk.narrow svg { min-width: 0; }
+}
+@media (max-width: 860px) {
+  .layout { display: block; }
+  nav.toc { position: static; height: auto; border-right: none; border-bottom: 1px solid var(--line); padding: 16px; }
+  nav.toc a { display: inline-block; margin-right: 12px; }
+  main { padding: 20px 16px 60px; }
+  h1 { font-size: 1.6rem; }
+}
+</style>
+</head>
+<body>
+<div class="layout">
+<nav class="toc">
+  <div class="title">FE verification</div>
+  <a href="#summary">Summary</a>
+  <a href="#analytic">1. Homogeneous deformations</a>
+  <a href="#tube">2. Thick-walled tube</a>
+  <a href="#mms">3. Manufactured solutions</a>
+  <a href="#cook">4. Cook's membrane</a>
+  <a href="#consistency">5. Consistency</a>
+  <a href="#buckling">6. Buckling</a>
+  <a href="#meshio">7. Mesh I/O</a>
+  <a href="#gr">8. FE with G&amp;R</a>
+  <a href="#abaqus">9. Abaqus</a>
+  <a href="#material">10. Material models</a>
+  <a href="#roache">11. Roache (2002) check</a>
+  <a href="#open">12. Not covered</a>
+  <a href="#rerun">13. Rerunning</a>
+  <div class="sep"></div>
+  <a href="fem_usage.html">Usage guide →</a>
+  <a href="fem.html">Design of the FE code →</a>
+</nav>
+
+<main>
+<h1>Verification of the FE code</h1>
+<p class="lead">Every test case that has been run against <code>fem/</code>: what it checks, what it is compared with, and the
+result as logged. Numbers are copied from the logs in <code>verification/results/</code> and <code>cmm/results/</code>.</p>
+<p class="meta">Material in the FE tests unless stated: neo-Hooke \(C_{10} = 0.305\) MPa, \(K = 6.1\) MPa. Errors are relative unless units are given.
+Elements: hex8, tet10, tet4; formulations <code>standard</code>, <code>fbar</code>, <code>hybrid</code> (Q1/P0, P2/P0), <code>hybrid_p1</code> (P2/P1).</p>
+
+<h2 id="summary">Summary</h2>
+<div class="stats">
+  <div class="stat"><b>8</b><span>verification scripts, all <span class="good">PASS</span></span></div>
+  <div class="stat"><b>~1e-15</b><span>error on deformations every element must reproduce exactly</span></div>
+  <div class="stat"><b>2 / 3</b><span>L2 order hex8 / tet10 (manufactured solutions)</span></div>
+  <div class="stat"><b>1e-8…1e-11</b><span>adjoint gradients vs finite differences</span></div>
+  <div class="stat"><b>≤ 0.1 %</b><span>Maes UMATs: Abaqus vs fem.System, 30 cases</span></div>
+</div>
+
+<p>The tests form a ladder. Each rung uses a reference that is independent of the one before:</p>
+<div class="ladder">
+  <div><b>Exact solutions</b>homogeneous deformations, patch test, free growth: every element must be exact to round-off</div>
+  <div><b>Convergence</b>Lamé tube, finite-strain tube, manufactured solutions, Cook: error decreases at the theoretical order</div>
+  <div><b>Self-consistency</b>tangent = derivative of the residual, quadratic Newton, invariances, adjoint = finite differences</div>
+  <div><b>Coupled G&amp;R</b>one element = material point, mesh and time-step GCI, Murray's law</div>
+  <div><b>Independent code</b>Abaqus 2017 with the same input files and the same UMATs</div>
+</div>
+
+<div class="table-wrap"><table>
+<tr><th>#</th><th>test case</th><th>reference</th><th>key result</th><th>run</th></tr>
+<tr><td>1</td><td>homogeneous deformations, patch test</td><td>closed form</td><td class="good">u ≤ 6e-15, σ ≤ 1.3e-13</td><td><code>verification.fem_analytic</code></td></tr>
+<tr><td>2</td><td>pressurized thick-walled tube</td><td>Lamé; exact incompressible finite strain</td><td class="good">hex8 O(h²); tet10 ratio ≈ 7; P2/P1 2.1e-7</td><td><code>verification.fem_tube</code></td></tr>
+<tr><td>3</td><td>manufactured solutions</td><td>prescribed exact field + body force</td><td class="good">all formulations at the expected order</td><td><code>verification.fem_mms</code></td></tr>
+<tr><td>4</td><td>Cook's membrane</td><td>Richardson extrapolation</td><td class="good">locking-free formulations within 0.4 %</td><td><code>verification.cook</code></td></tr>
+<tr><td>5</td><td>tangent, Newton, loads, invariances, adjoint</td><td>AD, finite differences, geometry</td><td class="good">1e-16 … 5e-8</td><td><code>verification.fem_consistency</code></td></tr>
+<tr><td>6</td><td>Euler column, shallow arch</td><td>Euler load, displacement control</td><td class="good">1.5 %, 1.7e-10, 6e-12</td><td><code>verification.buckling</code></td></tr>
+<tr><td>7</td><td>mesh round trips</td><td>original mesh</td><td class="good">identical</td><td><code>verification.mesh_io</code></td></tr>
+<tr><td>8</td><td>FE + G&amp;R: element vs material point, GCI, WSS, gradients</td><td>0D solver, extrapolation, Murray, FD</td><td class="good">≤ 4e-11; order 2.00 / 1.00; 1.1449 vs 1.1447</td><td><code>python -m studies …</code></td></tr>
+<tr><td>9</td><td>UMAT / UHYPER interface; Maes UMATs; neo-Hooke boxes</td><td>Python material; Abaqus 2017</td><td class="good">1e-15; ≤ 0.1 %; see §9.3</td><td><code>verification.fem_umat</code>, <code>fem-vs-abaqus</code></td></tr>
+</table></div>
+
+<!-- ============================================================ -->
+<h2 id="analytic">1. Homogeneous deformations and patch test</h2>
+<p><code>verification/fem_analytic.py</code> · 2×2×2 box, interior nodes of hex8 randomly perturbed (distorted elements).
+Boundary displacements of an exact homogeneous solution are applied. Every element must then reproduce it everywhere, independent of the distortion.</p>
+<figure class="sk"><!--SVG:homog--><svg viewBox="0 0 720 334.0" role="img" aria-label="Cube with symmetry supports on three faces and a prescribed displacement on x = L; and a 2x2x2 patch with all boundary nodes prescribed" class="sketch"><defs><marker id="fhom-load" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="sk-load-head"/></marker><marker id="fhom-disp" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="sk-disp-head"/></marker><marker id="fhom-ink" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="sk-ink-head"/></marker><pattern id="fhom-h" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" class="sk-hatch"/></pattern></defs><polygon points="95.0,222.0 225.0,222.0 225.0,92.0 95.0,92.0" class="sk-face"/><polygon points="95.0,92.0 225.0,92.0 281.3,59.5 151.3,59.5" class="sk-face"/><polygon points="225.0,222.0 281.3,189.5 281.3,59.5 225.0,92.0" class="sk-face"/><polygon points="225.0,222.0 281.3,189.5 281.3,59.5 225.0,92.0" class="sk-face-disp"/><line x1="151.3" y1="189.5" x2="95.0" y2="222.0" class="sk-hidden"/><line x1="151.3" y1="189.5" x2="281.3" y2="189.5" class="sk-hidden"/><line x1="151.3" y1="189.5" x2="151.3" y2="59.5" class="sk-hidden"/><polygon points="95.0,222.0 225.0,222.0 225.0,92.0 95.0,92.0" class="sk-outline"/><polygon points="95.0,92.0 225.0,92.0 281.3,59.5 151.3,59.5" class="sk-outline"/><polygon points="225.0,222.0 281.3,189.5 281.3,59.5 225.0,92.0" class="sk-outline"/><circle cx="90.5" cy="189.5" r="3.5" class="sk-roller"/><line x1="86.0" y1="196.5" x2="86.0" y2="182.5" class="sk-ground"/><circle cx="90.5" cy="157.0" r="3.5" class="sk-roller"/><line x1="86.0" y1="164.0" x2="86.0" y2="150.0" class="sk-ground"/><circle cx="90.5" cy="124.5" r="3.5" class="sk-roller"/><line x1="86.0" y1="131.5" x2="86.0" y2="117.5" class="sk-ground"/><circle cx="127.5" cy="226.5" r="3.5" class="sk-roller"/><line x1="134.5" y1="231.0" x2="120.5" y2="231.0" class="sk-ground"/><circle cx="160.0" cy="226.5" r="3.5" class="sk-roller"/><line x1="167.0" y1="231.0" x2="153.0" y2="231.0" class="sk-ground"/><circle cx="192.5" cy="226.5" r="3.5" class="sk-roller"/><line x1="199.5" y1="231.0" x2="185.5" y2="231.0" class="sk-ground"/><text x="73.0" y="161.0" text-anchor="end" class="sk-text">u<tspan class='sub'>x</tspan> = 0</text><text x="160.0" y="250.0" text-anchor="middle" class="sk-text">u<tspan class='sub'>z</tspan> = 0</text><text x="156.1" y="111.5" text-anchor="start" class="sk-small">u<tspan class='sub'>y</tspan> = 0</text><line x1="253.1" y1="173.2" x2="299.1" y2="173.2" class="sk-disp" marker-end="url(#fhom-disp)"/><line x1="253.1" y1="140.8" x2="299.1" y2="140.8" class="sk-disp" marker-end="url(#fhom-disp)"/><line x1="253.1" y1="108.2" x2="299.1" y2="108.2" class="sk-disp" marker-end="url(#fhom-disp)"/><text x="305.1" y="144.8" text-anchor="start" class="sk-text">u<tspan class='sub'>x</tspan> = (λ − 1) L</text><text x="175.0" y="22.0" text-anchor="middle" class="sk-title">uniaxial / equibiaxial (hybrid)</text><line x1="24.0" y1="262.0" x2="50.0" y2="262.0" class="sk-ink" marker-end="url(#fhom-ink)"/><text x="62.1" y="266.0" text-anchor="middle" class="sk-small">x</text><line x1="24.0" y1="262.0" x2="35.3" y2="255.5" class="sk-ink" marker-end="url(#fhom-ink)"/><text x="39.2" y="257.6" text-anchor="middle" class="sk-small">y</text><line x1="24.0" y1="262.0" x2="24.0" y2="236.0" class="sk-ink" marker-end="url(#fhom-ink)"/><text x="24.0" y="232.2" text-anchor="middle" class="sk-small">z</text><polygon points="430.0,222.0 560.0,222.0 560.0,92.0 430.0,92.0" class="sk-face"/><polygon points="430.0,222.0 560.0,222.0 560.0,92.0 430.0,92.0" class="sk-face-disp"/><polygon points="430.0,92.0 560.0,92.0 616.3,59.5 486.3,59.5" class="sk-face"/><polygon points="430.0,92.0 560.0,92.0 616.3,59.5 486.3,59.5" class="sk-face-disp"/><polygon points="560.0,222.0 616.3,189.5 616.3,59.5 560.0,92.0" class="sk-face"/><polygon points="560.0,222.0 616.3,189.5 616.3,59.5 560.0,92.0" class="sk-face-disp"/><line x1="486.3" y1="189.5" x2="430.0" y2="222.0" class="sk-hidden"/><line x1="486.3" y1="189.5" x2="616.3" y2="189.5" class="sk-hidden"/><line x1="486.3" y1="189.5" x2="486.3" y2="59.5" class="sk-hidden"/><line x1="495.0" y1="222.0" x2="495.0" y2="92.0" class="sk-mesh"/><line x1="430.0" y1="157.0" x2="560.0" y2="157.0" class="sk-mesh"/><line x1="495.0" y1="92.0" x2="551.3" y2="59.5" class="sk-mesh"/><line x1="458.1" y1="75.8" x2="588.1" y2="75.8" class="sk-mesh"/><line x1="588.1" y1="205.8" x2="588.1" y2="75.8" class="sk-mesh"/><line x1="560.0" y1="157.0" x2="616.3" y2="124.5" class="sk-mesh"/><polygon points="430.0,222.0 560.0,222.0 560.0,92.0 430.0,92.0" class="sk-outline"/><polygon points="430.0,92.0 560.0,92.0 616.3,59.5 486.3,59.5" class="sk-outline"/><polygon points="560.0,222.0 616.3,189.5 616.3,59.5 560.0,92.0" class="sk-outline"/><circle cx="430.0" cy="222.0" r="3" class="sk-dispdot"/><circle cx="430.0" cy="157.0" r="3" class="sk-dispdot"/><circle cx="430.0" cy="92.0" r="3" class="sk-dispdot"/><circle cx="495.0" cy="222.0" r="3" class="sk-dispdot"/><circle cx="495.0" cy="157.0" r="3" class="sk-dispdot"/><circle cx="495.0" cy="92.0" r="3" class="sk-dispdot"/><circle cx="560.0" cy="222.0" r="3" class="sk-dispdot"/><circle cx="560.0" cy="157.0" r="3" class="sk-dispdot"/><circle cx="560.0" cy="92.0" r="3" class="sk-dispdot"/><circle cx="430.0" cy="92.0" r="3" class="sk-dispdot"/><circle cx="458.1" cy="75.8" r="3" class="sk-dispdot"/><circle cx="486.3" cy="59.5" r="3" class="sk-dispdot"/><circle cx="495.0" cy="92.0" r="3" class="sk-dispdot"/><circle cx="523.1" cy="75.8" r="3" class="sk-dispdot"/><circle cx="551.3" cy="59.5" r="3" class="sk-dispdot"/><circle cx="560.0" cy="92.0" r="3" class="sk-dispdot"/><circle cx="588.1" cy="75.8" r="3" class="sk-dispdot"/><circle cx="616.3" cy="59.5" r="3" class="sk-dispdot"/><circle cx="560.0" cy="222.0" r="3" class="sk-dispdot"/><circle cx="560.0" cy="157.0" r="3" class="sk-dispdot"/><circle cx="560.0" cy="92.0" r="3" class="sk-dispdot"/><circle cx="588.1" cy="205.8" r="3" class="sk-dispdot"/><circle cx="588.1" cy="140.8" r="3" class="sk-dispdot"/><circle cx="588.1" cy="75.8" r="3" class="sk-dispdot"/><circle cx="616.3" cy="189.5" r="3" class="sk-dispdot"/><circle cx="616.3" cy="124.5" r="3" class="sk-dispdot"/><circle cx="616.3" cy="59.5" r="3" class="sk-dispdot"/><line x1="529.2" y1="134.9" x2="588.1" y2="140.8" class="sk-hidden"/><line x1="529.2" y1="134.9" x2="495.0" y2="157.0" class="sk-hidden"/><line x1="529.2" y1="134.9" x2="523.1" y2="75.8" class="sk-hidden"/><circle cx="529.2" cy="134.9" r="4.5" class="sk-freedot"/><line x1="534.2" y1="131.9" x2="600.0" y2="40.0" class="sk-dim"/><text x="604.0" y="44.0" text-anchor="start" class="sk-small">free interior node</text><text x="510.0" y="22.0" text-anchor="middle" class="sk-title">patch test, general F₀ (distorted)</text><text x="510.0" y="270.0" text-anchor="middle" class="sk-small">u = (F₀ − I) X on every boundary node</text><line x1="0" y1="284" x2="720" y2="284" class="sk-sep"/><rect x="10.0" y="291.0" width="24" height="13" class="sk-face"/><rect x="10.0" y="291.0" width="24" height="13" class="sk-face-disp"/><rect x="10.0" y="291.0" width="24" height="13" class="sk-outline"/><text x="44.0" y="302.0" class="sk-small">face with prescribed u</text><line x1="202.8" y1="298.0" x2="228.8" y2="298.0" class="sk-hidden"/><text x="236.8" y="302.0" class="sk-small">hidden edge</text><circle cx="338.2" cy="297.0" r="3.5" class="sk-roller"/><line x1="331.2" y1="302.0" x2="345.2" y2="302.0" class="sk-ground"/><text x="359.2" y="302.0" class="sk-small">symmetry / roller</text><line x1="486.0" y1="298.0" x2="512.0" y2="298.0" class="sk-disp" marker-end="url(#fhom-disp)"/><text x="520.0" y="302.0" class="sk-small">prescribed displacement</text><circle cx="23.0" cy="320.0" r="4" class="sk-dispdot"/><text x="44.0" y="324.0" class="sk-small">prescribed node</text><circle cx="171.0" cy="320.0" r="4" class="sk-freedot"/><text x="192.0" y="324.0" class="sk-small">free node</text></svg><!--/SVG--><figcaption>Left: uniaxial (and, with the y face also displaced, equibiaxial) loading with symmetry supports on three faces;
+shear and dilatation use the same box. Right: patch test, every boundary node gets \(u = (F_0 - I)X\) of a general \(F_0\), the interior node is free and its position perturbed.</figcaption></figure>
+<div class="fig-grid">
+<figure class="chart" data-chart="homog_uni" data-label="FE stresses lie on the exact uniaxial and equibiaxial curves">
+<h4>uniaxial and equibiaxial tension vs exact</h4><div class="legend"></div><div class="plot"></div><div class="tip" hidden></div></figure>
+<figure class="chart" data-chart="homog_shear" data-label="FE shear stress lies on the exact line">
+<h4>simple shear vs exact</h4><div class="legend"></div><div class="plot"></div><div class="tip" hidden></div></figure>
+</div>
+<p class="meta">Black lines: analytic solution. Markers: FE, lateral faces free (uniaxial, equibiaxial) or all boundary nodes prescribed (shear).</p>
+<div class="table-wrap"><table>
+<tr><th>deformation</th><th>elements × formulations</th><th>Newton it.</th><th>max |u − u<sub>ex</sub>|</th><th>max rel. σ error</th></tr>
+<tr><td>uniaxial \(\lambda\) = 0.8, 1.3, 1.6 (incompressible)</td><td>hex8 hybrid, tet10 hybrid, tet10 hybrid_p1</td><td class="num">4–5</td><td class="num">≤ 6.4e-15</td><td class="num">≤ 1.3e-13</td></tr>
+<tr><td>equibiaxial \(\lambda\) = 1.2, 1.4 (incompressible)</td><td>hex8 hybrid, tet10 hybrid, tet10 hybrid_p1</td><td class="num">3</td><td class="num">≤ 7.7e-15</td><td class="num">≤ 1.0e-13</td></tr>
+<tr><td>simple shear \(\gamma\) = 0.3, 1.0</td><td>hex8, tet10, tet4 × standard, fbar</td><td class="num">1</td><td class="num">≤ 6.7e-16</td><td class="num">≤ 4.9e-14</td></tr>
+<tr><td>dilatation \(a\) = 0.95, 1.05</td><td>hex8, tet10, tet4 × standard, fbar</td><td class="num">1</td><td class="num">≤ 6.2e-17</td><td class="num">≤ 4.2e-15</td></tr>
+<tr><td>patch test, general \(F_0\)</td><td>hex8, tet10, tet4 × standard, fbar</td><td class="num">1</td><td class="num">≤ 1.7e-16</td><td class="num">≤ 1.1e-14</td></tr>
+</table></div>
+<p class="good">45 / 45 PASS.</p>
+
+<!-- ============================================================ -->
+<h2 id="tube">2. Pressurized thick-walled tube</h2>
+<p><code>verification/fem_tube.py</code> · quarter cylinder \(r_i\) = 5, \(t\) = 1.3 mm, plane strain, symmetry BCs. References:</p>
+$$u_r = C_1 r + \frac{C_2}{r}\ \ (\text{Lamé, small }p),\qquad
+p = \mu\int_a^b(\lambda_\theta^2-\lambda_\theta^{-2})\frac{\mathrm dr}{r},\ \ r^2 = R^2 + a^2 - A^2\ \ (\text{incompressible, finite }p)$$
+<figure class="sk narrow"><!--SVG:tube--><svg viewBox="0 0 440 342.0" role="img" aria-label="Quarter tube cross-section with inner pressure p and symmetry supports on both cut planes" class="sketch"><defs><marker id="ftube-load" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="sk-load-head"/></marker><marker id="ftube-disp" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="sk-disp-head"/></marker><marker id="ftube-ink" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="sk-ink-head"/></marker><pattern id="ftube-h" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" class="sk-hatch"/></pattern></defs><polygon points="269.0,270.0 268.8,262.4 268.4,254.8 267.6,247.2 266.6,239.7 265.2,232.2 263.5,224.8 261.5,217.4 259.3,210.1 256.7,203.0 253.9,195.9 250.8,189.0 247.4,182.2 243.7,175.5 239.7,169.0 235.5,162.6 231.1,156.5 226.4,150.5 221.5,144.7 216.3,139.1 210.9,133.7 205.3,128.5 199.5,123.6 193.5,118.9 187.4,114.5 181.0,110.3 174.5,106.3 167.8,102.6 161.0,99.2 154.1,96.1 147.0,93.3 139.9,90.7 132.6,88.5 125.2,86.5 117.8,84.8 110.3,83.4 102.8,82.4 95.2,81.6 87.6,81.2 80.0,81.0 80.0,120.0 86.0,120.1 92.1,120.5 98.1,121.1 104.1,121.9 110.0,123.0 115.9,124.4 121.7,125.9 127.5,127.7 133.2,129.7 138.8,132.0 144.3,134.5 149.7,137.2 155.0,140.1 160.2,143.2 165.2,146.6 170.1,150.1 174.9,153.8 179.5,157.7 183.9,161.8 188.2,166.1 192.3,170.5 196.2,175.1 199.9,179.9 203.4,184.8 206.8,189.8 209.9,195.0 212.8,200.3 215.5,205.7 218.0,211.2 220.3,216.8 222.3,222.5 224.1,228.3 225.6,234.1 227.0,240.0 228.1,245.9 228.9,251.9 229.5,257.9 229.9,264.0 230.0,270.0" class="sk-face"/><polyline points="239.8,270.0 239.6,263.6 239.2,257.1 238.6,250.7 237.7,244.4 236.5,238.0 235.1,231.8 233.4,225.6 231.5,219.4 229.4,213.4 227.0,207.4 224.3,201.5 221.5,195.8 218.3,190.1 215.0,184.6 211.5,179.3 207.7,174.0 203.7,169.0 199.6,164.1 195.2,159.3 190.7,154.8 185.9,150.4 181.0,146.3 176.0,142.3 170.7,138.5 165.4,135.0 159.9,131.7 154.2,128.5 148.5,125.7 142.6,123.0 136.6,120.6 130.6,118.5 124.4,116.6 118.2,114.9 112.0,113.5 105.6,112.3 99.3,111.4 92.9,110.8 86.4,110.4 80.0,110.2" class="sk-mesh"/><polyline points="249.5,270.0 249.4,263.2 249.0,256.4 248.3,249.6 247.3,242.8 246.1,236.1 244.6,229.4 242.8,222.8 240.8,216.3 238.5,209.9 235.9,203.6 233.1,197.3 230.1,191.2 226.8,185.2 223.3,179.4 219.5,173.7 215.5,168.2 211.3,162.8 206.9,157.6 202.2,152.6 197.4,147.8 192.4,143.1 187.2,138.7 181.8,134.5 176.3,130.5 170.6,126.7 164.8,123.2 158.8,119.9 152.7,116.9 146.4,114.1 140.1,111.5 133.7,109.2 127.2,107.2 120.6,105.4 113.9,103.9 107.2,102.7 100.4,101.7 93.6,101.0 86.8,100.6 80.0,100.5" class="sk-mesh"/><polyline points="259.2,270.0 259.1,262.8 258.7,255.6 257.9,248.4 256.9,241.2 255.6,234.1 254.0,227.1 252.2,220.1 250.0,213.2 247.6,206.4 244.9,199.7 241.9,193.2 238.7,186.7 235.2,180.4 231.5,174.2 227.5,168.2 223.3,162.3 218.8,156.6 214.2,151.1 209.3,145.8 204.2,140.7 198.9,135.8 193.4,131.2 187.7,126.7 181.8,122.5 175.8,118.5 169.6,114.8 163.3,111.3 156.8,108.1 150.3,105.1 143.6,102.4 136.8,100.0 129.9,97.8 122.9,96.0 115.9,94.4 108.8,93.1 101.6,92.1 94.4,91.3 87.2,90.9 80.0,90.8" class="sk-mesh"/><line x1="228.7" y1="250.4" x2="267.4" y2="245.3" class="sk-mesh"/><line x1="224.9" y1="231.2" x2="262.6" y2="221.1" class="sk-mesh"/><line x1="218.6" y1="212.6" x2="254.6" y2="197.7" class="sk-mesh"/><line x1="209.9" y1="195.0" x2="243.7" y2="175.5" class="sk-mesh"/><line x1="199.0" y1="178.7" x2="229.9" y2="154.9" class="sk-mesh"/><line x1="186.1" y1="163.9" x2="213.6" y2="136.4" class="sk-mesh"/><line x1="171.3" y1="151.0" x2="195.1" y2="120.1" class="sk-mesh"/><line x1="155.0" y1="140.1" x2="174.5" y2="106.3" class="sk-mesh"/><line x1="137.4" y1="131.4" x2="152.3" y2="95.4" class="sk-mesh"/><line x1="118.8" y1="125.1" x2="128.9" y2="87.4" class="sk-mesh"/><line x1="99.6" y1="121.3" x2="104.7" y2="82.6" class="sk-mesh"/><polygon points="269.0,270.0 268.8,262.4 268.4,254.8 267.6,247.2 266.6,239.7 265.2,232.2 263.5,224.8 261.5,217.4 259.3,210.1 256.7,203.0 253.9,195.9 250.8,189.0 247.4,182.2 243.7,175.5 239.7,169.0 235.5,162.6 231.1,156.5 226.4,150.5 221.5,144.7 216.3,139.1 210.9,133.7 205.3,128.5 199.5,123.6 193.5,118.9 187.4,114.5 181.0,110.3 174.5,106.3 167.8,102.6 161.0,99.2 154.1,96.1 147.0,93.3 139.9,90.7 132.6,88.5 125.2,86.5 117.8,84.8 110.3,83.4 102.8,82.4 95.2,81.6 87.6,81.2 80.0,81.0 80.0,120.0 86.0,120.1 92.1,120.5 98.1,121.1 104.1,121.9 110.0,123.0 115.9,124.4 121.7,125.9 127.5,127.7 133.2,129.7 138.8,132.0 144.3,134.5 149.7,137.2 155.0,140.1 160.2,143.2 165.2,146.6 170.1,150.1 174.9,153.8 179.5,157.7 183.9,161.8 188.2,166.1 192.3,170.5 196.2,175.1 199.9,179.9 203.4,184.8 206.8,189.8 209.9,195.0 212.8,200.3 215.5,205.7 218.0,211.2 220.3,216.8 222.3,222.5 224.1,228.3 225.6,234.1 227.0,240.0 228.1,245.9 228.9,251.9 229.5,257.9 229.9,264.0 230.0,270.0" class="sk-outline"/><line x1="191.5" y1="246.3" x2="224.8" y2="239.2" class="sk-load" marker-end="url(#ftube-load)"/><line x1="178.7" y1="213.0" x2="208.2" y2="196.0" class="sk-load" marker-end="url(#ftube-load)"/><line x1="156.3" y1="185.3" x2="179.0" y2="160.0" class="sk-load" marker-end="url(#ftube-load)"/><line x1="126.4" y1="165.9" x2="140.2" y2="134.8" class="sk-load" marker-end="url(#ftube-load)"/><line x1="99.8" y1="157.7" x2="105.7" y2="124.2" class="sk-load" marker-end="url(#ftube-load)"/><text x="152.8" y="204.4" text-anchor="middle" class="sk-text sk-it">p</text><circle cx="238.0" cy="274.5" r="3.5" class="sk-roller"/><line x1="245.0" y1="279.0" x2="231.0" y2="279.0" class="sk-ground"/><circle cx="75.5" cy="112.0" r="3.5" class="sk-roller"/><line x1="71.0" y1="119.0" x2="71.0" y2="105.0" class="sk-ground"/><circle cx="249.5" cy="274.5" r="3.5" class="sk-roller"/><line x1="256.5" y1="279.0" x2="242.5" y2="279.0" class="sk-ground"/><circle cx="75.5" cy="100.5" r="3.5" class="sk-roller"/><line x1="71.0" y1="107.5" x2="71.0" y2="93.5" class="sk-ground"/><circle cx="261.0" cy="274.5" r="3.5" class="sk-roller"/><line x1="268.0" y1="279.0" x2="254.0" y2="279.0" class="sk-ground"/><circle cx="75.5" cy="89.0" r="3.5" class="sk-roller"/><line x1="71.0" y1="96.0" x2="71.0" y2="82.0" class="sk-ground"/><text x="249.5" y="300.0" text-anchor="middle" class="sk-text">u<tspan class='sub'>y</tspan> = 0</text><text x="60.0" y="71.0" text-anchor="middle" class="sk-text">u<tspan class='sub'>x</tspan> = 0</text><line x1="80.0" y1="270.0" x2="229.6" y2="259.5" class="sk-dim"/><text x="150.0" y="260.0" text-anchor="middle" class="sk-small">a = 5</text><line x1="80.0" y1="270.0" x2="93.2" y2="81.5" class="sk-dim"/><text x="88.0" y="210.0" text-anchor="start" class="sk-small">b = 6.3</text><circle cx="80.0" cy="270.0" r="2.5" class="sk-inkdot"/><text x="290.0" y="60.0" text-anchor="start" class="sk-small">plane strain:</text><text x="290.0" y="76.0" text-anchor="start" class="sk-small">u<tspan class='sub'>z</tspan> = 0 on both ends</text><circle cx="186.1" cy="163.9" r="4.5" class="sk-measure"/><text x="258.1" y="111.9" text-anchor="start" class="sk-text">u<tspan class='sub'>r</tspan>(a)</text><line x1="190.1" y1="159.9" x2="254.1" y2="107.9" class="sk-dim"/><line x1="0" y1="314" x2="440" y2="314" class="sk-sep"/><line x1="10.0" y1="328.0" x2="36.0" y2="328.0" class="sk-load" marker-end="url(#ftube-load)"/><text x="44.0" y="332.0" class="sk-small">load</text><circle cx="100.6" cy="327.0" r="3.5" class="sk-roller"/><line x1="93.6" y1="332.0" x2="107.6" y2="332.0" class="sk-ground"/><text x="121.6" y="332.0" class="sk-small">symmetry / roller</text><circle cx="261.4" cy="328.0" r="4" class="sk-measure"/><text x="282.4" y="332.0" class="sk-small">measured quantity</text></svg><!--/SVG--><figcaption>Quarter of the tube cross-section (hex8 shown with the coarse mesh lines).
+Symmetry supports on both cut planes, plane strain, inner pressure \(p\). The measured quantity is the radial displacement of the inner surface \(u_r(a)\).</figcaption></figure>
+<div class="fig-grid">
+<figure class="chart" data-chart="tube_profile" data-label="Through-thickness displacement: fbar and hybrid on the Lamé curve, standard locks at a quarter of it">
+<h4>\(u_r(r)\) through the wall, \(K/\mu = 10^4\), mesh (4, 24, 1)</h4><div class="legend"></div><div class="plot"></div><div class="tip" hidden></div>
+<figcaption>Nodes on the \(\theta = 0\) plane; fbar and hybrid coincide (hover to see both).</figcaption></figure>
+<figure class="chart" data-chart="tube_pa" data-label="Pressure against inner radius: hybrid follows the exact finite-strain curve, standard locks">
+<h4>pressure vs inner radius, finite strain</h4><div class="legend"></div><div class="plot"></div><div class="tip" hidden></div></figure>
+</div>
+<p>Relative error of the inner radial displacement \(u_r(a)\); each mesh refined ×2.</p>
+<div class="table-wrap"><table>
+<tr><th>case</th><th>formulation</th><th>coarse</th><th>mid</th><th>fine</th><th>error ratio</th></tr>
+<tr><td rowspan="1">1) compressible, \(p\) = 1e-5 vs Lamé</td><td>hex8 standard</td><td class="num">1.3e-2</td><td class="num">3.3e-3</td><td class="num">8.0e-4 / 1.7e-4</td><td class="num">4.0 4.2 4.8</td></tr>
+<tr><td rowspan="3">3) \(K/\mu = 10^4\) vs Lamé (locking)</td><td>standard</td><td class="num bad">92 %</td><td class="num bad">74 %</td><td class="num bad">42 %</td><td class="num">1.2 1.8</td></tr>
+<tr><td>fbar</td><td class="num">2.9e-3</td><td class="num">7.0e-4</td><td class="num">1.4e-4</td><td class="num">4.2 4.9</td></tr>
+<tr><td>hybrid</td><td class="num">2.9e-3</td><td class="num">7.0e-4</td><td class="num">1.4e-4</td><td class="num">4.2 4.9</td></tr>
+<tr><td rowspan="3">4) incompressible, \(p\) = 0.1 MPa, exact \(a/A\) = 1.442477</td><td>standard</td><td class="num bad">96 %</td><td class="num bad">83 %</td><td class="num bad">47 %</td><td class="num">1.2 1.8</td></tr>
+<tr><td>fbar</td><td class="num">5.2e-3</td><td class="num">1.2e-3</td><td class="num">1.8e-4</td><td class="num">4.4 6.7</td></tr>
+<tr><td>hybrid</td><td class="num">4.7e-3</td><td class="num">1.2e-3</td><td class="num">3.0e-4</td><td class="num">4.0 4.0</td></tr>
+<tr><td rowspan="2">5) compressible, \(p\) = 1e-8 vs Lamé</td><td>hex8</td><td class="num">5.0e-2</td><td class="num">1.3e-2</td><td class="num">3.4e-3</td><td class="num">3.8 3.9</td></tr>
+<tr><td>tet10</td><td class="num">4.8e-4</td><td class="num">6.4e-5</td><td class="num">9.7e-6</td><td class="num">7.4 6.6</td></tr>
+<tr><td rowspan="2">6) tet10 incompressible, \(p\) = 0.1 MPa</td><td>hybrid (P2/P0)</td><td class="num">6.3e-4</td><td class="num">1.6e-4</td><td class="num">4.4e-5</td><td class="num">4.0 3.6</td></tr>
+<tr><td>hybrid_p1 (P2/P1)</td><td class="num">5.0e-6</td><td class="num">1.1e-6</td><td class="num good">2.1e-7</td><td class="num">4.6 5.1</td></tr>
+</table></div>
+<div class="fig-grid">
+<figure class="chart" data-chart="tube_lock" data-label="Locking test: standard hex8 error stays near 100 percent, fbar and hybrid converge at order 2">
+<h4>(a) \(K/\mu = 10^4\) vs Lamé</h4><div class="legend"></div><div class="plot"></div><div class="tip" hidden></div></figure>
+<figure class="chart" data-chart="tube_finite" data-label="Finite pressure, incompressible: fbar and hybrid converge, standard locks">
+<h4>(b) finite pressure, incompressible</h4><div class="legend"></div><div class="plot"></div><div class="tip" hidden></div></figure>
+<figure class="chart" data-chart="tube_tet" data-label="hex8 converges at order 2, tet10 faster">
+<h4>(c) hex8 vs tet10, compressible</h4><div class="legend"></div><div class="plot"></div><div class="tip" hidden></div></figure>
+<figure class="chart" data-chart="tube_p1" data-label="tet10 P2/P1 is two orders of magnitude more accurate than P2/P0">
+<h4>(d) tet10 P2/P0 vs P2/P1, incompressible</h4><div class="legend"></div><div class="plot"></div><div class="tip" hidden></div></figure>
+</div>
+<p class="meta">Log–log; triangles mark the slopes 2 (and 3). In (a) fbar and hybrid coincide.</p>
+<p>Case 2 (15 kPa, nonlinear, no closed form): successive differences 1.9e-3, 4.8e-4, 1.2e-4 mm, ratio 3.9 and 4.0, 3 Newton iterations on every mesh.</p>
+<div class="box"><span class="tag">Reading</span><p>Ratio 4 per halving is O(h²) for hex8, about 7 is between O(h²) and O(h³) for tet10.
+Standard hex8 locks for nearly incompressible material; F-bar and hybrid do not.</p></div>
+
+<!-- ============================================================ -->
+<h2 id="mms">3. Manufactured solutions (MMS)</h2>
+<p><code>verification/fem_mms.py</code> · distorted unit cube, exact finite-strain field \(u_\text{ex}\) prescribed; the body force
+\(b = -\nabla_X\cdot P(u_\text{ex})\) is computed by AD and applied, so \(u_\text{ex}\) is the exact solution. Rate \(=\log_2(e_h/e_{h/2})\), last refinement shown.</p>
+<figure class="sk narrow"><!--SVG:mms--><svg viewBox="0 0 520 354.0" role="img" aria-label="Unit cube: prescribed exact displacement on five faces, exact traction on x = 1, manufactured body force inside" class="sketch"><defs><marker id="fmms-load" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="sk-load-head"/></marker><marker id="fmms-disp" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="sk-disp-head"/></marker><marker id="fmms-ink" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="sk-ink-head"/></marker><pattern id="fmms-h" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" class="sk-hatch"/></pattern></defs><polygon points="170.0,260.0 320.0,260.0 320.0,110.0 170.0,110.0" class="sk-face"/><polygon points="170.0,260.0 320.0,260.0 320.0,110.0 170.0,110.0" class="sk-face-disp"/><polygon points="170.0,110.0 320.0,110.0 385.0,72.5 235.0,72.5" class="sk-face"/><polygon points="170.0,110.0 320.0,110.0 385.0,72.5 235.0,72.5" class="sk-face-disp"/><polygon points="320.0,260.0 385.0,222.5 385.0,72.5 320.0,110.0" class="sk-face"/><polygon points="320.0,260.0 385.0,222.5 385.0,72.5 320.0,110.0" class="sk-face-load"/><line x1="235.0" y1="222.5" x2="170.0" y2="260.0" class="sk-hidden"/><line x1="235.0" y1="222.5" x2="385.0" y2="222.5" class="sk-hidden"/><line x1="235.0" y1="222.5" x2="235.0" y2="72.5" class="sk-hidden"/><line x1="207.5" y1="260.0" x2="207.5" y2="110.0" class="sk-mesh"/><line x1="170.0" y1="222.5" x2="320.0" y2="222.5" class="sk-mesh"/><line x1="207.5" y1="110.0" x2="272.5" y2="72.5" class="sk-mesh"/><line x1="186.2" y1="100.6" x2="336.2" y2="100.6" class="sk-mesh"/><line x1="336.2" y1="250.6" x2="336.2" y2="100.6" class="sk-mesh"/><line x1="320.0" y1="222.5" x2="385.0" y2="185.0" class="sk-mesh"/><line x1="245.0" y1="260.0" x2="245.0" y2="110.0" class="sk-mesh"/><line x1="170.0" y1="185.0" x2="320.0" y2="185.0" class="sk-mesh"/><line x1="245.0" y1="110.0" x2="310.0" y2="72.5" class="sk-mesh"/><line x1="202.5" y1="91.2" x2="352.5" y2="91.2" class="sk-mesh"/><line x1="352.5" y1="241.2" x2="352.5" y2="91.2" class="sk-mesh"/><line x1="320.0" y1="185.0" x2="385.0" y2="147.5" class="sk-mesh"/><line x1="282.5" y1="260.0" x2="282.5" y2="110.0" class="sk-mesh"/><line x1="170.0" y1="147.5" x2="320.0" y2="147.5" class="sk-mesh"/><line x1="282.5" y1="110.0" x2="347.5" y2="72.5" class="sk-mesh"/><line x1="218.7" y1="81.9" x2="368.7" y2="81.9" class="sk-mesh"/><line x1="368.7" y1="231.9" x2="368.7" y2="81.9" class="sk-mesh"/><line x1="320.0" y1="147.5" x2="385.0" y2="110.0" class="sk-mesh"/><polygon points="170.0,260.0 320.0,260.0 320.0,110.0 170.0,110.0" class="sk-outline"/><polygon points="170.0,110.0 320.0,110.0 385.0,72.5 235.0,72.5" class="sk-outline"/><polygon points="320.0,260.0 385.0,222.5 385.0,72.5 320.0,110.0" class="sk-outline"/><line x1="336.2" y1="213.1" x2="370.2" y2="199.1" class="sk-load" marker-end="url(#fmms-load)"/><line x1="336.2" y1="145.6" x2="370.2" y2="131.6" class="sk-load" marker-end="url(#fmms-load)"/><line x1="365.5" y1="166.2" x2="399.5" y2="152.2" class="sk-load" marker-end="url(#fmms-load)"/><line x1="365.5" y1="98.8" x2="399.5" y2="84.8" class="sk-load" marker-end="url(#fmms-load)"/><text x="397.0" y="86.5" text-anchor="start" class="sk-text">t = P(u<tspan class='sub'>ex</tspan>) N</text><line x1="215.0" y1="207.5" x2="231.0" y2="221.5" class="sk-load" marker-end="url(#fmms-load)"/><line x1="252.5" y1="177.5" x2="268.5" y2="191.5" class="sk-load" marker-end="url(#fmms-load)"/><line x1="215.0" y1="147.5" x2="231.0" y2="161.5" class="sk-load" marker-end="url(#fmms-load)"/><text x="245.0" y="236.0" text-anchor="middle" class="sk-small">b = −Div P(u<tspan class='sub'>ex</tspan>)</text><text x="277.5" y="95.2" text-anchor="middle" class="sk-small">u = u<tspan class='sub'>ex</tspan></text><text x="162.0" y="185.0" text-anchor="end" class="sk-small">u = u<tspan class='sub'>ex</tspan> also on</text><text x="162.0" y="200.0" text-anchor="end" class="sk-small">x = 0, y = 1, z = 0</text><line x1="0" y1="304" x2="520" y2="304" class="sk-sep"/><rect x="10.0" y="311.0" width="24" height="13" class="sk-face"/><rect x="10.0" y="311.0" width="24" height="13" class="sk-face-disp"/><rect x="10.0" y="311.0" width="24" height="13" class="sk-outline"/><text x="44.0" y="322.0" class="sk-small">face with prescribed u</text><rect x="202.8" y="311.0" width="24" height="13" class="sk-face"/><rect x="202.8" y="311.0" width="24" height="13" class="sk-face-load"/><rect x="202.8" y="311.0" width="24" height="13" class="sk-outline"/><text x="236.8" y="322.0" class="sk-small">loaded face</text><line x1="325.2" y1="318.0" x2="351.2" y2="318.0" class="sk-hidden"/><text x="359.2" y="322.0" class="sk-small">hidden edge</text><line x1="10.0" y1="340.0" x2="36.0" y2="340.0" class="sk-load" marker-end="url(#fmms-load)"/><text x="44.0" y="344.0" class="sk-small">load</text></svg><!--/SVG--><figcaption>Boundary conditions of the manufactured solution: \(u = u_\text{ex}\) on five faces (Dirichlet),
+the exact nominal traction on \(x = 1\) (Neumann), the body force \(b\) everywhere. The surface grid is regular; the interior nodes are displaced by
+\(0.04\sin(2\pi s_x)\sin(2\pi s_y)\sin(2\pi s_z)\), so the elements are curved and non-affine.</figcaption></figure>
+<figure class="chart" data-chart="mms_line" data-label="Nodal FE displacements approach the manufactured solution as the mesh is refined">
+<h4>manufactured solution \(u_x\) along the centre line, hex8 standard</h4><div class="legend"></div><div class="plot"></div><div class="tip" hidden></div>
+<figcaption>Nodal values on the line \((X, 0.5, 0.5)\), where the interior distortion vanishes, against \(u_\text{ex}\).</figcaption></figure>
+<div class="table-wrap"><table>
+<tr><th>element</th><th>case</th><th>rate u L2</th><th>rate u H1</th><th>rate pressure L2</th><th>expected rates</th></tr>
+<tr><td>hex8 standard</td><td>compressible</td><td class="num">1.85</td><td class="num">1.02</td><td>–</td><td>2 / 1</td></tr>
+<tr><td>hex8 fbar</td><td>compressible</td><td class="num">1.94</td><td class="num">1.07</td><td>–</td><td>2 / 1</td></tr>
+<tr><td>hex8 standard</td><td>Fung fibers</td><td class="num">1.88</td><td class="num">1.02</td><td>–</td><td>2 / 1</td></tr>
+<tr><td>hex8 hybrid</td><td>incompressible, \(J = 1\)</td><td class="num">1.99</td><td class="num">1.00</td><td class="num">2.35</td><td>2 / 1 / 1</td></tr>
+<tr><td>hex8 hybrid</td><td>\(J_\text{target} = \det F_\text{ex}\) (growth)</td><td class="num">1.99</td><td class="num">1.00</td><td class="num">2.75</td><td>2 / 1 / 1</td></tr>
+<tr><td>tet10 standard</td><td>compressible</td><td class="num">2.84</td><td class="num">1.90</td><td>–</td><td>3 / 2</td></tr>
+<tr><td>tet10 standard</td><td>Fung fibers</td><td class="num">2.97</td><td class="num">1.93</td><td>–</td><td>3 / 2</td></tr>
+<tr><td>tet10 hybrid (P2/P0)</td><td>incompressible, \(J = 1\)</td><td class="num">2.08</td><td class="num">1.31</td><td class="num open">0.09 (cube means 1.01)</td><td>2 / 1 / 1</td></tr>
+<tr><td>tet10 hybrid (P2/P0)</td><td>\(J_\text{target} = \det F_\text{ex}\)</td><td class="num">2.07</td><td class="num">1.08</td><td class="num open">0.13 (cube means 1.20)</td><td>2 / 1 / 1</td></tr>
+<tr><td>tet10 hybrid_p1 (P2/P1)</td><td>incompressible, \(J = 1\)</td><td class="num">2.95</td><td class="num">1.91</td><td class="num">2.60</td><td>3 / 2 / 2</td></tr>
+<tr><td>tet10 hybrid_p1 (P2/P1)</td><td>\(J_\text{target} = \det F_\text{ex}\)</td><td class="num">2.97</td><td class="num">1.91</td><td class="num">2.45</td><td>3 / 2 / 2</td></tr>
+<tr><td>hex8 standard</td><td>\(K/C_{10} = 2\times10^4\)</td><td class="num bad">0.40</td><td class="num bad">0.55</td><td>–</td><td>locks (expected)</td></tr>
+<tr><td>hex8 fbar</td><td>\(K/C_{10} = 2\times10^4\)</td><td class="num">1.99</td><td class="num">1.00</td><td>–</td><td>2 / 1</td></tr>
+</table></div>
+<div class="fig-grid">
+<figure class="chart" data-chart="mms_u" data-label="Displacement errors converge at order 2 for hex8 and order 3 for tet10; standard hex8 with high bulk modulus stagnates">
+<h4>displacement, L2</h4><div class="legend"></div><div class="plot"></div><div class="tip" hidden></div></figure>
+<figure class="chart" data-chart="mms_q" data-label="Pressure errors: P2/P1 order 2, Q1/P0 converges, P2/P0 pointwise stagnates while its cube means converge">
+<h4>pressure, L2</h4><div class="legend"></div><div class="plot"></div><div class="tip" hidden></div></figure>
+</div>
+<div class="box warn"><span class="tag">Finding</span><p>P2/P0 element pressures oscillate between neighbouring tets: the pointwise pressure error does not decrease,
+only its cube means converge. Displacements are fine. For wall stresses on tet10 meshes use <code>hybrid_p1</code>.</p></div>
+
+<!-- ============================================================ -->
+<h2 id="cook">4. Cook's membrane</h2>
+<p><code>verification/cook.py</code> · tapered plane-strain panel under shear end load, \(\mu\) = 80.194, \(F\) = 32, nearly incompressible.
+Tip vertical displacement; reference \(v\) = 2.46262 (Richardson on hex8 fbar \(n\) = 16 / 32 / 64, observed order 1.31).</p>
+<div class="fig-grid">
+<figure class="sk"><!--SVG:cook--><svg viewBox="0 0 440 352.0" role="img" aria-label="Cook's membrane: tapered panel clamped on the left, shear load on the right edge, tip displacement measured" class="sketch"><defs><marker id="fcook-load" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="sk-load-head"/></marker><marker id="fcook-disp" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="sk-disp-head"/></marker><marker id="fcook-ink" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="sk-ink-head"/></marker><pattern id="fcook-h" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" class="sk-hatch"/></pattern></defs><polygon points="90.0,290.0 282.0,114.0 282.0,50.0 90.0,114.0" class="sk-face"/><line x1="138.0" y1="246.0" x2="138.0" y2="98.0" class="sk-mesh"/><line x1="90.0" y1="246.0" x2="282.0" y2="98.0" class="sk-mesh"/><line x1="186.0" y1="202.0" x2="186.0" y2="82.0" class="sk-mesh"/><line x1="90.0" y1="202.0" x2="282.0" y2="82.0" class="sk-mesh"/><line x1="234.0" y1="158.0" x2="234.0" y2="66.0" class="sk-mesh"/><line x1="90.0" y1="158.0" x2="282.0" y2="66.0" class="sk-mesh"/><polygon points="90.0,290.0 282.0,114.0 282.0,50.0 90.0,114.0" class="sk-outline"/><polygon points="76.0,296.0 90.0,296.0 90.0,108.0 76.0,108.0" class="sk-clamp" fill="url(#fcook-h)"/><line x1="90.0" y1="296.0" x2="90.0" y2="108.0" class="sk-ground"/><line x1="292.0" y1="113.0" x2="292.0" y2="97.0" class="sk-load" marker-end="url(#fcook-load)"/><line x1="292.0" y1="95.0" x2="292.0" y2="79.0" class="sk-load" marker-end="url(#fcook-load)"/><line x1="292.0" y1="77.0" x2="292.0" y2="61.0" class="sk-load" marker-end="url(#fcook-load)"/><line x1="292.0" y1="59.0" x2="292.0" y2="43.0" class="sk-load" marker-end="url(#fcook-load)"/><text x="304.0" y="86.0" text-anchor="start" class="sk-text">F = 32 (shear)</text><circle cx="282.0" cy="50.0" r="4.5" class="sk-measure"/><text x="274.0" y="42.0" text-anchor="end" class="sk-text">v (tip)</text><text x="68.0" y="202.0" text-anchor="end" class="sk-text">u = 0</text><line x1="90.0" y1="306.0" x2="282.0" y2="306.0" class="sk-dim"/><text x="186.0" y="320.0" text-anchor="middle" class="sk-small">48</text><text x="98.0" y="202.0" text-anchor="start" class="sk-small">44</text><text x="276.0" y="86.0" text-anchor="end" class="sk-small">16</text><text x="380.0" y="300.0" text-anchor="end" class="sk-small">plane strain, ν → 0.5</text><line x1="0" y1="324" x2="440" y2="324" class="sk-sep"/><rect x="10.0" y="331.0" width="24" height="13" fill="url(#fcook-h)" class="sk-clamp"/><text x="44.0" y="342.0" class="sk-small">fixed (u = 0)</text><line x1="145.2" y1="338.0" x2="171.2" y2="338.0" class="sk-load" marker-end="url(#fcook-load)"/><text x="179.2" y="342.0" class="sk-small">load</text><circle cx="235.8" cy="338.0" r="4" class="sk-measure"/><text x="256.8" y="342.0" class="sk-small">measured quantity</text></svg><!--/SVG--><figcaption>Clamped left edge, distributed shear load on the right edge, \(n \times n\) elements (4 × 4 shown).
+The tip displacement \(v\) is measured.</figcaption></figure>
+<figure class="chart" data-chart="cook" data-label="Tip displacement against mesh size: locking-free elements approach the reference, standard hex8 stays far below">
+<h4>tip displacement under refinement</h4><div class="legend"></div><div class="plot"></div><div class="tip" hidden></div></figure>
+</div>
+<div class="table-wrap"><table>
+<tr><th>element</th><th>n = 2</th><th>n = 8</th><th>finest</th><th>finest vs reference</th><th>verdict</th></tr>
+<tr><td>hex8 hybrid</td><td class="num">1.541</td><td class="num">2.331</td><td class="num">2.454 (64)</td><td class="num">3.5e-3</td><td class="good">converged</td></tr>
+<tr><td>hex8 fbar</td><td class="num">1.544</td><td class="num">2.332</td><td class="num">2.454 (64)</td><td class="num">3.3e-3</td><td class="good">converged</td></tr>
+<tr><td>hex8 standard</td><td class="num bad">0.676</td><td class="num bad">0.711</td><td class="num bad">1.310 (64)</td><td class="num bad">4.7e-1</td><td>locks (27 % of the reference at n = 2)</td></tr>
+<tr><td>tet10 hybrid</td><td class="num">1.689</td><td class="num">2.393</td><td class="num">2.459 (32)</td><td class="num">1.7e-3</td><td class="good">converged</td></tr>
+<tr><td>tet10 hybrid_p1</td><td class="num">2.018</td><td class="num">2.405</td><td class="num">2.453 (32)</td><td class="num">4.0e-3</td><td class="good">converged</td></tr>
+<tr><td>tet10 standard</td><td class="num">1.272</td><td class="num">2.288</td><td class="num">2.433 (32)</td><td class="num">1.2e-2</td><td class="open">partial locking</td></tr>
+</table></div>
+
+<!-- ============================================================ -->
+<h2 id="consistency">5. Internal consistency</h2>
+<p><code>verification/fem_consistency.py</code> · checks the code against itself and against geometry, for every formulation (69 checks, all PASS).</p>
+<div class="fig-grid">
+<figure class="sk"><!--SVG:consistency--><svg viewBox="0 0 340 302.0" role="img" aria-label="Deformed closed box loaded by follower pressure on all faces" class="sketch"><defs><marker id="fcons-load" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="sk-load-head"/></marker><marker id="fcons-disp" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="sk-disp-head"/></marker><marker id="fcons-ink" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="sk-ink-head"/></marker><pattern id="fcons-h" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" class="sk-hatch"/></pattern></defs><polygon points="70.0,225.0 185.0,225.0 202.2,98.5 87.2,110.0" class="sk-face"/><polygon points="87.2,110.0 202.2,98.5 252.0,69.8 137.0,81.2" class="sk-face"/><polygon points="185.0,225.0 234.8,196.2 252.0,69.8 202.2,98.5" class="sk-face"/><line x1="119.8" y1="196.2" x2="70.0" y2="225.0" class="sk-hidden"/><line x1="119.8" y1="196.2" x2="234.8" y2="196.2" class="sk-hidden"/><line x1="119.8" y1="196.2" x2="137.0" y2="81.2" class="sk-hidden"/><polygon points="70.0,225.0 185.0,225.0 202.2,98.5 87.2,110.0" class="sk-outline"/><polygon points="87.2,110.0 202.2,98.5 252.0,69.8 137.0,81.2" class="sk-outline"/><polygon points="185.0,225.0 234.8,196.2 252.0,69.8 202.2,98.5" class="sk-outline"/><line x1="254.8" y1="149.7" x2="218.5" y2="147.4" class="sk-load" marker-end="url(#fcons-load)"/><line x1="171.5" y1="51.7" x2="169.6" y2="89.9" class="sk-load" marker-end="url(#fcons-load)"/><line x1="120.2" y1="173.8" x2="136.1" y2="164.6" class="sk-load" marker-end="url(#fcons-load)"/><text x="170.0" y="16.0" text-anchor="middle" class="sk-title">follower pressure p on all 6 faces</text><text x="170.0" y="262.0" text-anchor="middle" class="sk-small">Σf = 0,  Σx × f = 0,  f = −p ∂V/∂x</text><line x1="0" y1="274" x2="340" y2="274" class="sk-sep"/><line x1="10.0" y1="288.0" x2="36.0" y2="288.0" class="sk-hidden"/><text x="44.0" y="292.0" class="sk-small">hidden edge</text><line x1="132.4" y1="288.0" x2="158.4" y2="288.0" class="sk-load" marker-end="url(#fcons-load)"/><text x="166.4" y="292.0" class="sk-small">load</text></svg><!--/SVG--><figcaption>Follower-pressure check: on a closed deformed surface the pressure forces must sum to zero, have no moment,
+and equal \(-p\,\partial V/\partial x\) of the enclosed volume. Its tangent must equal \(p\,\partial^2 V/\partial x^2\) and be symmetric.</figcaption></figure>
+<figure class="chart" data-chart="newton" data-label="Newton residual drops quadratically in the last iterations">
+<h4>Newton convergence, tube \(p\) = 0.1 MPa from \(u = 0\)</h4><div class="legend"></div><div class="plot"></div><div class="tip" hidden></div></figure>
+</div>
+<div class="table-wrap"><table>
+<tr><th>check</th><th>what is compared</th><th>worst result</th></tr>
+<tr><td>quadrature</td><td>\(\sum w = V\), \(\int X\,\mathrm dV = V X_c\) on distorted hex8 and tet10</td><td class="num">3.3e-16</td></tr>
+<tr><td>tangent</td><td>assembled \(K\) vs <code>jacfwd</code> of the residual / vs central differences (7 formulations, deformed state)</td><td class="num">5.2e-16 / 8.0e-10</td></tr>
+<tr><td>Newton order</td><td>tube, \(p\) = 0.1 MPa from \(u = 0\), matrix + fibers: order of the last step above round-off</td><td class="num">1.81 … 2.97 (≈ 2)</td></tr>
+<tr><td>follower pressure</td><td>\(f_p = -p\,\partial V/\partial x\), \(\sum f_p = 0\), \(\sum x\times f_p = 0\), \(K_p = p\,\partial^2V/\partial x^2\) symmetric on a closed surface</td><td class="num">3.8e-14</td></tr>
+<tr><td>pressure field</td><td>constant field per face Gauss point = scalar \(p\); adjoint \(\sum \partial/\partial p_g = \partial/\partial p\); transfer onto own points = identity</td><td class="num">2.9e-14</td></tr>
+<tr><td>invariances</td><td>slip = fixed dofs, rotated mesh \(u' = Qu\), renumbered nodes and elements, SuperLU vs PARDISO</td><td class="num">5.9e-12</td></tr>
+<tr><td>free growth</td><td>hybrid with \(J_\text{target}\) = 1.3, symmetry planes: \(u = (1.3^{1/3}-1)X\), \(q = 0\)</td><td class="num">2.4e-16</td></tr>
+<tr><td>adjoint</td><td>\(\mathrm d(w\cdot u)/\mathrm d(C_{10}, k_1, p)\) vs central FD, rotated tube with slip supports (hex8 hybrid / fbar, tet10 standard / hybrid_p1)</td><td class="num">5.4e-8 (k1), others ≤ 3e-10</td></tr>
+<tr><td>checkpointing</td><td><code>run(checkpoint=2)</code> vs none, 4 steps</td><td class="num">3.4e-13</td></tr>
+</table></div>
+
+<!-- ============================================================ -->
+<h2 id="buckling">6. Buckling and post-buckling</h2>
+<p><code>verification/buckling.py</code> · neo-Hooke \(E\) = 1.771.</p>
+<figure class="sk"><!--SVG:buckling--><svg viewBox="0 0 660 332.0" role="img" aria-label="Clamped column under end shortening with its first buckling mode; clamped shallow arch with a crown load and its snapped shape" class="sketch"><defs><marker id="fbuck-load" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="sk-load-head"/></marker><marker id="fbuck-disp" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="sk-disp-head"/></marker><marker id="fbuck-ink" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="sk-ink-head"/></marker><pattern id="fbuck-h" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" class="sk-hatch"/></pattern></defs><polygon points="94.0,50.0 106.0,50.0 106.0,262.0 94.0,262.0" class="sk-face"/><polygon points="94.0,50.0 106.0,50.0 106.0,262.0 94.0,262.0" class="sk-outline"/><polygon points="74.0,262.0 126.0,262.0 126.0,274.0 74.0,274.0" class="sk-clamp" fill="url(#fbuck-h)"/><line x1="74.0" y1="262.0" x2="126.0" y2="262.0" class="sk-ground"/><polygon points="74.0,38.0 126.0,38.0 126.0,50.0 74.0,50.0" class="sk-clamp" fill="url(#fbuck-h)"/><line x1="74.0" y1="50.0" x2="126.0" y2="50.0" class="sk-ground"/><line x1="144.0" y1="28.0" x2="144.0" y2="60.0" class="sk-disp" marker-end="url(#fbuck-disp)"/><text x="152.0" y="46.0" text-anchor="start" class="sk-text sk-it">d</text><polyline points="100.0,262.0 100.2,256.6 100.6,251.1 101.4,245.7 102.4,240.3 103.7,234.8 105.2,229.4 106.9,223.9 108.7,218.5 110.6,213.1 112.5,207.6 114.4,202.2 116.3,196.8 118.0,191.3 119.6,185.9 121.0,180.5 122.1,175.0 123.0,169.6 123.7,164.2 124.0,158.7 124.0,153.3 123.7,147.8 123.0,142.4 122.1,137.0 121.0,131.5 119.6,126.1 118.0,120.7 116.3,115.2 114.4,109.8 112.5,104.4 110.6,98.9 108.7,93.5 106.9,88.1 105.2,82.6 103.7,77.2 102.4,71.7 101.4,66.3 100.6,60.9 100.2,55.4 100.0,50.0" class="sk-mode"/><text x="130.0" y="160.0" text-anchor="start" class="sk-small">1st mode</text><text x="100.0" y="24.0" text-anchor="middle" class="sk-title">Euler column, L/a = 40</text><text x="100.0" y="296.0" text-anchor="middle" class="sk-small">P_cr vs 4π²EI / L²</text><polygon points="270.0,196.0 276.1,193.6 282.2,191.3 288.3,189.1 294.4,186.9 300.5,184.8 306.6,182.8 312.7,180.9 318.8,179.1 324.9,177.4 331.0,175.7 337.1,174.2 343.2,172.7 349.3,171.3 355.4,169.9 361.5,168.7 367.6,167.5 373.7,166.5 379.8,165.5 385.9,164.6 392.0,163.7 398.1,163.0 404.2,162.3 410.3,161.7 416.4,161.3 422.5,160.8 428.6,160.5 434.7,160.3 440.8,160.1 446.9,160.0 453.1,160.0 459.2,160.1 465.3,160.3 471.4,160.5 477.5,160.8 483.6,161.3 489.7,161.7 495.8,162.3 501.9,163.0 508.0,163.7 514.1,164.6 520.2,165.5 526.3,166.5 532.4,167.5 538.5,168.7 544.6,169.9 550.7,171.3 556.8,172.7 562.9,174.2 569.0,175.7 575.1,177.4 581.2,179.1 587.3,180.9 593.4,182.8 599.5,184.8 605.6,186.9 611.7,189.1 617.8,191.3 623.9,193.6 630.0,196.0 630.0,214.0 623.9,211.6 617.8,209.3 611.7,207.1 605.6,204.9 599.5,202.8 593.4,200.8 587.3,198.9 581.2,197.1 575.1,195.4 569.0,193.7 562.9,192.2 556.8,190.7 550.7,189.3 544.6,187.9 538.5,186.7 532.4,185.5 526.3,184.5 520.2,183.5 514.1,182.6 508.0,181.7 501.9,181.0 495.8,180.3 489.7,179.7 483.6,179.3 477.5,178.8 471.4,178.5 465.3,178.3 459.2,178.1 453.1,178.0 446.9,178.0 440.8,178.1 434.7,178.3 428.6,178.5 422.5,178.8 416.4,179.3 410.3,179.7 404.2,180.3 398.1,181.0 392.0,181.7 385.9,182.6 379.8,183.5 373.7,184.5 367.6,185.5 361.5,186.7 355.4,187.9 349.3,189.3 343.2,190.7 337.1,192.2 331.0,193.7 324.9,195.4 318.8,197.1 312.7,198.9 306.6,200.8 300.5,202.8 294.4,204.9 288.3,207.1 282.2,209.3 276.1,211.6 270.0,214.0" class="sk-face"/><polygon points="270.0,196.0 276.1,193.6 282.2,191.3 288.3,189.1 294.4,186.9 300.5,184.8 306.6,182.8 312.7,180.9 318.8,179.1 324.9,177.4 331.0,175.7 337.1,174.2 343.2,172.7 349.3,171.3 355.4,169.9 361.5,168.7 367.6,167.5 373.7,166.5 379.8,165.5 385.9,164.6 392.0,163.7 398.1,163.0 404.2,162.3 410.3,161.7 416.4,161.3 422.5,160.8 428.6,160.5 434.7,160.3 440.8,160.1 446.9,160.0 453.1,160.0 459.2,160.1 465.3,160.3 471.4,160.5 477.5,160.8 483.6,161.3 489.7,161.7 495.8,162.3 501.9,163.0 508.0,163.7 514.1,164.6 520.2,165.5 526.3,166.5 532.4,167.5 538.5,168.7 544.6,169.9 550.7,171.3 556.8,172.7 562.9,174.2 569.0,175.7 575.1,177.4 581.2,179.1 587.3,180.9 593.4,182.8 599.5,184.8 605.6,186.9 611.7,189.1 617.8,191.3 623.9,193.6 630.0,196.0 630.0,214.0 623.9,211.6 617.8,209.3 611.7,207.1 605.6,204.9 599.5,202.8 593.4,200.8 587.3,198.9 581.2,197.1 575.1,195.4 569.0,193.7 562.9,192.2 556.8,190.7 550.7,189.3 544.6,187.9 538.5,186.7 532.4,185.5 526.3,184.5 520.2,183.5 514.1,182.6 508.0,181.7 501.9,181.0 495.8,180.3 489.7,179.7 483.6,179.3 477.5,178.8 471.4,178.5 465.3,178.3 459.2,178.1 453.1,178.0 446.9,178.0 440.8,178.1 434.7,178.3 428.6,178.5 422.5,178.8 416.4,179.3 410.3,179.7 404.2,180.3 398.1,181.0 392.0,181.7 385.9,182.6 379.8,183.5 373.7,184.5 367.6,185.5 361.5,186.7 355.4,187.9 349.3,189.3 343.2,190.7 337.1,192.2 331.0,193.7 324.9,195.4 318.8,197.1 312.7,198.9 306.6,200.8 300.5,202.8 294.4,204.9 288.3,207.1 282.2,209.3 276.1,211.6 270.0,214.0" class="sk-outline"/><polyline points="270.0,205.0 276.1,206.9 282.2,208.8 288.3,210.6 294.4,212.3 300.5,213.9 306.6,215.5 312.7,217.0 318.8,218.5 324.9,219.9 331.0,221.2 337.1,222.5 343.2,223.7 349.3,224.8 355.4,225.8 361.5,226.8 367.6,227.8 373.7,228.6 379.8,229.4 385.9,230.2 392.0,230.8 398.1,231.4 404.2,231.9 410.3,232.4 416.4,232.8 422.5,233.1 428.6,233.4 434.7,233.6 440.8,233.7 446.9,233.8 453.1,233.8 459.2,233.7 465.3,233.6 471.4,233.4 477.5,233.1 483.6,232.8 489.7,232.4 495.8,231.9 501.9,231.4 508.0,230.8 514.1,230.2 520.2,229.4 526.3,228.6 532.4,227.8 538.5,226.8 544.6,225.8 550.7,224.8 556.8,223.7 562.9,222.5 569.0,221.2 575.1,219.9 581.2,218.5 587.3,217.0 593.4,215.5 599.5,213.9 605.6,212.3 611.7,210.6 617.8,208.8 623.9,206.9 630.0,205.0" class="sk-mode"/><polygon points="270.0,183.0 258.0,183.0 258.0,227.0 270.0,227.0" class="sk-clamp" fill="url(#fbuck-h)"/><line x1="270.0" y1="183.0" x2="270.0" y2="227.0" class="sk-ground"/><polygon points="630.0,183.0 642.0,183.0 642.0,227.0 630.0,227.0" class="sk-clamp" fill="url(#fbuck-h)"/><line x1="630.0" y1="183.0" x2="630.0" y2="227.0" class="sk-ground"/><line x1="450.0" y1="120.0" x2="450.0" y2="158.0" class="sk-load" marker-end="url(#fbuck-load)"/><text x="458.0" y="130.0" text-anchor="start" class="sk-text sk-it">F</text><text x="450.0" y="251.0" text-anchor="middle" class="sk-small">snapped (inverted) shape</text><text x="450.0" y="24.0" text-anchor="middle" class="sk-title">shallow arch, span 40, rise 2 (rise exaggerated)</text><line x1="0" y1="304" x2="660" y2="304" class="sk-sep"/><rect x="10.0" y="311.0" width="24" height="13" fill="url(#fbuck-h)" class="sk-clamp"/><text x="44.0" y="322.0" class="sk-small">fixed (u = 0)</text><line x1="145.2" y1="318.0" x2="171.2" y2="318.0" class="sk-disp" marker-end="url(#fbuck-disp)"/><text x="179.2" y="322.0" class="sk-small">prescribed displacement</text><line x1="344.4" y1="318.0" x2="370.4" y2="318.0" class="sk-mode"/><text x="378.4" y="322.0" class="sk-small">buckling mode / snapped shape</text><line x1="582.0" y1="318.0" x2="608.0" y2="318.0" class="sk-load" marker-end="url(#fbuck-load)"/><text x="616.0" y="322.0" class="sk-small">load</text></svg><!--/SVG--><figcaption>Left: column clamped at both ends, shortened by \(d\); the critical load is where the smallest tangent eigenvalue crosses zero.
+Right: clamped shallow arch under a crown load; it snaps through to the inverted shape.</figcaption></figure>
+<figure class="chart" data-chart="column" data-label="Smallest tangent eigenvalue of the column crosses zero at the Euler load">
+<h4>Euler column: stability eigenvalue vs load</h4><div class="legend"></div><div class="plot"></div><div class="tip" hidden></div>
+<figcaption>The smallest eigenvalue of the tangent (scaled by its value at \(0.2\,P_E\)) crosses zero at \(P/P_E\) = 1.010 (2×2×40) and 1.008 (3×3×60);
+the remaining offset is discretization and shear deformation.</figcaption></figure>
+<figure class="chart" data-chart="arch" data-label="Arch load path: arc length passes the limit point and follows the unstable branch; displacement control gives the same curve">
+<h4>shallow arch: load path through the limit point</h4><div class="legend"></div><div class="plot"></div><div class="tip" hidden></div>
+<figcaption>Arc length runs under force control and follows the descending branch past the limit load 0.00117. Displacement control at the crown
+traces the same curve (difference 1.7e-10 of the peak load).</figcaption></figure>
+<div class="table-wrap"><table>
+<tr><th>test</th><th>reference</th><th>result</th></tr>
+<tr><td>Euler column, tet10, \(L/a\) = 40, critical load with <code>stability</code></td><td>Euler \(P_\text{cr}\) = 0.003641</td><td class="num">2.40 % → 1.51 % on refinement (rest: shear ≈ 0.7 %)</td></tr>
+<tr><td>shallow arch snap-through, <code>arc_length</code> (hex8, 20 steps, limit load 0.2930)</td><td>displacement control along the same path</td><td class="num">1.7e-10</td></tr>
+<tr><td>eigenvalue before / after the limit point</td><td>sign change expected</td><td class="num">1.48e-6 / −3.39e-7</td></tr>
+<tr><td>full load from the limit state: Newton fails, pseudo-transient relaxation</td><td>arc-length end state</td><td class="num">6.1e-12 (20 iterations)</td></tr>
+</table></div>
+
+<!-- ============================================================ -->
+<h2 id="meshio">7. Mesh I/O</h2>
+<p><code>verification/mesh_io.py</code> · bent tube, write and read back coordinates, connectivity and the surfaces inner, outer, inlet, outlet.</p>
+<div class="table-wrap"><table>
+<tr><th>element</th><th>Abaqus .inp</th><th>gmsh .msh 4.1</th><th>gmsh .msh 2.2</th></tr>
+<tr><td>hex8 (96 elements)</td><td class="good">identical</td><td class="good">identical</td><td class="good">identical</td></tr>
+<tr><td>tet10 (288 elements)</td><td class="good">identical</td><td class="good">identical</td><td class="good">identical</td></tr>
+</table></div>
+
+<!-- ============================================================ -->
+<h2 id="gr">8. FE with growth and remodeling</h2>
+<p>G&amp;R studies, run from <code>cmm/</code> with <code>python -m studies &lt;name&gt;</code>.</p>
+
+<h3>8.1 One element vs the material point (<code>fe_vs_material_point</code>)</h3>
+<p>The 0D driver <code>verification/material_point.py</code> uses the same model interface. One element with the Maes &amp; Famaey Fig. 1 BCs must give the same history.</p>
+<figure class="sk"><!--SVG:point--><svg viewBox="0 0 640 282.0" role="img" aria-label="A single element with symmetry supports and a load on one face, compared with the 0D material point" class="sketch"><defs><marker id="fpt-load" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="sk-load-head"/></marker><marker id="fpt-disp" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="sk-disp-head"/></marker><marker id="fpt-ink" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="sk-ink-head"/></marker><pattern id="fpt-h" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" class="sk-hatch"/></pattern></defs><polygon points="90.0,205.0 210.0,205.0 210.0,85.0 90.0,85.0" class="sk-face"/><polygon points="90.0,85.0 210.0,85.0 262.0,55.0 142.0,55.0" class="sk-face"/><polygon points="210.0,205.0 262.0,175.0 262.0,55.0 210.0,85.0" class="sk-face"/><line x1="142.0" y1="175.0" x2="90.0" y2="205.0" class="sk-hidden"/><line x1="142.0" y1="175.0" x2="262.0" y2="175.0" class="sk-hidden"/><line x1="142.0" y1="175.0" x2="142.0" y2="55.0" class="sk-hidden"/><polygon points="90.0,205.0 210.0,205.0 210.0,85.0 90.0,85.0" class="sk-outline"/><polygon points="90.0,85.0 210.0,85.0 262.0,55.0 142.0,55.0" class="sk-outline"/><polygon points="210.0,205.0 262.0,175.0 262.0,55.0 210.0,85.0" class="sk-outline"/><circle cx="85.5" cy="175.0" r="3.5" class="sk-roller"/><line x1="81.0" y1="182.0" x2="81.0" y2="168.0" class="sk-ground"/><circle cx="85.5" cy="145.0" r="3.5" class="sk-roller"/><line x1="81.0" y1="152.0" x2="81.0" y2="138.0" class="sk-ground"/><circle cx="85.5" cy="115.0" r="3.5" class="sk-roller"/><line x1="81.0" y1="122.0" x2="81.0" y2="108.0" class="sk-ground"/><circle cx="120.0" cy="209.5" r="3.5" class="sk-roller"/><line x1="127.0" y1="214.0" x2="113.0" y2="214.0" class="sk-ground"/><circle cx="150.0" cy="209.5" r="3.5" class="sk-roller"/><line x1="157.0" y1="214.0" x2="143.0" y2="214.0" class="sk-ground"/><circle cx="180.0" cy="209.5" r="3.5" class="sk-roller"/><line x1="187.0" y1="214.0" x2="173.0" y2="214.0" class="sk-ground"/><line x1="236.0" y1="130.0" x2="296.0" y2="130.0" class="sk-load" marker-end="url(#fpt-load)"/><text x="306.0" y="108.0" text-anchor="start" class="sk-small">U: stretch held</text><text x="306.0" y="124.0" text-anchor="start" class="sk-small">S: stress held</text><text x="306.0" y="140.0" text-anchor="start" class="sk-small">F: force held</text><text x="150.0" y="24.0" text-anchor="middle" class="sk-title">one hex8 / hybrid hex8 + G&amp;R model</text><text x="480.0" y="140.0" text-anchor="middle" class="sk-big">≡</text><circle cx="560.0" cy="130.0" r="6" class="sk-inkdot"/><text x="560.0" y="108.0" text-anchor="middle" class="sk-small">material point (0D)</text><text x="560.0" y="158.0" text-anchor="middle" class="sk-small">same model, same history</text><line x1="0" y1="254" x2="640" y2="254" class="sk-sep"/><line x1="10.0" y1="268.0" x2="36.0" y2="268.0" class="sk-hidden"/><text x="44.0" y="272.0" class="sk-small">hidden edge</text><circle cx="145.4" cy="267.0" r="3.5" class="sk-roller"/><line x1="138.4" y1="272.0" x2="152.4" y2="272.0" class="sk-ground"/><text x="166.4" y="272.0" class="sk-small">symmetry / roller</text><line x1="293.2" y1="268.0" x2="319.2" y2="268.0" class="sk-load" marker-end="url(#fpt-load)"/><text x="327.2" y="272.0" class="sk-small">load</text></svg><!--/SVG--><figcaption>One element with symmetry supports, loaded on one face in the three Maes cases: U (stretch held, stress relaxes),
+S (stress held), F (force held). The homogeneous element must reproduce the 0D material point at every step.</figcaption></figure>
+<figure class="chart" data-chart="mp_hist" data-label="One hex8 with G&amp;R reproduces the material point history in cases S and F">
+<h4>model E: one hex8 vs the material point over 1000 days</h4><div class="legend"></div><div class="plot"></div><div class="tip" hidden></div>
+<figcaption>Black lines: material point (reference). Markers: FE every 10th step; difference ≤ 4e-11.</figcaption></figure>
+<div class="table-wrap"><table>
+<tr><th>test</th><th>cases</th><th>max difference</th></tr>
+<tr><td>HCMM patch test (model E), distorted 2×2×2 box</td><td>\(u = (F_0 - I)X\) on the boundary</td><td class="num">u 1.4e-13, σ 2.6e-12</td></tr>
+<tr><td>one hex8, 100 steps of 10 d</td><td>models B, E × cases U, S, F</td><td class="num">≤ 4.0e-11</td></tr>
+<tr><td>one hybrid hex8, incompressible</td><td>models A, D × cases U, S, F</td><td class="num">≤ 1.5e-11</td></tr>
+<tr><td>adjoint through the hybrid element, model D case S, 20 steps</td><td>\(\partial\lambda/\partial C_{10}\), \(\partial\lambda/\partial p\) vs FD</td><td class="num">2.3e-9, 3.6e-10</td></tr>
+</table></div>
+
+<h3>8.2 Solution verification of the artery G&amp;R (<code>solution_verification</code>)</h3>
+<p>Quarter cylinder, model E, 1000 days. Grid convergence index (GCI) from 4 meshes and 5 time steps.</p>
+<figure class="sk narrow"><!--SVG:artery--><svg viewBox="0 0 520 354.0" role="img" aria-label="Quarter artery slice with inner pressure and symmetry supports; inner circumferential stretch measured" class="sketch"><defs><marker id="fart-load" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="sk-load-head"/></marker><marker id="fart-disp" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="sk-disp-head"/></marker><marker id="fart-ink" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="sk-ink-head"/></marker><pattern id="fart-h" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" class="sk-hatch"/></pattern></defs><polyline points="310.4,240.3 310.3,232.7 309.8,225.1 309.1,217.5 308.0,210.0 306.6,202.5 304.9,195.1 303.0,187.7 300.7,180.4 298.2,173.3 295.3,166.2 292.2,159.3 288.8,152.5 285.1,145.8 281.2,139.3 277.0,132.9 272.5,126.8 267.8,120.8 262.9,115.0 257.7,109.4 252.4,104.0 246.8,98.8 241.0,93.9 235.0,89.2 228.8,84.8 222.5,80.6 215.9,76.6 209.3,72.9 202.5,69.5 195.5,66.4 188.5,63.6 181.3,61.0 174.0,58.8 166.7,56.8 159.2,55.1 151.8,53.7 144.2,52.7 136.7,51.9 129.1,51.5 121.4,51.3" class="sk-hidden"/><line x1="220.0" y1="270.0" x2="271.4" y2="240.3" class="sk-edge"/><line x1="259.0" y1="270.0" x2="310.4" y2="240.3" class="sk-edge"/><line x1="70.0" y1="120.0" x2="121.4" y2="90.3" class="sk-hidden"/><line x1="70.0" y1="81.0" x2="121.4" y2="51.3" class="sk-edge"/><polyline points="271.4,240.3 271.3,234.3 271.0,228.2 270.3,222.2 269.5,216.2 268.4,210.3 267.1,204.4 265.5,198.6 263.7,192.8 261.7,187.1 259.4,181.5 257.0,176.0 254.3,170.6 251.3,165.3 248.2,160.1 244.9,155.1 241.4,150.2 237.6,145.4 233.7,140.8 229.6,136.4 225.4,132.1 220.9,128.0 216.3,124.1 211.6,120.4 206.7,116.9 201.6,113.5 196.4,110.4 191.2,107.5 185.7,104.8 180.2,102.3 174.6,100.0 168.9,98.0 163.2,96.2 157.3,94.7 151.4,93.3 145.5,92.2 139.5,91.4 133.5,90.8 127.5,90.4 121.4,90.3" class="sk-hidden"/><polygon points="259.0,270.0 258.8,262.4 258.4,254.8 257.6,247.2 256.6,239.7 255.2,232.2 253.5,224.8 251.5,217.4 249.3,210.1 246.7,203.0 243.9,195.9 240.8,189.0 237.4,182.2 233.7,175.5 229.7,169.0 225.5,162.6 221.1,156.5 216.4,150.5 211.5,144.7 206.3,139.1 200.9,133.7 195.3,128.5 189.5,123.6 183.5,118.9 177.4,114.5 171.0,110.3 164.5,106.3 157.8,102.6 151.0,99.2 144.1,96.1 137.0,93.3 129.9,90.7 122.6,88.5 115.2,86.5 107.8,84.8 100.3,83.4 92.8,82.4 85.2,81.6 77.6,81.2 70.0,81.0 70.0,120.0 76.0,120.1 82.1,120.5 88.1,121.1 94.1,121.9 100.0,123.0 105.9,124.4 111.7,125.9 117.5,127.7 123.2,129.7 128.8,132.0 134.3,134.5 139.7,137.2 145.0,140.1 150.2,143.2 155.2,146.6 160.1,150.1 164.9,153.8 169.5,157.7 173.9,161.8 178.2,166.1 182.3,170.5 186.2,175.1 189.9,179.9 193.4,184.8 196.8,189.8 199.9,195.0 202.8,200.3 205.5,205.7 208.0,211.2 210.3,216.8 212.3,222.5 214.1,228.3 215.6,234.1 217.0,240.0 218.1,245.9 218.9,251.9 219.5,257.9 219.9,264.0 220.0,270.0" class="sk-face"/><line x1="217.1" y1="240.7" x2="255.4" y2="233.1" class="sk-mesh"/><line x1="208.6" y1="212.6" x2="244.6" y2="197.7" class="sk-mesh"/><line x1="194.7" y1="186.7" x2="227.1" y2="165.0" class="sk-mesh"/><line x1="176.1" y1="163.9" x2="203.6" y2="136.4" class="sk-mesh"/><line x1="153.3" y1="145.3" x2="175.0" y2="112.9" class="sk-mesh"/><line x1="127.4" y1="131.4" x2="142.3" y2="95.4" class="sk-mesh"/><line x1="99.3" y1="122.9" x2="106.9" y2="84.6" class="sk-mesh"/><polygon points="259.0,270.0 258.8,262.4 258.4,254.8 257.6,247.2 256.6,239.7 255.2,232.2 253.5,224.8 251.5,217.4 249.3,210.1 246.7,203.0 243.9,195.9 240.8,189.0 237.4,182.2 233.7,175.5 229.7,169.0 225.5,162.6 221.1,156.5 216.4,150.5 211.5,144.7 206.3,139.1 200.9,133.7 195.3,128.5 189.5,123.6 183.5,118.9 177.4,114.5 171.0,110.3 164.5,106.3 157.8,102.6 151.0,99.2 144.1,96.1 137.0,93.3 129.9,90.7 122.6,88.5 115.2,86.5 107.8,84.8 100.3,83.4 92.8,82.4 85.2,81.6 77.6,81.2 70.0,81.0 70.0,120.0 76.0,120.1 82.1,120.5 88.1,121.1 94.1,121.9 100.0,123.0 105.9,124.4 111.7,125.9 117.5,127.7 123.2,129.7 128.8,132.0 134.3,134.5 139.7,137.2 145.0,140.1 150.2,143.2 155.2,146.6 160.1,150.1 164.9,153.8 169.5,157.7 173.9,161.8 178.2,166.1 182.3,170.5 186.2,175.1 189.9,179.9 193.4,184.8 196.8,189.8 199.9,195.0 202.8,200.3 205.5,205.7 208.0,211.2 210.3,216.8 212.3,222.5 214.1,228.3 215.6,234.1 217.0,240.0 218.1,245.9 218.9,251.9 219.5,257.9 219.9,264.0 220.0,270.0" class="sk-outline"/><polyline points="310.4,240.3 310.3,232.7 309.8,225.1 309.1,217.5 308.0,210.0 306.6,202.5 304.9,195.1 303.0,187.7 300.7,180.4 298.2,173.3 295.3,166.2 292.2,159.3 288.8,152.5 285.1,145.8 281.2,139.3 277.0,132.9 272.5,126.8 267.8,120.8 262.9,115.0 257.7,109.4 252.4,104.0 246.8,98.8 241.0,93.9 235.0,89.2 228.8,84.8 222.5,80.6 215.9,76.6 209.3,72.9 202.5,69.5 195.5,66.4 188.5,63.6 181.3,61.0 174.0,58.8 166.7,56.8 159.2,55.1 151.8,53.7 144.2,52.7 136.7,51.9 129.1,51.5 121.4,51.3" class="sk-edge"/><line x1="177.2" y1="241.3" x2="212.6" y2="231.8" class="sk-load" marker-end="url(#fart-load)"/><line x1="160.9" y1="206.3" x2="190.9" y2="185.3" class="sk-load" marker-end="url(#fart-load)"/><line x1="133.7" y1="179.1" x2="154.7" y2="149.1" class="sk-load" marker-end="url(#fart-load)"/><line x1="98.7" y1="162.8" x2="108.2" y2="127.4" class="sk-load" marker-end="url(#fart-load)"/><circle cx="229.0" cy="274.5" r="3.5" class="sk-roller"/><line x1="236.0" y1="279.0" x2="222.0" y2="279.0" class="sk-ground"/><circle cx="65.5" cy="111.0" r="3.5" class="sk-roller"/><line x1="61.0" y1="118.0" x2="61.0" y2="104.0" class="sk-ground"/><circle cx="250.0" cy="274.5" r="3.5" class="sk-roller"/><line x1="257.0" y1="279.0" x2="243.0" y2="279.0" class="sk-ground"/><circle cx="65.5" cy="90.0" r="3.5" class="sk-roller"/><line x1="61.0" y1="97.0" x2="61.0" y2="83.0" class="sk-ground"/><circle cx="176.1" cy="163.9" r="4.5" class="sk-measure"/><text x="136.1" y="203.9" text-anchor="end" class="sk-text">λ<tspan class='sub'>θ</tspan>(a)</text><line x1="172.1" y1="167.9" x2="138.1" y2="195.9" class="sk-dim"/><text x="360.0" y="150.0" text-anchor="start" class="sk-small">p: 10 kPa (prestress)</text><text x="360.0" y="166.0" text-anchor="start" class="sk-small">→ 15 kPa, G&amp;R 1000 d</text><text x="360.0" y="190.0" text-anchor="start" class="sk-small">u<tspan class='sub'>z</tspan> = 0 on both ends</text><text x="360.0" y="206.0" text-anchor="start" class="sk-small">model E, hex8 (n<tspan class='sub'>r</tspan>, n<tspan class='sub'>θ</tspan>, n<tspan class='sub'>z</tspan>)</text><line x1="0" y1="304" x2="520" y2="304" class="sk-sep"/><line x1="10.0" y1="318.0" x2="36.0" y2="318.0" class="sk-hidden"/><text x="44.0" y="322.0" class="sk-small">hidden edge</text><line x1="132.4" y1="318.0" x2="158.4" y2="318.0" class="sk-load" marker-end="url(#fart-load)"/><text x="166.4" y="322.0" class="sk-small">load</text><circle cx="223.0" cy="317.0" r="3.5" class="sk-roller"/><line x1="216.0" y1="322.0" x2="230.0" y2="322.0" class="sk-ground"/><text x="244.0" y="322.0" class="sk-small">symmetry / roller</text><circle cx="23.0" cy="340.0" r="4" class="sk-measure"/><text x="44.0" y="344.0" class="sk-small">measured quantity</text></svg><!--/SVG--><figcaption>Artery slice: prestress at 10 kPa until the mesh is in equilibrium at \(u = 0\), then 15 kPa and 1000 days of G&amp;R.
+The inner circumferential stretch \(\lambda_\theta\) and the wall area are measured.</figcaption></figure>
+<div class="fig-grid">
+<figure class="chart" data-chart="gci_mesh" data-label="Mesh refinement: the error in lambda theta decreases at order 2">
+<h4>mesh refinement (Δs = 10 d)</h4><div class="legend"></div><div class="plot"></div><div class="tip" hidden></div></figure>
+<figure class="chart" data-chart="gci_time" data-label="Time-step refinement: the error in lambda theta decreases at order 1">
+<h4>time-step refinement</h4><div class="legend"></div><div class="plot"></div><div class="tip" hidden></div></figure>
+</div>
+<p class="meta">No closed-form solution exists for G&amp;R on the artery; the error is taken against the Richardson-extrapolated value (table above). Triangles: slopes 2 and 1.</p>
+<div class="table-wrap"><table>
+<tr><th>refinement</th><th>quantity</th><th>observed order</th><th>extrapolated</th><th>GCI<sub>fine</sub></th></tr>
+<tr><td>mesh, standard (compressible elastin)</td><td>\(\lambda_\theta\) / wall area</td><td class="num">2.00 / 2.00</td><td class="num">1.1841370</td><td class="num">0.003 % / 0.004 %</td></tr>
+<tr><td>mesh, hybrid (incompressible elastin)</td><td>\(\lambda_\theta\) / wall area</td><td class="num">2.00 / 2.00</td><td class="num">1.1731558</td><td class="num">0.001 % / 0.004 %</td></tr>
+<tr><td>time step 40 → 2.5 d (explicit HCMM)</td><td>\(\lambda_\theta\) / wall area</td><td class="num">1.00 / 1.00</td><td class="num">1.1840677</td><td class="num">0.009 % / 0.001 %</td></tr>
+</table></div>
+<p>\(\Delta s\) = 10 d gives a time-discretization error of 3e-4 in \(\lambda_\theta\).</p>
+
+<h3>8.3 Element formulations in G&amp;R (<code>element_formulations</code>)</h3>
+<ul>
+<li>tet10 vs hex8 artery: \(\lambda_\theta\) agrees to 1e-4; Laplace wall basis vs analytic cylinder basis: 1e-5.</li>
+<li>Coarse → fine: hybrid moves \(\lambda_\theta(1000\,\text d)\) by 3e-4, F-bar by 9e-4.</li>
+<li>F-bar fails (Newton) in long runs for \(K/\mu \gtrsim 10^3\); hybrid stays stable.</li>
+<li>Adjoint = FD on a tet10 hybrid cylinder rotated out of the axes, with inclined (slip) supports.</li>
+</ul>
+
+<h3>8.4 Gradients through prestress and G&amp;R (<code>artery_gradients</code>)</h3>
+<div class="table-wrap"><table>
+<tr><th>test</th><th>result</th></tr>
+<tr><td>\(\mathrm d\lambda_\theta(200\,\text d)/\mathrm d\,\)par, 8 parameters, adjoint vs central FD</td><td class="num">2.7e-11 … 9.6e-9</td></tr>
+<tr><td>identify \((k_1, k_+)\) from \(\lambda_\theta(t)\), L-BFGS</td><td class="num">exact (loss 3.5e-23, 22 evaluations)</td></tr>
+<tr><td>cost, mesh (8, 60, 4), 100 steps</td><td class="num">forward 36 s, value + 9 gradients 83 s (FD ≈ 640 s)</td></tr>
+</table></div>
+
+<h3>8.5 Wall shear stress as boundary condition (<code>flow_step</code>)</h3>
+<p>Flow ×1.5 at constant pressure, Poiseuille WSS on the current lumen via <code>BC.wss</code>. Exact adapted radius (Murray): \(a/a_h = 1.5^{1/3} = 1.1447\).</p>
+<div class="fig-grid">
+<figure class="sk"><!--SVG:flow--><svg viewBox="0 0 560 302.0" role="img" aria-label="Longitudinal section of the vessel: increased flow, wall shear stress on the lumen, and the adapted radius predicted by Murray's law" class="sketch"><defs><marker id="fflow-load" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="sk-load-head"/></marker><marker id="fflow-disp" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="sk-disp-head"/></marker><marker id="fflow-ink" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="sk-ink-head"/></marker><pattern id="fflow-h" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" class="sk-hatch"/></pattern></defs><polygon points="40.0,83.0 520.0,83.0 520.0,65.0 40.0,65.0" class="sk-face"/><polygon points="40.0,83.0 520.0,83.0 520.0,65.0 40.0,65.0" class="sk-outline"/><line x1="270.0" y1="75.5" x2="520.0" y2="75.5" class="sk-mode"/><line x1="270.0" y1="60.0" x2="520.0" y2="60.0" class="sk-mode"/><polygon points="40.0,187.0 520.0,187.0 520.0,205.0 40.0,205.0" class="sk-face"/><polygon points="40.0,187.0 520.0,187.0 520.0,205.0 40.0,205.0" class="sk-outline"/><line x1="270.0" y1="194.5" x2="520.0" y2="194.5" class="sk-mode"/><line x1="270.0" y1="210.0" x2="520.0" y2="210.0" class="sk-mode"/><line x1="40.0" y1="135.0" x2="520.0" y2="135.0" class="sk-dim"/><line x1="105.0" y1="91.0" x2="122.6" y2="91.0" class="sk-load" marker-end="url(#fflow-load)"/><line x1="105.0" y1="102.0" x2="142.0" y2="102.0" class="sk-load" marker-end="url(#fflow-load)"/><line x1="105.0" y1="113.0" x2="155.9" y2="113.0" class="sk-load" marker-end="url(#fflow-load)"/><line x1="105.0" y1="124.0" x2="164.2" y2="124.0" class="sk-load" marker-end="url(#fflow-load)"/><line x1="105.0" y1="135.0" x2="167.0" y2="135.0" class="sk-load" marker-end="url(#fflow-load)"/><line x1="105.0" y1="146.0" x2="164.2" y2="146.0" class="sk-load" marker-end="url(#fflow-load)"/><line x1="105.0" y1="157.0" x2="155.9" y2="157.0" class="sk-load" marker-end="url(#fflow-load)"/><line x1="105.0" y1="168.0" x2="142.0" y2="168.0" class="sk-load" marker-end="url(#fflow-load)"/><line x1="105.0" y1="179.0" x2="122.6" y2="179.0" class="sk-load" marker-end="url(#fflow-load)"/><line x1="105.0" y1="83.0" x2="105.0" y2="187.0" class="sk-edge"/><text x="105.0" y="55.0" text-anchor="start" class="sk-small">Q → 1.5 Q, pressure constant</text><line x1="290.0" y1="90.0" x2="312.0" y2="90.0" class="sk-load" marker-end="url(#fflow-load)"/><line x1="340.0" y1="90.0" x2="362.0" y2="90.0" class="sk-load" marker-end="url(#fflow-load)"/><line x1="390.0" y1="90.0" x2="412.0" y2="90.0" class="sk-load" marker-end="url(#fflow-load)"/><line x1="440.0" y1="90.0" x2="462.0" y2="90.0" class="sk-load" marker-end="url(#fflow-load)"/><text x="300.0" y="107.0" text-anchor="start" class="sk-small">τ<tspan class='sub'>w</tspan> = 4ηQ / (π a³) as BC.wss</text><line x1="512.0" y1="135.0" x2="512.0" y2="187.0" class="sk-dim"/><text x="506.0" y="165.0" text-anchor="end" class="sk-small">a<tspan class='sub'>h</tspan></text><text x="276.0" y="242.5" text-anchor="start" class="sk-small">adapted: a = a<tspan class='sub'>h</tspan> · 1.5<tspan class='sup'>1/3</tspan></text><line x1="0" y1="274" x2="560" y2="274" class="sk-sep"/><line x1="10.0" y1="288.0" x2="36.0" y2="288.0" class="sk-mode"/><text x="44.0" y="292.0" class="sk-small">adapted wall (Murray)</text><line x1="196.4" y1="288.0" x2="222.4" y2="288.0" class="sk-load" marker-end="url(#fflow-load)"/><text x="230.4" y="292.0" class="sk-small">load</text></svg><!--/SVG--><figcaption>Quarter cylinder as in §8.2 (longitudinal section shown). The WSS is recomputed on the current lumen every step;
+the dashed wall is the adapted state that restores the homeostatic WSS.</figcaption></figure>
+<figure class="chart" data-chart="flow" data-label="With a WSS gain the inner radius grows to Murray's radius; without it the radius stays">
+<h4>inner radius over time</h4><div class="legend"></div><div class="plot"></div><div class="tip" hidden></div></figure>
+</div>
+<div class="table-wrap"><table>
+<tr><th>\(k_\tau\)</th><th>\(a/a_h\) at day 2000</th><th>WSS / homeostatic</th></tr>
+<tr><td>0 (no WSS stimulus)</td><td class="num">1.0000</td><td class="num">1.5000</td></tr>
+<tr><td>0.5</td><td class="num">1.1434</td><td class="num">1.0035</td></tr>
+<tr><td>2.0</td><td class="num good">1.1449</td><td class="num">0.9995</td></tr>
+<tr><td>8.0</td><td class="num good">1.1448</td><td class="num">0.9998</td></tr>
+</table></div>
+<p>WSS equal to the homeostatic value reproduces the run without WSS to 3e-16.</p>
+
+<!-- ============================================================ -->
+<h2 id="abaqus">9. Comparison with Abaqus</h2>
+
+<h3>9.1 UMAT / UHYPER interface (<code>verification/fem_umat.py</code>)</h3>
+<p>A compressible neo-Hooke UMAT (<code>verification/umat/neohooke.for</code>) runs inside <code>fem.System</code> and is compared with the
+same law written in Python (<code>materials.NeoHookean</code>).</p>
+<div class="table-wrap"><table>
+<tr><th>check</th><th>result</th></tr>
+<tr><td>Cauchy stress, 5 random \(F\)</td><td class="num">4.9e-16</td></tr>
+<tr><td>tangent from DDSDDE (Jaumann rate → \(\dot\sigma\)) vs AD of Python / vs FD of the UMAT stress</td><td class="num">6.7e-16 / 1.1e-10</td></tr>
+<tr><td>FE distorted box, stretch + shear: standard / fbar / hybrid</td><td class="num">≤ 1.9e-15, same Newton iterations</td></tr>
+<tr><td>increment bookkeeping: KINC, TIME, DTIME, STATEV after commit, SDVINI</td><td class="num">exact</td></tr>
+<tr><td>UHYPER Mooney–Rivlin: stress / tangent vs the energy in JAX; FE with \(c_2 = 0\) vs NeoHookean</td><td class="num">1.3e-15 / 1.5e-15; ≤ 3.7e-16</td></tr>
+</table></div>
+
+<h3>9.2 Maes &amp; Famaey UMATs: Abaqus vs fem.System (<code>maes_abaqus</code>, <code>maes_timing</code>)</h3>
+<p>Maes' published <code>UMAT_HCMvsCM.for</code> and input files, run once in Abaqus 2017 and once through <code>fem-abaqus</code> in
+<code>fem.System</code>: models A–E × cases U (stretch), S (stress), F (force) × HCM / CM = 30 cases, compressible and C3D8H.</p>
+<div class="table-wrap"><table>
+<tr><th>quantity</th><th>result</th></tr>
+<tr><td>end values, UMAT in fem vs Abaqus (relative to the change)</td><td class="num good">≤ 0.10 % (C/S HCM); 25 of 30 ≤ 0.01 %</td></tr>
+<tr><td>case U stress histories</td><td class="num good">≤ 0.06 % of the initial stress</td></tr>
+<tr><td>Stress_HCM, \(\lambda_y\) at day 1000</td><td class="num">1.075443 vs Abaqus 1.075442; STATEV to 1e-6</td></tr>
+<tr><td>run time, all 30 cases</td><td class="num">Abaqus 506 s (solver 316 s); UMAT in fem 156 s; our Python HCMM in fem 61 s cold / 26 s warm</td></tr>
+</table></div>
+<div class="fig-grid">
+<figure class="chart" data-chart="maes_hist" data-label="Stress case E S HCM: Abaqus and the same UMAT in fem.System lie on top of each other over 1000 days">
+<h4>Stress_HCM (model E, case S): stretch during G&amp;R</h4><div class="legend"></div><div class="plot"></div><div class="tip" hidden></div></figure>
+<figure class="chart" data-chart="maes_dots" data-label="All 30 cases: the UMAT in fem differs from Abaqus by at most 0.1 percent, our Python model by up to 18 percent">
+<h4>end values, all 30 cases</h4><div class="legend"></div><div class="plot"></div><div class="tip" hidden></div></figure>
+</div>
+<p class="meta">Right: one dot per case; values below 1e-4 % are drawn at the left edge.</p>
+<p>The remaining differences during loading come from Abaqus' default Newton tolerance. Two interface bugs were found and fixed on the way:
+stress output after instead of before <code>commit</code>, and C3D8H with a compressible material run as incompressible (now mapped to F-bar).</p>
+<div class="box warn"><span class="tag">Not an FE result</span><p>Our Python HCMM vs Maes' UMATs differ by up to 2 % in most cases, 3–5 % for B/C HCM and 9–18 % for C/F (force control with growth).
+The FE code reproduces Abaqus exactly with the same UMAT, so this is a difference in the material model, not in the FE code.
+It is explained by three implementation differences (below): with Maes' choices, B and C agree to ≤ 0.1 %
+(see <code>cmm/results/modeling_history.md</code>, 2026-10-22 and 2026-10-27).</p></div>
+
+<h3>Time-step study of the largest gap (C / F / HCM)</h3>
+<p>The time step was refined in both codes: Maes' UMAT (in fem.System, identical to Abaqus) with <code>T_coll</code> and the increment scaled together,
+and our Python HCMM at the material point.</p>
+<div class="table-wrap"><table>
+<tr><th>\(\Delta t\) [d]</th><th>Maes UMAT \(\lambda_y\)(1000 d)</th><th>our HCMM \(\lambda_y\)(1000 d)</th><th>gap, % of the change</th></tr>
+<tr><td class="num">20</td><td class="num">1.13283</td><td class="num">1.15482</td><td class="num">16.6</td></tr>
+<tr><td class="num">10</td><td class="num">1.13376</td><td class="num">1.15726</td><td class="num">17.6</td></tr>
+<tr><td class="num">5</td><td class="num">1.13421</td><td class="num">1.15849</td><td class="num">18.1</td></tr>
+<tr><td class="num">2.5</td><td class="num">–</td><td class="num">1.15912</td><td class="num">–</td></tr>
+<tr><td class="num">1</td><td class="num">1.13456</td><td class="num">1.15949</td><td class="num">18.5</td></tr>
+<tr><td>limit (first order)</td><td class="num">≈ 1.1347</td><td class="num">≈ 1.1597</td><td class="num">≈ 18.6</td></tr>
+</table></div>
+<p>Both codes converge at first order, but to different limits, and the gap grows slightly as \(\Delta t \to 0\). The difference is therefore
+<b>not</b> the time integration or the explicit update. Both codes update the masses explicitly (forward Euler, stress from the start-of-step state);
+ours solves only \(F_r\) semi-implicitly. It is a difference in the model formulation. The fully implicit HCMM (<code>hcmm.core_implicit</code>) does not converge
+at the material point for this case (equilibrium Newton fails at every \(\Delta t\)), so it could not be used as a third reference.</p>
+
+<h3>Cause: three implementation differences</h3>
+<p>Comparing <code>UMAT_GR_HCM_NH.for</code> / <code>UMAT_GR_HCM.for</code> with <code>hcmm.core</code> line by line gives three differences:</p>
+<div class="table-wrap"><table>
+<tr><th>#</th><th>quantity</th><th>Maes' UMAT</th><th>our HCMM</th><th>paper</th></tr>
+<tr><td>1</td><td>deposition stress in the \(F_r\) equation (Eq. 20)</td><td>\(\rho_0\,\mathbf R\boldsymbol\sigma(0)\mathbf R^T\)</td><td>default <code>deposition</code>: \(\rho_\text{tot}/J\) (Cyron); option <code>initial</code>: as Maes</td><td>Eq. 17 = initial</td></tr>
+<tr><td>2</td><td>production stimulus (neo-Hooke matrix UMAT only)</td><td>\(\rho_\text{tot}\,\mathrm{tr}(\rho\boldsymbol\sigma)\): \(\rho\) twice</td><td>\(\rho_\text{tot}\,\mathrm{tr}\,\boldsymbol\sigma\): \(\rho\) once</td><td>Eq. 24/31: \(\rho\) once (fibre UMAT too)</td></tr>
+<tr><td>3</td><td>volumetric Cauchy stress (neo-Hooke matrix UMAT only)</td><td>\(\rho_0 K(J_e-1)\)</td><td>\(\rho_0 K(J_e-1)/\det\mathbf F_r\)</td><td>Eq. 17 = ours</td></tr>
+</table></div>
+<p>Switching them on one at a time in our model (material point, \(\Delta s\) = 10 d), gap to the UMAT in % of the change:</p>
+<div class="table-wrap"><table>
+<tr><th>case</th><th>as compared (dep)</th><th>+ 1 (initial)</th><th>+ 1 + 2</th><th>+ 1 + 2 + 3</th></tr>
+<tr><td>C / F</td><td class="num bad">+17.6</td><td class="num">+10.6</td><td class="num good">−0.08</td><td class="num good">+0.10</td></tr>
+<tr><td>C / S</td><td class="num">+3.4</td><td class="num">−0.5</td><td class="num good">−0.14</td><td class="num good">+0.06</td></tr>
+<tr><td>B / F</td><td class="num">+4.7</td><td class="num good">−0.06</td><td class="num good">−0.06</td><td class="num good">−0.08</td></tr>
+<tr><td>B / S</td><td class="num">+3.8</td><td class="num good">−0.14</td><td class="num good">−0.14</td><td class="num good">+0.07</td></tr>
+<tr><td>E / F</td><td class="num">+3.6</td><td class="num">−0.5</td><td class="num">(−3.5)</td><td>–</td></tr>
+<tr><td>E / S</td><td class="num">+1.5</td><td class="num">−1.0</td><td>–</td><td>–</td></tr>
+</table></div>
+<p>With Maes' choices, B and C agree to ≤ 0.1 %, the same level as the UMAT vs Abaqus. For E (fibre UMAT, where 2 and 3 do not apply)
+the initial mode leaves 0.5–1 %, not analysed further. Models A and D have no growth or remodeling matrix and are unaffected.
+Our model follows the paper in 2 and 3; 1 is a deliberate default. The FE code itself is not involved in any of this.</p>
+
+<h3 id="boxes">9.3 Neo-Hooke boxes, built-in material (<code>.context/verification/abaqus_boxes</code>)</h3>
+<p>Unit cube, <code>*Hyperelastic, neo hooke</code> \(C_{10}\) = 0.5, \(D_1\) = 0.04 (\(K\) = 50), 10 fixed increments. Tension: symmetry planes and
+\(u_1\) = 0.5 (homogeneous, exact \(\sigma_{11}\) = 1.5497). Shear: \(x = 0\) clamped, \(x = 1\) displaced (0.3, 0.2) (inhomogeneous).
+"tight": Abaqus residual tolerance 1e-8 instead of 5e-3.</p>
+<figure class="sk"><!--SVG:abq--><svg viewBox="0 0 780 344.0" role="img" aria-label="Neo-Hooke unit cube: tension with symmetry supports and prescribed u1 = 0.5; shear with x = 0 clamped and x = 1 displaced" class="sketch"><defs><marker id="fabq-load" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="sk-load-head"/></marker><marker id="fabq-disp" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="sk-disp-head"/></marker><marker id="fabq-ink" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="sk-ink-head"/></marker><pattern id="fabq-h" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" class="sk-hatch"/></pattern></defs><polygon points="95.0,225.0 225.0,225.0 225.0,95.0 95.0,95.0" class="sk-face"/><polygon points="95.0,95.0 225.0,95.0 281.3,62.5 151.3,62.5" class="sk-face"/><polygon points="225.0,225.0 281.3,192.5 281.3,62.5 225.0,95.0" class="sk-face"/><polygon points="225.0,225.0 281.3,192.5 281.3,62.5 225.0,95.0" class="sk-face-disp"/><line x1="151.3" y1="192.5" x2="95.0" y2="225.0" class="sk-hidden"/><line x1="151.3" y1="192.5" x2="281.3" y2="192.5" class="sk-hidden"/><line x1="151.3" y1="192.5" x2="151.3" y2="62.5" class="sk-hidden"/><line x1="127.5" y1="225.0" x2="127.5" y2="95.0" class="sk-mesh"/><line x1="95.0" y1="192.5" x2="225.0" y2="192.5" class="sk-mesh"/><line x1="127.5" y1="95.0" x2="183.8" y2="62.5" class="sk-mesh"/><line x1="109.1" y1="86.9" x2="239.1" y2="86.9" class="sk-mesh"/><line x1="239.1" y1="216.9" x2="239.1" y2="86.9" class="sk-mesh"/><line x1="225.0" y1="192.5" x2="281.3" y2="160.0" class="sk-mesh"/><line x1="160.0" y1="225.0" x2="160.0" y2="95.0" class="sk-mesh"/><line x1="95.0" y1="160.0" x2="225.0" y2="160.0" class="sk-mesh"/><line x1="160.0" y1="95.0" x2="216.3" y2="62.5" class="sk-mesh"/><line x1="123.1" y1="78.8" x2="253.1" y2="78.8" class="sk-mesh"/><line x1="253.1" y1="208.8" x2="253.1" y2="78.8" class="sk-mesh"/><line x1="225.0" y1="160.0" x2="281.3" y2="127.5" class="sk-mesh"/><line x1="192.5" y1="225.0" x2="192.5" y2="95.0" class="sk-mesh"/><line x1="95.0" y1="127.5" x2="225.0" y2="127.5" class="sk-mesh"/><line x1="192.5" y1="95.0" x2="248.8" y2="62.5" class="sk-mesh"/><line x1="137.2" y1="70.6" x2="267.2" y2="70.6" class="sk-mesh"/><line x1="267.2" y1="200.6" x2="267.2" y2="70.6" class="sk-mesh"/><line x1="225.0" y1="127.5" x2="281.3" y2="95.0" class="sk-mesh"/><polygon points="95.0,225.0 225.0,225.0 225.0,95.0 95.0,95.0" class="sk-outline"/><polygon points="95.0,95.0 225.0,95.0 281.3,62.5 151.3,62.5" class="sk-outline"/><polygon points="225.0,225.0 281.3,192.5 281.3,62.5 225.0,95.0" class="sk-outline"/><circle cx="90.5" cy="192.5" r="3.5" class="sk-roller"/><line x1="86.0" y1="199.5" x2="86.0" y2="185.5" class="sk-ground"/><circle cx="90.5" cy="160.0" r="3.5" class="sk-roller"/><line x1="86.0" y1="167.0" x2="86.0" y2="153.0" class="sk-ground"/><circle cx="90.5" cy="127.5" r="3.5" class="sk-roller"/><line x1="86.0" y1="134.5" x2="86.0" y2="120.5" class="sk-ground"/><circle cx="127.5" cy="229.5" r="3.5" class="sk-roller"/><line x1="134.5" y1="234.0" x2="120.5" y2="234.0" class="sk-ground"/><circle cx="160.0" cy="229.5" r="3.5" class="sk-roller"/><line x1="167.0" y1="234.0" x2="153.0" y2="234.0" class="sk-ground"/><circle cx="192.5" cy="229.5" r="3.5" class="sk-roller"/><line x1="199.5" y1="234.0" x2="185.5" y2="234.0" class="sk-ground"/><text x="73.0" y="164.0" text-anchor="end" class="sk-text">u<tspan class='sub'>x</tspan> = 0</text><text x="160.0" y="253.0" text-anchor="middle" class="sk-text">u<tspan class='sub'>z</tspan> = 0</text><text x="156.1" y="114.5" text-anchor="start" class="sk-small">u<tspan class='sub'>y</tspan> = 0</text><line x1="253.1" y1="176.2" x2="299.1" y2="176.2" class="sk-disp" marker-end="url(#fabq-disp)"/><line x1="253.1" y1="143.8" x2="299.1" y2="143.8" class="sk-disp" marker-end="url(#fabq-disp)"/><line x1="253.1" y1="111.2" x2="299.1" y2="111.2" class="sk-disp" marker-end="url(#fabq-disp)"/><text x="305.1" y="147.8" text-anchor="start" class="sk-text">u<tspan class='sub'>1</tspan> = 0.5</text><text x="175.0" y="22.0" text-anchor="middle" class="sk-title">tension (homogeneous)</text><polygon points="437.0,232.8 450.0,232.8 450.0,87.2 437.0,87.2" class="sk-clamp" fill="url(#fabq-h)"/><polygon points="437.0,87.2 450.0,87.2 506.3,54.7 493.3,54.7" class="sk-clamp" fill="url(#fabq-h)"/><polygon points="450.0,225.0 580.0,225.0 580.0,95.0 450.0,95.0" class="sk-face"/><polygon points="450.0,95.0 580.0,95.0 636.3,62.5 506.3,62.5" class="sk-face"/><polygon points="580.0,225.0 636.3,192.5 636.3,62.5 580.0,95.0" class="sk-face"/><polygon points="580.0,225.0 636.3,192.5 636.3,62.5 580.0,95.0" class="sk-face-disp"/><line x1="506.3" y1="192.5" x2="450.0" y2="225.0" class="sk-hidden"/><line x1="506.3" y1="192.5" x2="636.3" y2="192.5" class="sk-hidden"/><line x1="506.3" y1="192.5" x2="506.3" y2="62.5" class="sk-hidden"/><line x1="482.5" y1="225.0" x2="482.5" y2="95.0" class="sk-mesh"/><line x1="450.0" y1="192.5" x2="580.0" y2="192.5" class="sk-mesh"/><line x1="482.5" y1="95.0" x2="538.8" y2="62.5" class="sk-mesh"/><line x1="464.1" y1="86.9" x2="594.1" y2="86.9" class="sk-mesh"/><line x1="594.1" y1="216.9" x2="594.1" y2="86.9" class="sk-mesh"/><line x1="580.0" y1="192.5" x2="636.3" y2="160.0" class="sk-mesh"/><line x1="515.0" y1="225.0" x2="515.0" y2="95.0" class="sk-mesh"/><line x1="450.0" y1="160.0" x2="580.0" y2="160.0" class="sk-mesh"/><line x1="515.0" y1="95.0" x2="571.3" y2="62.5" class="sk-mesh"/><line x1="478.1" y1="78.8" x2="608.1" y2="78.8" class="sk-mesh"/><line x1="608.1" y1="208.8" x2="608.1" y2="78.8" class="sk-mesh"/><line x1="580.0" y1="160.0" x2="636.3" y2="127.5" class="sk-mesh"/><line x1="547.5" y1="225.0" x2="547.5" y2="95.0" class="sk-mesh"/><line x1="450.0" y1="127.5" x2="580.0" y2="127.5" class="sk-mesh"/><line x1="547.5" y1="95.0" x2="603.8" y2="62.5" class="sk-mesh"/><line x1="492.2" y1="70.6" x2="622.2" y2="70.6" class="sk-mesh"/><line x1="622.2" y1="200.6" x2="622.2" y2="70.6" class="sk-mesh"/><line x1="580.0" y1="127.5" x2="636.3" y2="95.0" class="sk-mesh"/><polygon points="450.0,225.0 580.0,225.0 580.0,95.0 450.0,95.0" class="sk-outline"/><polygon points="450.0,95.0 580.0,95.0 636.3,62.5 506.3,62.5" class="sk-outline"/><polygon points="580.0,225.0 636.3,192.5 636.3,62.5 580.0,95.0" class="sk-outline"/><line x1="608.1" y1="143.8" x2="658.4" y2="137.2" class="sk-disp" marker-end="url(#fabq-disp)"/><text x="666.4" y="141.2" text-anchor="start" class="sk-text">u = (0.3, 0.2, 0)</text><text x="429.0" y="160.0" text-anchor="end" class="sk-text">u = 0</text><text x="520.0" y="22.0" text-anchor="middle" class="sk-title">shear (singular at the clamped edges)</text><text x="390.0" y="284.0" text-anchor="middle" class="sk-small">unit cube, neo-Hooke C₁₀ 0.5, D₁ 0.04, 10 increments</text><line x1="0" y1="294" x2="780" y2="294" class="sk-sep"/><rect x="10.0" y="301.0" width="24" height="13" class="sk-face"/><rect x="10.0" y="301.0" width="24" height="13" class="sk-face-disp"/><rect x="10.0" y="301.0" width="24" height="13" class="sk-outline"/><text x="44.0" y="312.0" class="sk-small">face with prescribed u</text><line x1="202.8" y1="308.0" x2="228.8" y2="308.0" class="sk-hidden"/><text x="236.8" y="312.0" class="sk-small">hidden edge</text><circle cx="338.2" cy="307.0" r="3.5" class="sk-roller"/><line x1="331.2" y1="312.0" x2="345.2" y2="312.0" class="sk-ground"/><text x="359.2" y="312.0" class="sk-small">symmetry / roller</text><line x1="486.0" y1="308.0" x2="512.0" y2="308.0" class="sk-disp" marker-end="url(#fabq-disp)"/><text x="520.0" y="312.0" class="sk-small">prescribed displacement</text><rect x="10.0" y="323.0" width="24" height="13" fill="url(#fabq-h)" class="sk-clamp"/><text x="44.0" y="334.0" class="sk-small">fixed (u = 0)</text></svg><!--/SVG--><figcaption>The two box set-ups. Tension is homogeneous, so every element formulation is exact. In shear the corners at the clamped face are
+singular, so the stress there depends on the element formulation.</figcaption></figure>
+<div class="fig-grid">
+<figure class="chart" data-chart="box_tension" data-label="Tension box: fem.System and Abaqus lie on the analytic compressible neo-Hooke curve">
+<h4>tension: reaction force vs analytic</h4><div class="legend"></div><div class="plot"></div><div class="tip" hidden></div></figure>
+<figure class="chart" data-chart="boxes" data-label="Relative difference to Abaqus per job: 1e-6 to 1e-8 for the same element, 1e-2 to 1e-1 for shear with a different element">
+<h4>difference to Abaqus at the end of the step</h4><div class="legend"></div><div class="plot"></div><div class="tip" hidden></div></figure>
+</div>
+<div class="table-wrap"><table>
+<tr><th>job</th><th>mesh</th><th>fem element</th><th>max |ΔU| / max |U|</th><th>max |ΔS| / max |S|</th><th>Abaqus solver</th><th>fem</th></tr>
+<tr><td>tension17_C3D10</td><td>29 478 C3D10, 42 875 nodes</td><td>standard (same element)</td><td class="num">1.9e-6</td><td class="num">7.7e-5</td><td class="num">322 s</td><td class="num">249 s</td></tr>
+<tr><td>tension17_C3D10_tight</td><td>same, Abaqus tolerance 1e-8</td><td>standard</td><td class="num good">2.8e-8</td><td class="num good">2.9e-8</td><td class="num">614 s</td><td class="num">227 s</td></tr>
+<tr><td>tension30</td><td>27 000 C3D8H, 29 791 nodes</td><td>fbar (compressible C3D8H)</td><td class="num">6.3e-7</td><td class="num">2.5e-6</td><td class="num">146 s</td><td class="num">141 s</td></tr>
+<tr><td>tension34</td><td>39 304 C3D8H, 42 875 nodes</td><td>fbar (compressible C3D8H)</td><td class="num">6.3e-7</td><td class="num">2.5e-6</td><td class="num">291 s</td><td class="num">247 s</td></tr>
+<tr><td>box20 (shear)</td><td>8 000 C3D8H, 9 261 nodes</td><td>fbar (compressible C3D8H)</td><td class="num open">8.7e-3</td><td class="num open">1.2e-1</td><td class="num">18 s</td><td class="num">62 s</td></tr>
+</table></div>
+<p>Reaction force on \(x = 1\) in tension: 1.04379 in both codes (exact \(\sigma_{11}\,\lambda_2\lambda_3\) = 1.5497 · 0.8207² = 1.0438).</p>
+<div class="box"><span class="tag">Reading</span>
+<ul>
+<li><b>Same element (C3D10 = fem tet10 standard):</b> the difference drops from 1e-6 / 1e-4 to 3e-8 when Abaqus is converged as tightly as fem.
+The remaining difference with default settings is Abaqus' Newton tolerance, not a discretization difference.</li>
+<li><b>Tension with C3D8H:</b> homogeneous, so F-bar and Abaqus' compressible hybrid are both exact; agreement 1e-6 (odb single precision).</li>
+<li><b>Shear with C3D8H:</b> inhomogeneous with stress singularities at the clamped edges. fem runs F-bar, Abaqus a perturbed-Lagrangian hybrid, which are
+different elements, so only agreement to discretization level is expected. Reactions differ by 0.18 %, the largest element-mean stress difference sits at the singular edges.
+An exact comparison needs a compressible hybrid element in fem (§12).</li>
+<li><b>Timing:</b> Abaqus 2017 on 1 CPU; fem includes JAX compilation and uses several threads, so the times are indicative only.</li>
+</ul></div>
+<p>Earlier: uniaxial tension, smaller C3D8H box: U and S within 1e-6, \(\sigma_{11}\) = 1.54967 in both.</p>
+
+<!-- ============================================================ -->
+<h2 id="material">10. Material model checks used by the FE code</h2>
+<p>Not FE tests, but the FE code relies on them (<code>cmm/results/material/</code>).</p>
+<div class="table-wrap"><table>
+<tr><th>study</th><th>check</th><th>result</th></tr>
+<tr><td><code>fe_readiness</code></td><td>vmap over points = loop; objectivity \(\sigma(QF) = Q\sigma Q^T\); \(\partial\sigma/\partial F\) AD vs FD; \(\mathrm d\sigma/\mathrm d\)par through 20 steps AD vs FD (HCMM A/E, FCMM E)</td><td class="num">2e-15; 9e-15; 1e-10; ≤ 5e-9 (nonzero derivatives)</td></tr>
+<tr><td><code>exact_solution</code></td><td>homeostasis at \(F = I\) over 1000 d; constant \(F\) after a jump vs exact CMM</td><td class="num">≤ 5e-15; HCMM 0.24–1.9 % at \(\Delta s\) = 10 d, about halved per halving of \(\Delta s\)</td></tr>
+</table></div>
+
+<!-- ============================================================ -->
+<h2 id="roache">11. Assessment against Roache (2002)</h2>
+<p>Roache, <em>Code Verification by the Method of Manufactured Solutions</em>, J. Fluids Eng. 124:4–10 (<code>.context/verification</code>).
+He separates three activities, to be done in this order:</p>
+<div class="table-wrap"><table>
+<tr><th>activity</th><th>meaning</th><th>here</th></tr>
+<tr><td><b>code verification</b></td><td>error <em>evaluation</em> against an exact solution under systematic refinement</td><td>§1–7 (MMS, Lamé, exact homogeneous solutions, consistency), §8.1</td></tr>
+<tr><td><b>calculation verification</b></td><td>error <em>estimation</em> for one application, e.g. GCI</td><td>§8.2 (artery G&amp;R: mesh and time step)</td></tr>
+<tr><td><b>validation</b></td><td>agreement of the model with experiments</td><td class="open">none yet</td></tr>
+</table></div>
+<p>The Abaqus runs (§9) are code-to-code comparisons. In Roache's terms they are confirmation rather than verification, but they are the only independent check of the Abaqus interface and its input handling.</p>
+
+<h3>Checklist for <code>fem_mms</code></h3>
+<div class="table-wrap"><table>
+<tr><th>Roache's requirement</th><th>status</th></tr>
+<tr><td>non-trivial analytic solution that exercises all terms, including cross derivatives (not \(F_1(x)F_2(y)F_3(z)\))</td><td class="good">yes: \(u = a\sin(\pi kX + \varphi)\) with a full matrix \(k\); rotation; fiber stretch</td></tr>
+<tr><td>solution manufactured in physical coordinates, then used on general grids</td><td class="good">yes: curved, non-affine distorted cube</td></tr>
+<tr><td>boundary conditions in more than one form</td><td class="good">Dirichlet on 5 faces, exact nominal traction (Neumann) on \(x = 1\)</td></tr>
+<tr><td>thorough iterative convergence</td><td class="good">Newton to 1e-10</td></tr>
+<tr><td>systematic refinement, observed order = formal order</td><td class="good">yes, 3–4 meshes per case (§3)</td></tr>
+<tr><td>all option combinations</td><td class="open">13 cases. Missing: tet4, tet10 fbar, follower pressure and slip BCs (checked by exact identities in §5 instead, which Roache's "partitioning" allows)</td></tr>
+<tr><td>do not start from the exact solution (blind study, case E.4)</td><td class="open"><code>fem_mms</code> starts Newton at \(u_\text{ex}\); rerun from \(u = 0\), see below</td></tr>
+<tr><td>point-by-point errors</td><td class="open">only L2 / H1 norms; a max norm would also catch a first-order error at a few boundary nodes</td></tr>
+<tr><td>time discretization</td><td class="open">no manufactured time-dependent solution; covered by <code>exact_solution</code> (exact CMM) and the observed order 1.00 in §8.2</td></tr>
+</table></div>
+
+<h3>Rerun from \(u = 0\) instead of \(u_\text{ex}\)</h3>
+<div class="table-wrap"><table>
+<tr><th>case</th><th>meshes</th><th>result</th></tr>
+<tr><td>hex8 standard, compressible</td><td>64 / 512 / 4096</td><td class="good">same errors as from \(u_\text{ex}\) (4 digits), Newton 4–9 iterations instead of 3</td></tr>
+<tr><td>tet10 P2/P1, \(J_\text{target} = \det F_\text{ex}\)</td><td>48 / 384 / 3072</td><td class="good">same u and pressure errors</td></tr>
+<tr><td>hex8 hybrid, \(J_\text{target} = \det F_\text{ex}\)</td><td>512</td><td class="good">same errors</td></tr>
+<tr><td>hex8 hybrid, \(J_\text{target} = \det F_\text{ex}\)</td><td>64</td><td class="open">a different equilibrium: u L2 8.4e-2 instead of 1.06e-1, pressure 53 instead of 417</td></tr>
+<tr><td>hex8 hybrid, \(J_\text{target} = \det F_\text{ex}\)</td><td>4096</td><td class="bad">no convergence when the full boundary displacement is applied in one step</td></tr>
+</table></div>
+<div class="box warn"><span class="tag">Reading</span><p>Where both starts converge on the asymptotic meshes, the answers agree. The order of accuracy therefore does not depend on starting at the exact solution.
+The coarsest Q1/P0 growth mesh has more than one discrete equilibrium (pre-asymptotic: rate 2.59 there). This is the non-uniqueness
+Roache warns can give a false negative. The finest mesh shows a robustness limit of the solver for a large jump in prescribed displacement in one step,
+not an accuracy error (with load steps it is the normal use case).</p></div>
+
+<!-- ============================================================ -->
+<h2 id="open">12. Not covered / known gaps</h2>
+<ul>
+<li><b>Compressible hybrid element</b> (perturbed Lagrangian, Abaqus C3D8H with finite \(K\)) is not implemented. Such inputs run as F-bar, which is exact for homogeneous deformation only.</li>
+<li><b>F-bar in long G&amp;R runs</b> with \(K/\mu \gtrsim 10^3\): hourglass-type modes, Newton fails. Not fixed; use hybrid.</li>
+<li><b>Q1/P0</b> is not inf-sup stable (Schur eigenvalue ratio ~ h² in Cook); it converges in all tests above.</li>
+<li><b>Arc length and stability</b> freeze the G&amp;R state and are not differentiable; verified only on the column and arch.</li>
+<li><b>No independent code for G&amp;R on a real vessel geometry</b>: the Abaqus comparisons are single-element (Maes) and box meshes. Bifurcation and tortuosity results are checked only through mesh/time convergence and the tests above.</li>
+<li>Not in the code, so not tested: inertia, contact, two-way fluid coupling within a step.</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="rerun">13. Rerunning</h2>
+<pre><code># from the repository root (logs: verification/results/)
+python -m verification.fem_analytic
+python -m verification.fem_tube
+python -m verification.fem_mms
+python -m verification.cook
+python -m verification.fem_consistency
+python -m verification.buckling
+python -m verification.mesh_io
+python -m verification.fem_umat          # needs gfortran
+
+# G&amp;R (logs: cmm/results/&lt;group&gt;/&lt;study&gt;/)
+cd cmm
+python -m studies fe_vs_material_point
+python -m studies solution_verification
+python -m studies element_formulations
+python -m studies artery_gradients
+python -m studies flow_step
+python -m studies maes_abaqus            # Abaqus column from earlier host runs
+
+# Abaqus comparison of one input file (see the usage guide)
+fem-vs-abaqus job.inp [user.for] --skip-abaqus</code></pre>
+</main>
+</div>
+<!--VIZ--><script type="application/json" id="viz-data">{"tube_lock":{"x":{"label":"element size h / h_coarse","short":"h/h\u2080","log":true,"tickLabel":"plain","ticks":[0.25,0.5,1]},"y":{"label":"relative error in u\u1d63(a)","short":"error","log":true},"height":250,"slopes":[{"x":[0.25,0.5],"y":4.26e-05,"p":2}],"series":[{"name":"standard","pts":[[1.0,0.919],[0.5,0.741],[0.25,0.418]],"slot":1},{"name":"fbar","pts":[[1.0,0.0029],[0.5,0.000695],[0.25,0.000142]],"slot":2},{"name":"hybrid","pts":[[1.0,0.0029],[0.5,0.000695],[0.25,0.000142]],"slot":3,"dash":true}]},"tube_finite":{"x":{"label":"element size h / h_coarse","short":"h/h\u2080","log":true,"tickLabel":"plain","ticks":[0.25,0.5,1]},"y":{"label":"relative error in u\u1d63(a)","short":"error","log":true},"height":250,"slopes":[{"x":[0.25,0.5],"y":5.3099999999999996e-05,"p":2}],"series":[{"name":"standard","pts":[[1.0,0.956],[0.5,0.829],[0.25,0.467]],"slot":1},{"name":"fbar","pts":[[1.0,0.00523],[0.5,0.00119],[0.25,0.000177]],"slot":2},{"name":"hybrid","pts":[[1.0,0.00471],[0.5,0.00118],[0.25,0.000295]],"slot":3}]},"tube_tet":{"x":{"label":"element size h / h_coarse","short":"h/h\u2080","log":true,"tickLabel":"plain","ticks":[0.25,0.5,1]},"y":{"label":"relative error in u\u1d63(a)","short":"error","log":true},"height":250,"slopes":[{"x":[0.25,0.5],"y":0.001014,"p":2},{"x":[0.25,0.5],"y":2.916e-06,"p":3}],"series":[{"name":"hex8","pts":[[1.0,0.05],[0.5,0.0133],[0.25,0.00338]],"slot":1},{"name":"tet10","pts":[[1.0,0.000477],[0.5,6.43e-05],[0.25,9.72e-06]],"slot":2}]},"tube_p1":{"x":{"label":"element size h / h_coarse","short":"h/h\u2080","log":true,"tickLabel":"plain","ticks":[0.25,0.5,1]},"y":{"label":"relative error in u\u1d63(a)","short":"error","log":true},"height":250,"slopes":[{"x":[0.25,0.5],"y":1.323e-05,"p":2}],"series":[{"name":"tet10 P2/P0","pts":[[1.0,0.000627],[0.5,0.000159],[0.25,4.41e-05]],"slot":1},{"name":"tet10 P2/P1","pts":[[1.0,4.96e-06],[0.5,1.07e-06],[0.25,2.11e-07]],"slot":2}]},"mms_u":{"x":{"label":"element size h (cube cells, unit cube)","short":"h","log":true,"tickLabel":"plain","ticks":[0.0625,0.125,0.25,0.5]},"y":{"label":"relative L2 error of u","short":"e(u)","log":true},"height":300,"slopes":[{"x":[0.25,0.5],"y":0.0016325,"p":2},{"x":[0.0625,0.125],"y":3.57e-05,"p":3}],"series":[{"name":"hex8 standard","pts":[[0.25,0.0771],[0.125,0.0221],[0.0625,0.00612]],"slot":1},{"name":"hex8 hybrid (J = 1)","pts":[[0.25,0.0505],[0.125,0.013],[0.0625,0.00328]],"slot":2},{"name":"tet10 standard","pts":[[0.5,0.0617],[0.25,0.014],[0.125,0.00242],[0.0625,0.000337]],"slot":3},{"name":"tet10 P2/P1 (J = 1)","pts":[[0.5,0.0372],[0.25,0.00653],[0.125,0.000919],[0.0625,0.000119]],"slot":4},{"name":"hex8 standard, K/C\u2081\u2080 = 2\u00b710\u2074 (locks)","pts":[[0.25,0.052],[0.125,0.0184],[0.0625,0.014]],"slot":5,"dash":true}]},"mms_q":{"x":{"label":"element size h (cube cells, unit cube)","short":"h","log":true,"tickLabel":"plain","ticks":[0.0625,0.125,0.25,0.5]},"y":{"label":"relative L2 error of the pressure","short":"e(q)","log":true},"height":300,"slopes":[{"x":[0.0625,0.125],"y":0.0013559999999999998,"p":2}],"series":[{"name":"hex8 Q1/P0","pts":[[0.25,8.25],[0.125,0.417],[0.0625,0.0821]],"slot":1},{"name":"tet10 P2/P0, pointwise","pts":[[0.5,2.76],[0.25,1.27],[0.125,0.989],[0.0625,0.931]],"slot":2},{"name":"tet10 P2/P0, cube means","pts":[[0.5,0.617],[0.25,0.289],[0.125,0.138],[0.0625,0.0685]],"slot":3,"dash":true},{"name":"tet10 P2/P1","pts":[[0.5,1.1],[0.25,0.188],[0.125,0.0273],[0.0625,0.00452]],"slot":4}]},"cook":{"x":{"label":"elements per side n","short":"n","log":true,"tickLabel":"plain","ticks":[2,4,8,16,32,64]},"y":{"label":"tip displacement v","short":"v","min":0,"max":2.7},"height":300,"hlines":[{"y":2.46262,"label":"reference 2.46262"}],"series":[{"name":"hex8 hybrid","pts":[[2.0,1.54064],[4.0,2.09817],[8.0,2.33103],[16.0,2.41171],[32.0,2.4418],[64.0,2.45394]],"slot":1,"dash":false},{"name":"hex8 fbar","pts":[[2.0,1.5439],[4.0,2.10017],[8.0,2.33197],[16.0,2.41229],[32.0,2.44229],[64.0,2.45441]],"slot":2,"dash":false},{"name":"hex8 standard","pts":[[2.0,0.67637],[4.0,0.69255],[8.0,0.71117],[16.0,0.76641],[32.0,0.93285],[64.0,1.30958]],"slot":3,"dash":true},{"name":"tet10 hybrid","pts":[[2.0,1.68865],[4.0,2.23416],[8.0,2.39322],[16.0,2.44203],[32.0,2.4585]],"slot":4,"dash":false},{"name":"tet10 P2/P1","pts":[[2.0,2.01773],[4.0,2.32077],[8.0,2.40494],[16.0,2.43911],[32.0,2.45285]],"slot":5,"dash":false},{"name":"tet10 standard","pts":[[2.0,1.27234],[4.0,2.00436],[8.0,2.28784],[16.0,2.39175],[32.0,2.43318]],"slot":6,"dash":true}]},"newton":{"x":{"label":"Newton iteration","short":"iteration","ticks":[0,1,2,3,4,5,6]},"y":{"label":"residual |r| (scaled)","short":"|r|","log":true},"height":260,"series":[{"name":"hex8 hybrid","pts":[[0.0,0.016],[1.0,0.014],[2.0,0.01],[3.0,7.9e-05],[4.0,1.2e-08],[5.0,7.8e-16]],"slot":1},{"name":"tet10 hybrid","pts":[[0.0,0.011],[1.0,0.0057],[2.0,0.024],[3.0,0.0022],[4.0,2.2e-05],[5.0,3.2e-09],[6.0,4.9e-16]],"slot":2},{"name":"tet10 P2/P1","pts":[[0.0,0.011],[1.0,0.0064],[2.0,0.018],[3.0,0.0013],[4.0,3.6e-05],[5.0,7.7e-10],[6.0,6.2e-16]],"slot":3}]},"arch":{"x":{"label":"crown deflection w","short":"w"},"y":{"label":"crown load F","short":"F"},"height":280,"series":[{"name":"arc length (force control)","pts":[[-0.0,0.0],[0.040019215995311976,9.715844082129636e-05],[0.09162385342651286,0.00021436196619228781],[0.15812924976516993,0.0003524809216686607],[0.24375946745040902,0.0005099696606708594],[0.35385359189025545,0.0006811620754727939],[0.47622011510072576,0.0008339765774232302],[0.6119702380198077,0.0009628440436159976],[0.76222956430183,0.0010629383247320722],[0.9281252767508075,0.0011310163968788736],[1.110786437076756,0.0011663957677381217],[1.3113680358162725,0.0011720493489811318],[1.5311106155715934,0.0011559061368821152],[1.7714494452697178,0.0011326530413618239],[2.0341932330829824,0.0011266351167679364],[2.3218012387431246,0.0011768558880789455],[2.6377849013751336,0.0013456092663380011],[2.9675917044819817,0.0017043639850180146],[3.2965699395697956,0.0023073252796381102],[3.6271338460240052,0.003217388277694646],[3.842596239572231,0.004]],"slot":1},{"name":"displacement control","pts":[[0.0,0.0],[0.09606490598930577,0.00022403251622170046],[0.19212981197861154,0.0004176825043160962],[0.2881947179679173,0.0005831408888003859],[0.3842596239572231,0.0007226488051955485],[0.48032452994652886,0.0008384709949532767],[0.5763894359358346,0.0009328687928378875],[0.6724543419251404,0.0010080746991587338],[0.7685192479144461,0.001066270266922122],[0.8645841539037519,0.0011095685634687786],[0.9606490598930577,0.0011400018965604763],[1.0567139658823634,0.001159514936381497],[1.1527788718716692,0.0011699629010942223],[1.248843777860975,0.0011731141479479935],[1.3449086838502808,0.0011706563300539713],[1.4409735898395866,0.0011642052194247552],[1.5370384958288923,0.0011553153250252067],[1.633103401818198,0.0011454915148818722],[1.7291683078075037,0.0011362009532795655],[1.8252332137968097,0.0011288847677520992],[1.9212981197861154,0.0011249689541296365],[2.017363025775421,0.0011258741084896485],[2.113427931764727,0.001133023645295076],[2.209492837754033,0.001147850227158249],[2.3055577437433383,0.0011718002014412502],[2.4016226497326443,0.0012063359192030392],[2.49768755572195,0.001252935906486557],[2.5937524617112557,0.00131309296669783],[2.6898173677005617,0.0013883104101431406],[2.785882273689867,0.0014800967222353394],[2.881947179679173,0.0015899590812505555],[2.9780120856684786,0.001719396205578201],[3.0740769916577846,0.0018698910367219573],[3.1701418976470905,0.0020429037427381726],[3.266206803636396,0.0022398654588407013],[3.362271709625702,0.0024621730779338024],[3.4583366156150075,0.0027111852791081724],[3.5544015216043134,0.0029882198548715133],[3.6504664275936194,0.0032945522835674274],[3.746531333582925,0.0036314154051114546],[3.842596239572231,0.003999999999967342]],"slot":2,"line":false,"shape":"square"}]},"gci_mesh":{"x":{"label":"element size h / h_coarse","short":"h/h\u2080","log":true,"tickLabel":"plain","ticks":[0.125,0.25,0.5,1]},"y":{"label":"|\u03bb\u03b8 \u2212 \u03bb\u03b8,extrapolated|","short":"error","log":true},"height":270,"slopes":[{"x":[0.125,0.25],"y":1.5899999999957615e-06,"p":2}],"series":[{"name":"standard (compressible elastin)","pts":[[1.0,0.0016776000000000568],[0.5,0.00042079999999988793],[0.25,0.00010529999999997486],[0.125,2.6400000000093016e-05]],"slot":1},{"name":"hybrid (incompressible elastin)","pts":[[1.0,0.00034359999999988844],[0.5,8.589999999997211e-05],[0.25,2.1499999999896602e-05],[0.125,5.2999999999858716e-06]],"slot":2}]},"gci_time":{"x":{"label":"time step \u0394s [d]","short":"\u0394s","log":true,"tickLabel":"plain","ticks":[2.5,5,10,20,40]},"y":{"label":"|\u03bb\u03b8 \u2212 \u03bb\u03b8,extrapolated|","short":"error","log":true},"height":270,"slopes":[{"x":[2.5,5],"y":3.516000000001185e-05,"p":1}],"series":[{"name":"standard, mesh (4, 30, 1)","pts":[[40.0,0.0014060000000000183],[20.0,0.0007030999999999565],[10.0,0.00035149999999983805],[5.0,0.00017570000000000086],[2.5,8.790000000002962e-05]],"slot":1}]},"homog_uni":{"x":{"label":"stretch \u03bb","short":"\u03bb"},"y":{"label":"Cauchy stress \u03c3\u2081\u2081 [MPa]","short":"\u03c3\u2081\u2081"},"height":270,"series":[{"name":"exact, uniaxial 2C\u2081\u2080(\u03bb\u00b2 \u2212 1/\u03bb)","pts":[[0.7,-0.5725285714285714],[0.72,-0.5309982222222221],[0.74,-0.4902883243243243],[0.76,-0.4502955789473685],[0.78,-0.41092728205128193],[0.7999999999999999,-0.37210000000000004],[0.82,-0.33373843902439027],[0.84,-0.29577447619047625],[0.86,-0.25814632558139544],[0.88,-0.22079781818181826],[0.9,-0.18367777777777777],[0.9199999999999999,-0.14673947826086978],[0.94,-0.10994017021276598],[0.96,-0.07324066666666673],[0.98,-0.0366049795918368],[1.0,0.0],[1.02,0.03660478431372551],[1.04,0.07323753846153859],[1.06,0.1099243018867926],[1.08,0.1466891851851853],[1.1,0.18355454545454558],[1.12,0.220541142857143],[1.1400000000000001,0.2576682807017546],[1.1600000000000001,0.294953931034483],[1.1800000000000002,0.3324148474576274],[1.2000000000000002,0.37006666666666693],[1.2200000000000002,0.4079240000000003],[1.2400000000000002,0.4460005161290327],[1.26,0.48430901587301595],[1.28,0.5228615000000001],[1.3,0.5616692307692309],[1.32,0.600742787878788],[1.34,0.6400921194029853],[1.36,0.6797265882352944],[1.3800000000000001,0.7196550144927538],[1.4000000000000001,0.7598857142857146],[1.4200000000000002,0.8004265352112678],[1.44,0.8412848888888889],[1.46,0.8824677808219176],[1.48,0.9239818378378377],[1.5,0.9658333333333334],[1.52,1.0080282105263156],[1.54,1.0505721038961038],[1.56,1.093470358974359],[1.58,1.1367280506329118],[1.6,1.1803500000000002]],"slot":1,"exact":true},{"name":"exact, equibiaxial 2C\u2081\u2080(\u03bb\u00b2 \u2212 \u03bb\u207b\u2074)","pts":[[1.0,0.0],[1.02,0.07109829012382633],[1.04,0.1383454434718674],[1.06,0.20221886542480763],[1.08,0.26313578979416363],[1.1,0.3214617922273071],[1.1199999999999999,0.3775179721730526],[1.14,0.4315870308041841],[1.16,0.4839184302929103],[1.18,0.5347327861573158],[1.2,0.5842256172839505],[1.22,0.632570556319692],[1.24,0.6799221053511507],[1.26,0.726418007319132],[1.28,0.7721812917938232],[1.2999999999999998,0.8173220440460764],[1.3199999999999998,0.861938938381224],[1.3399999999999999,0.9061205701278848],[1.3599999999999999,0.9499466152344915],[1.38,0.9934888419117713],[1.4,1.0368119950020822]],"slot":1,"exact":true,"dash":true},{"name":"FE uniaxial (hex8 hybrid)","pts":[[0.7,-0.5725285714285715],[0.7999999999999999,-0.3721000000000002],[0.9,-0.18367777777777766],[1.1,0.1835545454545457],[1.2,0.3700666666268686],[1.3,0.5616692307483948],[1.4000000000000001,0.7598857142740925],[1.5,0.9658333333264981],[1.6,1.1803499999957963]],"slot":1,"line":false},{"name":"FE equibiaxial (hex8 hybrid)","pts":[[1.1,0.3214617922273071],[1.2,0.5842256172839506],[1.2999999999999998,0.8173220440460766],[1.4,1.0368119950020822]],"slot":2,"line":false,"shape":"square"}]},"homog_shear":{"x":{"label":"shear \u03b3","short":"\u03b3"},"y":{"label":"Cauchy stress \u03c3\u2081\u2082 [MPa]","short":"\u03c3\u2081\u2082"},"height":270,"series":[{"name":"exact 2C\u2081\u2080 \u03b3","pts":[[0.0,0.0],[0.1,0.061],[0.2,0.122],[0.30000000000000004,0.18300000000000002],[0.4,0.244],[0.5,0.305],[0.6000000000000001,0.36600000000000005],[0.7000000000000001,0.42700000000000005],[0.8,0.488],[0.9,0.549],[1.0,0.61]],"slot":1,"exact":true},{"name":"FE (hex8 standard, distorted)","pts":[[0.1,0.061],[0.2,0.122],[0.30000000000000004,0.18300000000000005],[0.4,0.244],[0.5,0.305],[0.6,0.366],[0.7000000000000001,0.42700000000000005],[0.8,0.488],[0.9,0.5489999999999999],[1.0,0.6099999999999999]],"slot":1,"line":false}]},"tube_profile":{"x":{"label":"radius r [mm]","short":"r"},"y":{"label":"u\u1d63 / p  [mm/MPa]","short":"u\u1d63/p","min":0},"height":270,"series":[{"name":"exact (Lam\u00e9)","pts":[[5.0,11.073803947334936],[5.044827586206897,10.975416226014723],[5.089655172413793,10.878761731884644],[5.13448275862069,10.783795068127763],[5.179310344827586,10.69047240958792],[5.224137931034483,10.598751435338736],[5.268965517241379,10.50859126469478],[5.313793103448276,10.41995239646163],[5.358620689655172,10.332796651235157],[5.403448275862069,10.247087116572946],[5.448275862068965,10.162788094872464],[5.493103448275862,10.07986505380131],[5.537931034482758,9.998284579134992],[5.582758620689655,9.91801432986684],[5.627586206896551,9.839022995463447],[5.672413793103448,9.761280255146861],[5.7172413793103445,9.684756739092364],[5.7620689655172415,9.609423991437465],[5.8068965517241375,9.535254435004264],[5.8517241379310345,9.462221337643292],[5.896551724137931,9.390298780112554],[5.941379310344828,9.319461625410664],[5.986206896551724,9.2496854894879],[6.031034482758621,9.180946713263424],[6.075862068965517,9.113222335881256],[6.120689655172414,9.046490069141477],[6.165517241379311,8.98072827304686],[6.210344827586207,8.915915932408533],[6.255172413793103,8.852032634457585],[6.3,8.78905854741251]],"slot":1,"exact":true},{"name":"standard (locks)","pts":[[5.0,2.8669679899665357],[5.325,2.692093468733822],[5.65,2.5373311565070624],[5.975,2.399400929351753],[6.3,2.275699090544643]],"slot":1},{"name":"fbar","pts":[[5.0,11.066103199673554],[5.325,10.390808757804605],[5.65,9.793206108899778],[5.975,9.260617933062573],[6.3,8.782982832374108]],"slot":2,"line":false,"shape":"square"},{"name":"hybrid","pts":[[5.0,11.06540577118248],[5.325,10.390065972687436],[5.65,9.792417984900668],[5.975,9.259784494373454],[6.3,8.782104038917055]],"slot":3,"line":false,"shape":"triangle"}]},"tube_pa":{"x":{"label":"inner radius a / A","short":"a/A"},"y":{"label":"pressure p [MPa]","short":"p","min":0},"height":270,"series":[{"name":"exact (incompressible, finite strain)","pts":[[1.0,0.0],[1.0113180050627621,0.005],[1.0231531225962223,0.01],[1.035550205695182,0.015],[1.0485599938569892,0.02],[1.0622401691330354,0.025],[1.07665665713477,0.03],[1.0918852436813216,0.035],[1.10801360278808,0.04],[1.1251438671009428,0.045],[1.143395923004641,0.05],[1.1629116877496497,0.055],[1.1838607384452622,0.06],[1.206447834874749,0.065],[1.2309231476661258,0.07],[1.2575964369008297,0.075],[1.2868571445863528,0.08],[1.319203595662118,0.085],[1.355286696295504,0.09],[1.395977608815379,0.095],[1.4424769254455663,0.1],[1.4964997147652834,0.105],[1.5606089726577175,0.11],[1.6388652306887672,0.115],[1.7382296243274002,0.12],[1.8720639426815624,0.125],[2.0709994566363585,0.13]],"slot":1,"exact":true},{"name":"FE hybrid","pts":[[1.0231355605349097,0.01],[1.048522095535369,0.02],[1.0765949682856628,0.03],[1.1079237238003774,0.04],[1.1432720964350362,0.05],[1.1836951778961446,0.060000000000000005],[1.2307048836493941,0.06999999999999999],[1.2865698970608492,0.08],[1.3549045849052874,0.09],[1.4419547075450083,0.09999999999999999],[1.5598556196635058,0.11],[1.7370141691338787,0.12]],"slot":1,"line":false},{"name":"FE standard, K/\u03bc = 10\u2074 (locks)","pts":[[1.0058628704305446,0.01],[1.0120002600544566,0.02],[1.0184395877218546,0.03],[1.0252126861547262,0.04],[1.0323568199486584,0.05],[1.0399160185409397,0.060000000000000005],[1.047942851257773,0.06999999999999999],[1.0565008346355846,0.08],[1.065667766760502,0.09],[1.0755404590062903,0.09999999999999999],[1.086241643392344,0.11],[1.097930398467683,0.12]],"slot":2,"line":false,"shape":"square"}]},"mms_line":{"x":{"label":"X along (X, 0.5, 0.5)","short":"X"},"y":{"label":"displacement u\u2093","short":"u\u2093"},"height":280,"series":[{"name":"exact u_ex","pts":[[0.0,0.042990142010652266],[0.01694915254237288,0.04222144163164926],[0.03389830508474576,0.04133305998913049],[0.05084745762711865,0.04032751529738122],[0.06779661016949153,0.03920765788207909],[0.0847457627118644,0.037976662100736344],[0.1016949152542373,0.036638017344638535],[0.11864406779661017,0.03519551814778588],[0.13559322033898305,0.033653253430874316],[0.15254237288135594,0.03201559491080554],[0.1694915254237288,0.03028718470858053],[0.1864406779661017,0.02847292219070313],[0.2033898305084746,0.026577950081393537],[0.22033898305084745,0.02460763988497762],[0.23728813559322035,0.022567576659774366],[0.2542372881355932,0.02046354318664131],[0.2711864406779661,0.01830150357705386],[0.288135593220339,0.016087586367183382],[0.3050847457627119,0.013828067145895555],[0.3220338983050847,0.01152935076591192],[0.3389830508474576,0.009197953188558974],[0.3559322033898305,0.006840483013567858],[0.3728813559322034,0.0044636227462804086],[0.3898305084745763,0.0020741098553617465],[0.4067796610169492,-0.00032128232528668636],[0.423728813559322,-0.0027157637962778613],[0.4406779661016949,-0.00510254713973036],[0.4576271186440678,-0.007474866758941488],[0.4745762711864407,-0.009825998056206502],[0.4915254237288136,-0.012149276494421098],[0.5084745762711864,-0.014438116488436216],[0.5254237288135594,-0.016686030072614367],[0.5423728813559322,-0.01888664529167332],[0.559322033898305,-0.021033724262685558],[0.576271186440678,-0.023121180857035222],[0.5932203389830508,-0.025143097952210765],[0.6101694915254238,-0.02709374420453181],[0.6271186440677966,-0.02896759029526526],[0.6440677966101694,-0.030759324604080172],[0.6610169491525424,-0.0324638682654126],[0.6779661016949152,-0.03407638956506182],[0.6949152542372882,-0.03559231763620924],[0.711864406779661,-0.03700735541603692],[0.7288135593220338,-0.03831749182621911],[0.7457627118644068,-0.03951901314275939],[0.7627118644067796,-0.040608513522945026],[0.7796610169491526,-0.04158290465957797],[0.7966101694915254,-0.042439424535117294],[0.8135593220338984,-0.0431756452509179],[0.8305084745762712,-0.04378947990937306],[0.847457627118644,-0.04427918852945242],[0.864406779661017,-0.04464338297886726],[0.8813559322033898,-0.044881030908882256],[0.8983050847457628,-0.04499145868062017],[0.9152542372881356,-0.04497435327456442],[0.9322033898305084,-0.04482976317784693],[0.9491525423728814,-0.04455809824680604],[0.9661016949152542,-0.044160128545204215],[0.9830508474576272,-0.04363698216139865],[1.0,-0.04299014201065227]],"slot":1,"exact":true},{"name":"FE hex8, n = 2","pts":[[0.0,0.042990142010652266],[0.5,-0.022346975571901108],[1.0,-0.0614892386457161]],"slot":1,"thin":true,"shape":"circle"},{"name":"FE hex8, n = 4","pts":[[0.0,0.042990142010652266],[0.25,0.02037757713345828],[0.5,-0.014878877787232408],[0.75,-0.042332688439020556],[1.0,-0.04645234090719312]],"slot":2,"thin":true,"shape":"square"},{"name":"FE hex8, n = 8","pts":[[0.0,0.042990142010652266],[0.125,0.03461840510418752],[0.25,0.02101276379976742],[0.375,0.004147345329969847],[0.5,-0.013500233218694518],[0.625,-0.029177693351703893],[0.75,-0.04037833586614008],[0.875,-0.04541166564136798],[1.0,-0.043775309215513175]],"slot":3,"thin":true,"shape":"triangle"}]},"column":{"x":{"label":"axial load P / P_Euler","short":"P/P_E"},"y":{"label":"smallest tangent eigenvalue (scaled)","short":"\u03bc/\u03bc\u2080"},"height":280,"vlines":[{"x":1.0,"label":"Euler 4\u03c0\u00b2EI/L\u00b2","exact":true}],"hlines":[{"y":0.0,"label":"stable \u2191 / unstable \u2193","left":true,"below":true}],"series":[{"name":"tet10 2x2x40","pts":[[0.2016585392161393,1.0],[0.302551723739882,0.88002781490557],[0.40348754719157665,0.7592287517927996],[0.5044660256990774,0.6375517613980829],[0.6054871697129023,0.5149404431383885],[0.7065509810648875,0.3913323002447678],[0.8076574487708184,0.2666578792449707],[0.9088065419362121,0.14083975385915315],[1.0099981993182625,0.013791346632239776],[1.111232307940664,-0.11068686091951252],[1.2125086669072873,-0.24066431625325907],[1.3138269147064217,-0.3721978919535414],[1.4151863760920758,-0.5054259577276777]],"slot":1,"shape":"circle"},{"name":"tet10 3x3x60","pts":[[0.20130389245616132,1.0],[0.30201974987764096,0.8792428880610621],[0.40277825819766455,0.7576503846459172],[0.5035794492825119,0.6351704375843328],[0.6044233543115481,0.5117454870980384],[0.7053100033839121,0.3873116933691835],[0.8062394249693051,0.2617980383396479],[0.9072116450144433,0.13512526513956755],[1.0082266854321391,0.007204627202254048],[1.1092845614292601,-0.12078136102346894],[1.2103852765354957,-0.25158241598651976],[1.3115288123351554,-0.3839692749767965],[1.4127151085535563,-0.5180860888270501]],"slot":2,"shape":"square"}]},"mp_hist":{"x":{"label":"day","short":"day","min":0,"max":1000},"y":{"label":"stretch in the loaded direction","short":"\u03bb"},"height":280,"series":[{"name":"material point (0D), case S","pts":[[10.0,1.0239970518321857],[20.0,1.0255459096626482],[30.0,1.0270547464031696],[40.0,1.0285244053315816],[50.0,1.029955722825364],[60.0,1.031349527747107],[70.0,1.0327066408761398],[80.0,1.034027874384703],[90.0,1.0353140313570226],[100.0,1.036565905349656],[110.0,1.0377842799914567],[120.0,1.038969928621531],[130.0,1.0401236139635548],[140.0,1.0412460878348366],[150.0,1.0423380908885356],[160.0,1.0434003523874558],[170.0,1.0444335900078747],[180.0,1.0454385096718832],[190.0,1.046415805406752],[200.0,1.047366159229871],[210.0,1.0482902410578454],[220.0,1.0491887086383687],[230.0,1.0500622075035368],[240.0,1.0509113709433044],[250.0,1.0517368199978294],[260.0,1.0525391634674899],[270.0,1.0533189979394106],[280.0,1.0540769078293672],[290.0,1.0548134654379924],[300.0,1.0555292310202409],[310.0,1.0562247528671238],[320.0,1.056900567398756],[330.0,1.057557199267812],[340.0,1.0581951614725182],[350.0,1.0588149554783615],[360.0,1.0594170713477216],[370.0,1.0600019878766838],[380.0,1.0605701727383268],[390.0,1.0611220826318037],[400.0,1.0616581634365967],[410.0,1.062178850371329],[420.0,1.0626845681565826],[430.0,1.0631757311811758],[440.0,1.0636527436714085],[450.0,1.064115999862798],[460.0,1.0645658841738643],[470.0,1.0650027713815522],[480.0,1.0654270267979005],[490.0,1.0658390064475982],[500.0,1.0662390572464315],[510.0,1.066627517178252],[520.0,1.0670047154753455],[530.0,1.0673709727949878],[540.0,1.0677266013971902],[550.0,1.0680719053212755],[560.0,1.0684071805614477],[570.0,1.0687327152411417],[580.0,1.0690487897859868],[590.0,1.0693556770952168],[600.0,1.0696536427113776],[610.0,1.0699429449882047],[620.0,1.070223835256538],[630.0,1.070496557988178],[640.0,1.070761350957578],[650.0,1.0710184454012852],[660.0,1.071268066175064],[670.0,1.0715104319086228],[680.0,1.0717457551578953],[690.0,1.0719742425548255],[700.0,1.072196094954611],[710.0,1.0724115075803755],[720.0,1.0726206701652432],[730.0,1.0728237670917888],[740.0,1.0730209775288555],[750.0,1.0732124755657235],[760.0,1.0733984303436346],[770.0,1.0735790061846615],[780.0,1.0737543627179353],[790.0,1.0739246550032355],[800.0,1.074090033651954],[810.0,1.0742506449454527],[820.0,1.0744066309508264],[830.0,1.074558129634099],[840.0,1.0747052749708699],[850.0,1.0748481970544455],[860.0,1.0749870222014744],[870.0,1.0751218730551184],[880.0,1.0752528686857994],[890.0,1.0753801246895403],[900.0,1.0755037532839489],[910.0,1.0756238634018676],[920.0,1.0757405607827353],[930.0,1.0758539480616927],[940.0,1.0759641248564684],[950.0,1.076071187852091],[960.0,1.0761752308834562],[970.0,1.0762763450157977],[980.0,1.0763746186230947],[990.0,1.076470137464459],[1000.0,1.0765629847585416]],"slot":1,"exact":true},{"name":"material point (0D), case F","pts":[[10.0,1.0271688559241217],[20.0,1.0290526389942174],[30.0,1.0308990418445612],[40.0,1.0327086691490799],[50.0,1.0344821227587235],[60.0,1.0362200013443748],[70.0,1.0379229000611534],[80.0,1.0395914102333565],[90.0,1.0412261190593095],[100.0,1.0428276093353988],[110.0,1.0443964591985984],[120.0,1.0459332418867933],[130.0,1.0474385255162328],[140.0,1.0489128728754555],[150.0,1.05035684123504],[160.0,1.0517709821725516],[170.0,1.0531558414120723],[180.0,1.0545119586777039],[190.0,1.0558398675604617],[200.0,1.0571400953979848],[210.0,1.058413163166496],[220.0,1.0596595853844735],[230.0,1.0608798700274975],[240.0,1.0620745184537554],[250.0,1.0632440253397086],[260.0,1.0643888786254214],[270.0,1.065509559469095],[280.0,1.0666065422103321],[290.0,1.0676802943416979],[300.0,1.0687312764881456],[310.0,1.0697599423938888],[320.0,1.0707667389163216],[330.0,1.071752106026598],[340.0,1.0727164768164983],[350.0,1.073660277511221],[360.0,1.0745839274877524],[370.0,1.075487839298486],[380.0,1.0763724186997634],[390.0,1.0772380646850317],[400.0,1.0780851695223255],[410.0,1.0789141187957807],[420.0,1.079725291450918],[430.0,1.080519059843425],[440.0,1.0812957897911966],[450.0,1.0820558406293876],[460.0,1.0827995652682538],[470.0,1.0835273102535574],[480.0,1.0842394158293391],[490.0,1.084936216002841],[500.0,1.0856180386114107],[510.0,1.0862852053911876],[520.0,1.0869380320474125],[530.0,1.0875768283261882],[540.0,1.0882018980875425],[550.0,1.088813539379638],[560.0,1.0894120445139948],[570.0,1.0899977001415904],[580.0,1.0905707873297101],[590.0,1.0911315816394307],[600.0,1.0916803532036177],[610.0,1.0922173668053419],[620.0,1.0927428819566],[630.0,1.0932571529772541],[640.0,1.0937604290740945],[650.0,1.094252954419948],[660.0,1.0947349682327414],[670.0,1.0952067048544585],[680.0,1.0956683938299092],[690.0,1.0961202599852535],[700.0,1.096562523506211],[710.0,1.0969954000159092],[720.0,1.0974191006523035],[730.0,1.0978338321451322],[740.0,1.098239796892352],[750.0,1.098637193036012],[760.0,1.09902621453753],[770.0,1.099407051252331],[780.0,1.0997798890038142],[790.0,1.1001449096566207],[800.0,1.1005022911891682],[810.0,1.1008522077654315],[820.0,1.1011948298059426],[830.0,1.1015303240579895],[840.0,1.1018588536649945],[850.0,1.1021805782350547],[860.0,1.1024956539086306],[870.0,1.1028042334253678],[880.0,1.1031064661900398],[890.0,1.1034024983376023],[900.0,1.1036924727973523],[910.0,1.1039765293561814],[920.0,1.1042548047209195],[930.0,1.104527432579765],[940.0,1.1047945436627942],[950.0,1.105056265801555],[960.0,1.1053127239877358],[970.0,1.1055640404309153],[980.0,1.1058103346153905],[990.0,1.1060517233560871],[1000.0,1.1062883208535532]],"slot":1,"exact":true,"dash":true},{"name":"FE one hex8, case S","pts":[[100.0,1.036565905364848],[200.0,1.0473661592397707],[300.0,1.0555292310271853],[400.0,1.061658163441584],[500.0,1.0662390572496814],[600.0,1.0696536427137189],[700.0,1.0721960949562608],[800.0,1.0740900336530874],[900.0,1.0755037532847005],[1000.0,1.0765629847590121]],"slot":1,"line":false},{"name":"FE one hex8, case F","pts":[[100.0,1.042827609335399],[200.0,1.0571400954211472],[300.0,1.0687312765067052],[400.0,1.0780851695371652],[500.0,1.0856180386231624],[600.0,1.0916803532128219],[700.0,1.0965625235133392],[800.0,1.1005022911946216],[900.0,1.1036924728014654],[1000.0,1.1062883208566003]],"slot":2,"line":false,"shape":"square"}]},"box_tension":{"x":{"label":"end displacement u\u2081","short":"u\u2081","min":0},"y":{"label":"reaction force on x = 1","short":"RF\u2081","min":0},"height":270,"series":[{"name":"exact (compressible neo-Hooke, uniaxial)","pts":[[0.0,0.0],[0.02,0.058433976949209376],[0.04,0.1146487426287865],[0.06,0.16880906743495258],[0.08,0.22106460871338093],[0.1,0.27155154273082965],[0.12,0.32039399470917096],[0.14,0.36770529498249505],[0.16,0.4135890850257275],[0.18,0.45814029351587965],[0.2,0.5014459995914696],[0.22,0.543586197966365],[0.24,0.584634478446509],[0.26,0.6246586306213218],[0.28,0.6637211830003353],[0.3,0.7018798845931097],[0.32,0.7391881358492196],[0.34,0.7756953749538594],[0.36,0.8114474246876855],[0.38,0.8464868043857388],[0.4,0.8808530109461308],[0.42,0.9145827723733051],[0.44,0.9477102768428742],[0.46,0.9802673799750369],[0.48,1.0122837926570396],[0.5,1.043787251464373]],"slot":1,"exact":true},{"name":"fem.System (tension30, F-bar)","pts":[[0.05,0.14197602273786894],[0.1,0.2715515427308288],[0.15000000000000002,0.39081950216324735],[0.2,0.5014459995914731],[0.25,0.6047705451402848],[0.3,0.7018798845931105],[0.35,0.7936630670444741],[0.39999999999999997,0.880853010951768],[0.44999999999999996,0.9640582234806461],[0.49999999999999994,1.043787251503784]],"slot":1,"line":false},{"name":"Abaqus 2017 (C3D8H, end of step)","pts":[[0.5,1.0437945127487183]],"slot":2,"line":false,"shape":"square"}]},"flow":{"x":{"label":"day","short":"day","min":0,"max":2000},"y":{"label":"inner radius a / a_h","short":"a/a_h"},"height":280,"hlines":[{"y":1.1447142425533319,"label":"Murray 1.5^(1/3) = 1.1447"}],"series":[{"name":"k_\u03c4 = 0","pts":[[0.0,1.0],[10.0,0.999999981377681],[60.0,0.9999999756620037],[110.0,0.9999999706328391],[160.0,0.9999999662092689],[210.0,0.9999999623198311],[260.0,0.9999999589014481],[310.0,0.9999999558984634],[360.0,0.9999999532617817],[410.0,0.9999999509481012],[460.0,0.9999999489192358],[510.0,0.9999999471415117],[560.0,0.9999999455852373],[610.0,0.9999999442242322],[660.0,0.9999999430354126],[710.0,0.9999999419984258],[760.0,0.9999999410953271],[810.0,0.9999999403102947],[860.0,0.9999999396293795],[910.0,0.9999999390402822],[960.0,0.9999999385321592],[1010.0,0.9999999380954503],[1060.0,0.9999999377217257],[1110.0,0.9999999374035544],[1160.0,0.999999937134384],[1210.0,0.9999999369084371],[1260.0,0.9999999367553574],[1310.0,0.9999999365737482],[1360.0,0.9999999364754043],[1410.0,0.9999999363578738],[1460.0,0.9999999362973881],[1510.0,0.9999999362302381],[1560.0,0.9999999361995249],[1610.0,0.9999999361720058],[1660.0,0.9999999361647198],[1710.0,0.9999999361683963],[1760.0,0.9999999361795586],[1810.0,0.9999999362078114],[1860.0,0.9999999362335149],[1910.0,0.99999993628115],[1960.0,0.9999999363183287]],"slot":1,"marker":false},{"name":"k_\u03c4 = 0.5","pts":[[0.0,1.0],[10.0,0.999999981377681],[60.0,1.0132859764829125],[110.0,1.027323699029075],[160.0,1.0417004185350387],[210.0,1.056100250220085],[260.0,1.0702450062983513],[310.0,1.0838933285461672],[360.0,1.0968398391390166],[410.0,1.1089147325930546],[460.0,1.1199836734818096],[510.0,1.129947629740887],[560.0,1.1387422530937954],[610.0,1.1463365219171933],[660.0,1.1527305169416109],[710.0,1.1579523523714879],[760.0,1.1620544083285607],[810.0,1.1651090848449774],[860.0,1.1672043264709784],[910.0,1.1684391565155594],[960.0,1.1689194242815588],[1010.0,1.1687539202352748],[1060.0,1.1680509632907174],[1110.0,1.1669155181776945],[1160.0,1.1654468626953065],[1210.0,1.163736795437676],[1260.0,1.1618683536368895],[1310.0,1.1599149966980216],[1360.0,1.1579402022837102],[1410.0,1.1559974171312422],[1460.0,1.154130303161971],[1510.0,1.1523732201708503],[1560.0,1.150751888965654],[1610.0,1.1492841828722082],[1660.0,1.147981000683231],[1710.0,1.146847180056737],[1760.0,1.1458824167169737],[1810.0,1.1450821612424815],[1860.0,1.1444384714457132],[1910.0,1.1439408041183305],[1960.0,1.1435767350674446]],"slot":2,"marker":false},{"name":"k_\u03c4 = 2","pts":[[0.0,1.0],[10.0,0.999999981377681],[60.0,1.0470099243811815],[110.0,1.0810828761482192],[160.0,1.1092968171076065],[210.0,1.1332123926298627],[260.0,1.1527876606385825],[310.0,1.1675619179584404],[360.0,1.1771565440401444],[410.0,1.181580312830698],[460.0,1.181371620169781],[510.0,1.1775538020281509],[560.0,1.1714335408136165],[610.0,1.1643326527208742],[660.0,1.1573563294109461],[710.0,1.151264464453029],[760.0,1.146456346904589],[810.0,1.143035068205728],[860.0,1.1409035539017913],[910.0,1.1398550631163502],[960.0,1.1396409526280724],[1010.0,1.1400140029610846],[1060.0,1.1407526850176772],[1110.0,1.1416727822637385],[1160.0,1.14263129089584],[1210.0,1.1435257069921267],[1260.0,1.1442905006032327],[1310.0,1.1448918485898987],[1360.0,1.1453213724677074],[1410.0,1.1455895047035796],[1460.0,1.1457190421694323],[1510.0,1.1457393607105903],[1560.0,1.1456816368979577],[1610.0,1.1455752646781647],[1660.0,1.145445494275096],[1710.0,1.1453121862345412],[1760.0,1.1451894825106241],[1810.0,1.1450861534165206],[1860.0,1.1450063778486765],[1910.0,1.1449507422989211],[1960.0,1.1449172884707843]],"slot":3,"marker":false},{"name":"k_\u03c4 = 8","pts":[[0.0,1.0],[10.0,0.999999981377681],[60.0,1.1297427182947375],[110.0,1.1614580080256909],[160.0,1.179133231714215],[210.0,1.1789142914000652],[260.0,1.1643536640325514],[310.0,1.1501621709353833],[360.0,1.1440540486910176],[410.0,1.1429020209520733],[460.0,1.1432673276526728],[510.0,1.1438438471746477],[560.0,1.1442871559824173],[610.0,1.1445581918928667],[660.0,1.144700017440521],[710.0,1.144763818921188],[760.0,1.1447873889879319],[810.0,1.1447932404718961],[860.0,1.1447927820304893],[910.0,1.1447909188819336],[960.0,1.1447893261440085],[1010.0,1.144788326651425],[1060.0,1.1447878029633003],[1110.0,1.144787568266907],[1160.0,1.1447874807122906],[1210.0,1.1447874566034382],[1260.0,1.1447874543266874],[1310.0,1.144787456422833],[1360.0,1.1447874571588534],[1410.0,1.1447874555802835],[1460.0,1.1447874522184842],[1510.0,1.144787447789632],[1560.0,1.144787442814922],[1610.0,1.144787437592909],[1660.0,1.1447874322672476],[1710.0,1.1447874268951461],[1760.0,1.1447874214931106],[1810.0,1.1447874160618228],[1860.0,1.1447874105975748],[1910.0,1.1447874050965736],[1960.0,1.1447873995560445]],"slot":4,"marker":false}]},"maes_hist":{"x":{"label":"day","short":"day","min":0,"max":1000},"y":{"label":"stretch \u03bb_y","short":"\u03bb_y"},"height":280,"series":[{"name":"Abaqus 2017","pts":[[0.0,1.0001618186756969],[29.999999329447746,1.027232358455658],[70.00000029802322,1.0328561449050904],[109.99999940395355,1.037904942035675],[150.00000596046448,1.0424114274978638],[189.9999976158142,1.0464469337463378],[230.00000417232513,1.0500340604782104],[270.00001072883606,1.0532405376434326],[310.0000023841858,1.0560906171798705],[349.9999940395355,1.0586091423034667],[389.99998569488525,1.0608551692962647],[430.0000071525574,1.0628447675704955],[469.9999988079071,1.064608130455017],[509.99999046325684,1.066167163848877],[550.000011920929,1.0675526475906372],[589.9999737739563,1.0687768173217773],[629.9999952316284,1.0698548984527587],[670.0000166893005,1.0708091259002686],[709.9999785423279,1.07165367603302],[750.0,1.0724024057388306],[790.0000214576721,1.0730600881576537],[829.9999833106995,1.073641424179077],[870.0000047683716,1.0741542530059816],[910.0000262260437,1.0746076393127442],[949.999988079071,1.0750074911117553],[990.0000095367432,1.0753608989715575]],"slot":1,"marker":false},{"name":"same UMAT in fem.System","pts":[[8.881784197001252e-13,1.000154617050015],[40.000000000000036,1.0286851241385373],[79.99999999999918,1.0341650388141717],[119.99999999999832,1.0390732400112603],[159.99999999999747,1.0434614103540536],[199.99999999999662,1.047378276189688],[239.99999999999577,1.0508693776793399],[279.99999999999494,1.0539769594288875],[319.9999999999941,1.0567399563364406],[359.99999999999324,1.0591940523316283],[399.9999999999924,1.06137179287954],[439.99999999999153,1.0633027352761864],[479.9999999999907,1.065013623709453],[519.9999999999898,1.066528578705561],[559.999999999989,1.0678692928833216],[599.9999999999881,1.0690552268904763],[639.9999999999873,1.0701038010149486],[679.9999999999864,1.0710305792791737],[719.9999999999856,1.0718494438745059],[759.9999999999847,1.07257275861357],[799.9999999999839,1.073211520708272],[839.999999999983,1.0737755006542191],[879.9999999999822,1.074273370348454],[919.9999999999812,1.0747128198286275],[959.9999999999804,1.0751006630769393],[999.9999999999795,1.075442933769809]],"slot":2,"dash":true,"marker":false},{"name":"our Python HCMM (end value)","pts":[[1000.0,1.0765629847585416]],"slot":3,"line":false,"shape":"diamond"}]},"maes_dots":{"type":"dots","rows":["UMAT in fem","our Python model"],"rowH":70,"left":120,"x":{"label":"|\u0394 to Abaqus| [% of the change]","log":true,"min":5e-05,"max":30,"unit":" %","ticks":[0.0001,0.001,0.01,0.1,1,10]},"series":[{"name":"UMAT in fem vs Abaqus","slot":1},{"name":"Python vs Abaqus","slot":2}],"points":[{"row":0,"series":0,"x":3.848370372010914e-06,"name":"A U HCM","jitter":-1.0},{"row":1,"series":1,"x":3.8483703518504965e-06,"name":"A U HCM","jitter":-1.0},{"row":0,"series":0,"x":3.2508505065407567e-06,"name":"A U CM","jitter":0.3999999999999999},{"row":1,"series":1,"x":0.10499030560024583,"name":"A U CM","jitter":0.3999999999999999},{"row":0,"series":0,"x":0.00046957286371108846,"name":"B U HCM","jitter":-0.4},{"row":1,"series":1,"x":0.041340716608124904,"name":"B U HCM","jitter":-0.4},{"row":0,"series":0,"x":0.0003114998836281496,"name":"B U CM","jitter":1.0},{"row":1,"series":1,"x":0.10494601025766638,"name":"B U CM","jitter":1.0},{"row":0,"series":0,"x":0.05556941190874424,"name":"C U HCM","jitter":0.19999999999999996},{"row":1,"series":1,"x":0.1325913779286433,"name":"C U HCM","jitter":0.19999999999999996},{"row":0,"series":0,"x":0.05621870213944064,"name":"C U CM","jitter":-0.6},{"row":1,"series":1,"x":1.1457303986559628,"name":"C U CM","jitter":-0.6},{"row":0,"series":0,"x":2.3899717197758093e-06,"name":"D U HCM","jitter":0.8},{"row":1,"series":1,"x":2.3899693383188668e-06,"name":"D U HCM","jitter":0.8},{"row":0,"series":0,"x":2.6460546778201826e-06,"name":"D U CM","jitter":0.0},{"row":1,"series":1,"x":0.09942698333649772,"name":"D U CM","jitter":0.0},{"row":0,"series":0,"x":0.00013975432978420314,"name":"E U HCM","jitter":-0.8},{"row":1,"series":1,"x":0.00013975432964250458,"name":"E U HCM","jitter":-0.8},{"row":0,"series":0,"x":0.007012653105518697,"name":"E U CM","jitter":0.6000000000000001},{"row":1,"series":1,"x":1.7690672121649746,"name":"E U CM","jitter":0.6000000000000001},{"row":0,"series":0,"x":0.010852419849016203,"name":"A S HCM","jitter":-0.19999999999999996},{"row":1,"series":1,"x":0.01085242107457221,"name":"A S HCM","jitter":-0.19999999999999996},{"row":0,"series":0,"x":0.008236965596666654,"name":"A S CM","jitter":-1.0},{"row":1,"series":1,"x":1.979468958320952,"name":"A S CM","jitter":-1.0},{"row":0,"series":0,"x":0.09208923053468285,"name":"B S HCM","jitter":0.3999999999999999},{"row":1,"series":1,"x":3.738904742316069,"name":"B S HCM","jitter":0.3999999999999999},{"row":0,"series":0,"x":0.0008865593655035226,"name":"B S CM","jitter":-0.4},{"row":1,"series":1,"x":0.17993628549985802,"name":"B S CM","jitter":-0.4},{"row":0,"series":0,"x":0.10248332824745034,"name":"C S HCM","jitter":1.0},{"row":1,"series":1,"x":3.2802034351778606,"name":"C S HCM","jitter":1.0},{"row":0,"series":0,"x":0.005126750509012359,"name":"C S CM","jitter":0.19999999999999996},{"row":1,"series":1,"x":0.11747985724149734,"name":"C S CM","jitter":0.19999999999999996},{"row":0,"series":0,"x":0.009582207333090745,"name":"D S HCM","jitter":-0.6},{"row":1,"series":1,"x":0.6210976296137403,"name":"D S HCM","jitter":-0.6},{"row":0,"series":0,"x":0.004853937034271424,"name":"D S CM","jitter":0.8},{"row":1,"series":1,"x":1.3437810526022338,"name":"D S CM","jitter":0.8},{"row":0,"series":0,"x":0.0007770745191411062,"name":"E S HCM","jitter":0.0},{"row":1,"series":1,"x":1.4854220059854621,"name":"E S HCM","jitter":0.0},{"row":0,"series":0,"x":0.003243930465237251,"name":"E S CM","jitter":-0.8},{"row":1,"series":1,"x":0.11244741393748693,"name":"E S CM","jitter":-0.8},{"row":0,"series":0,"x":1.7338109683934274e-05,"name":"A F HCM","jitter":0.6000000000000001},{"row":1,"series":1,"x":1.6910792673054523e-05,"name":"A F HCM","jitter":0.6000000000000001},{"row":0,"series":0,"x":0.010172440759198001,"name":"A F CM","jitter":-0.19999999999999996},{"row":1,"series":1,"x":2.2095679013070213,"name":"A F CM","jitter":-0.19999999999999996},{"row":0,"series":0,"x":2.950808423316476e-05,"name":"B F HCM","jitter":-1.0},{"row":1,"series":1,"x":4.722488711277229,"name":"B F HCM","jitter":-1.0},{"row":0,"series":0,"x":0.012480976603784508,"name":"B F CM","jitter":0.3999999999999999},{"row":1,"series":1,"x":1.3373527060219048,"name":"B F CM","jitter":0.3999999999999999},{"row":0,"series":0,"x":1.5287079867818174e-05,"name":"C F HCM","jitter":-0.4},{"row":1,"series":1,"x":17.56565419038019,"name":"C F HCM","jitter":-0.4},{"row":0,"series":0,"x":0.041829819731266885,"name":"C F CM","jitter":1.0},{"row":1,"series":1,"x":8.86072571114341,"name":"C F CM","jitter":1.0},{"row":0,"series":0,"x":0.00035125626523114254,"name":"D F HCM","jitter":0.19999999999999996},{"row":1,"series":1,"x":0.3625684535135394,"name":"D F HCM","jitter":0.19999999999999996},{"row":0,"series":0,"x":0.0012455705338443618,"name":"D F CM","jitter":-0.6},{"row":1,"series":1,"x":1.158780415405903,"name":"D F CM","jitter":-0.6},{"row":0,"series":0,"x":0.000883729215006073,"name":"E F HCM","jitter":0.8},{"row":1,"series":1,"x":3.581122881037657,"name":"E F HCM","jitter":0.8},{"row":0,"series":0,"x":0.00024211162844387212,"name":"E F CM","jitter":0.0},{"row":1,"series":1,"x":3.6686126108190664,"name":"E F CM","jitter":0.0}]},"boxes":{"type":"dots","rows":["C3D10, default tol.","C3D10, tight tol.","C3D8H \u2192 fbar, 30\u00b3","C3D8H \u2192 fbar, 34\u00b3","shear, C3D8H \u2192 fbar"],"rowH":34,"left":170,"x":{"label":"relative max difference to Abaqus","log":true,"min":1e-08,"max":1},"series":[{"name":"displacement U","slot":1},{"name":"stress S (element means)","slot":2,"shape":"square"}],"points":[{"row":0,"series":0,"x":1.91e-06,"name":"tension17_C3D10"},{"row":0,"series":1,"x":7.72e-05,"name":"tension17_C3D10"},{"row":1,"series":0,"x":2.81e-08,"name":"tension17_C3D10_tight"},{"row":1,"series":1,"x":2.88e-08,"name":"tension17_C3D10_tight"},{"row":2,"series":0,"x":6.32e-07,"name":"tension30"},{"row":2,"series":1,"x":2.51e-06,"name":"tension30"},{"row":3,"series":0,"x":6.32e-07,"name":"tension34"},{"row":3,"series":1,"x":2.51e-06,"name":"tension34"},{"row":4,"series":0,"x":0.00866,"name":"box20"},{"row":4,"series":1,"x":0.115,"name":"box20"}]}}</script>
+<script>
+(function () {
+  const DATA = JSON.parse(document.getElementById("viz-data").textContent);
+  const NS = "http://www.w3.org/2000/svg";
+  const SHAPES = ["circle", "square", "triangle", "diamond", "circle", "square"];
+  const SUP = { "-": "⁻", 0: "⁰", 1: "¹", 2: "²", 3: "³", 4: "⁴", 5: "⁵", 6: "⁶", 7: "⁷", 8: "⁸", 9: "⁹" };
+
+  function el(tag, attrs, parent) {
+    const e = document.createElementNS(NS, tag);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(e);
+    return e;
+  }
+  const num = v => {
+    const a = Math.abs(v);
+    if (a !== 0 && (a < 1e-3 || a >= 1e5)) return v.toExponential(2).replace("e-", "e−").replace("e+", "e");
+    return String(+v.toPrecision(6));
+  };
+  const pow10 = e => "10" + String(e).split("").map(c => SUP[c]).join("");
+  function logLabeler(ticks) {
+    const powers = ticks.some(v => v < 0.01 || v >= 1e4);
+    return v => {
+      const e = Math.round(Math.log10(v));
+      if (powers && Math.abs(v - Math.pow(10, e)) < 1e-9 * v) return pow10(e);
+      if (powers) return String(+(v / Math.pow(10, Math.floor(Math.log10(v)))).toPrecision(2)) + "·" + pow10(Math.floor(Math.log10(v)));
+      return String(+v.toPrecision(3));
+    };
+  }
+  function niceTicks(lo, hi, n) {
+    const raw = (hi - lo) / n, p = Math.pow(10, Math.floor(Math.log10(raw))), r = raw / p;
+    const step = p * (r >= 7.5 ? 10 : r >= 3.5 ? 5 : r >= 1.5 ? 2 : 1);
+    const t = [];
+    for (let k = Math.ceil(lo / step - 1e-9); k * step <= hi + 1e-9 * step; k++) t.push(+(k * step).toPrecision(12));
+    return t;
+  }
+  function logTicks(lo, hi) {
+    const d0 = Math.floor(Math.log10(lo)), d1 = Math.ceil(Math.log10(hi)), span = Math.log10(hi / lo);
+    const mult = span <= 1.2 ? [1, 2, 5] : span <= 3 ? [1, 3] : [1];
+    const step = span > 8 ? 2 : 1, t = [];
+    for (let d = d0; d <= d1; d += 1)
+      for (const m of mult) {
+        const v = m * Math.pow(10, d);
+        if (v >= lo * 0.999 && v <= hi * 1.001 && (m !== 1 || (d - d0) % step === 0)) t.push(v);
+      }
+    return t;
+  }
+  function axis(spec, vals, a, b) {
+    let lo = spec.min ?? Math.min(...vals), hi = spec.max ?? Math.max(...vals);
+    if (spec.log) {
+      if (spec.min === undefined) lo /= Math.pow(hi / lo, 0.06) || 2;
+      if (spec.max === undefined) hi *= Math.pow(hi / lo, 0.06) || 2;
+      const l0 = Math.log10(lo), l1 = Math.log10(hi), ticks = spec.ticks || logTicks(lo, hi);
+      return { lo, hi, f: v => a + (Math.log10(v) - l0) / (l1 - l0) * (b - a), ticks,
+               label: spec.tickLabel === "plain" ? v => String(+v.toPrecision(3)) : logLabeler(ticks) };
+    }
+    const pad = (hi - lo) * 0.05 || 1;
+    if (spec.min === undefined) lo -= pad;
+    if (spec.max === undefined) hi += pad;
+    return { lo, hi, f: v => a + (v - lo) / (hi - lo) * (b - a), ticks: spec.ticks || niceTicks(lo, hi, 5), label: num };
+  }
+  function marker(g, shape, x, y, slot, r) {
+    const cls = "mk s" + slot;
+    r = r || 4;
+    if (shape === "square") return el("rect", { x: x - r, y: y - r, width: 2 * r, height: 2 * r, rx: 1, class: cls }, g);
+    if (shape === "triangle")
+      return el("polygon", { points: `${x},${y - r - 1} ${x + r + 1},${y + r} ${x - r - 1},${y + r}`, class: cls }, g);
+    if (shape === "diamond")
+      return el("polygon", { points: `${x},${y - r - 1} ${x + r + 1},${y} ${x},${y + r + 1} ${x - r - 1},${y}`, class: cls }, g);
+    return el("circle", { cx: x, cy: y, r: r, class: cls }, g);
+  }
+  const lineClass = s => (s.exact ? "ln exact" : "ln s" + s.slot) + (s.dash ? " dash" : "") + (s.thin ? " thin" : "");
+  function legend(fig, series) {
+    const box = fig.querySelector(".legend");
+    box.innerHTML = "";
+    if (series.length < 2) return;
+    series.forEach((s, i) => {
+      const item = document.createElement("span");
+      item.className = "key";
+      const svg = el("svg", { width: 26, height: 12, viewBox: "0 0 26 12", "aria-hidden": "true" });
+      if (s.line !== false) el("line", { x1: 1, y1: 6, x2: 25, y2: 6, class: lineClass(s) }, svg);
+      if (s.marker !== false && !s.exact) marker(svg, s.shape || SHAPES[i], 13, 6, s.slot, 3.5);
+      item.appendChild(svg);
+      item.appendChild(document.createTextNode(s.name));
+      box.appendChild(item);
+    });
+  }
+  function tooltip(fig, svg, pts, fmtTip) {
+    const tip = fig.querySelector(".tip");
+    let hot = null;
+    svg.addEventListener("pointermove", ev => {
+      const r = svg.getBoundingClientRect(), vb = svg.viewBox.baseVal;
+      const mx = (ev.clientX - r.left) * vb.width / r.width, my = (ev.clientY - r.top) * vb.height / r.height;
+      let best = null, bd = 30 * 30;
+      for (const p of pts) {
+        const d = (p.px - mx) ** 2 + (p.py - my) ** 2;
+        if (d < bd) { bd = d; best = p; }
+      }
+      if (hot) hot.classList.remove("hot");
+      if (!best) { tip.hidden = true; hot = null; return; }
+      hot = best.node;
+      if (hot) hot.classList.add("hot");
+      tip.innerHTML = fmtTip(best);
+      tip.hidden = false;
+      const fr = fig.getBoundingClientRect();
+      const x = best.px * r.width / vb.width + r.left - fr.left, y = best.py * r.height / vb.height + r.top - fr.top;
+      tip.style.left = Math.min(Math.max(x + 12, 4), fr.width - tip.offsetWidth - 4) + "px";
+      tip.style.top = Math.max(y - tip.offsetHeight - 10, 0) + "px";
+    });
+    svg.addEventListener("pointerleave", () => { tip.hidden = true; if (hot) hot.classList.remove("hot"); hot = null; });
+  }
+  function frame(fig, H) {
+    const plot = fig.querySelector(".plot");
+    plot.innerHTML = "";
+    const W = Math.max(plot.clientWidth, 280);
+    const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, width: "100%", role: "img", "aria-label": fig.dataset.label || "" }, plot);
+    return { svg, W };
+  }
+  function grid(svg, X, Y, m, W, H, spec) {
+    const g = el("g", {}, svg);
+    for (const t of Y.ticks) {
+      const y = Y.f(t);
+      el("line", { x1: m.l, x2: W - m.r, y1: y, y2: y, class: "grid" }, g);
+      el("text", { x: m.l - 6, y: y + 4, class: "tick", "text-anchor": "end" }, g).textContent = Y.label(t);
+    }
+    for (const t of X.ticks) {
+      const x = X.f(t);
+      el("line", { x1: x, x2: x, y1: m.t, y2: H - m.b, class: "grid" }, g);
+      el("text", { x: x, y: H - m.b + 16, class: "tick", "text-anchor": "middle" }, g).textContent = X.label(t);
+    }
+    el("line", { x1: m.l, x2: W - m.r, y1: H - m.b, y2: H - m.b, class: "base" }, g);
+    el("line", { x1: m.l, x2: m.l, y1: m.t, y2: H - m.b, class: "base" }, g);
+    el("text", { x: (m.l + W - m.r) / 2, y: H - 6, class: "axlabel", "text-anchor": "middle" }, g).textContent = spec.x.label;
+    el("text", { x: 12, y: (m.t + H - m.b) / 2, class: "axlabel", "text-anchor": "middle",
+                 transform: `rotate(-90 12 ${(m.t + H - m.b) / 2})` }, g).textContent = spec.y.label;
+  }
+
+  function lines(fig, spec) {
+    const H = spec.height || 280, m = { l: 62, r: 18, t: 14, b: 46 };
+    const { svg, W } = frame(fig, H);
+    const xs = [], ys = [];
+    spec.series.forEach(s => s.pts.forEach(p => { xs.push(p[0]); ys.push(p[1]); }));
+    (spec.hlines || []).forEach(h => ys.push(h.y));
+    (spec.vlines || []).forEach(v => xs.push(v.x));
+    (spec.slopes || []).forEach(r => { xs.push(...r.x); ys.push(r.y, r.y * Math.pow(r.x[1] / r.x[0], r.p)); });
+    const X = axis(spec.x, xs, m.l, W - m.r), Y = axis(spec.y, ys, H - m.b, m.t);
+    grid(svg, X, Y, m, W, H, spec);
+    for (const h of spec.hlines || []) {
+      const y = Y.f(h.y);
+      el("line", { x1: m.l, x2: W - m.r, y1: y, y2: y, class: h.exact ? "ref exactref" : "ref" }, svg);
+      el("text", { x: h.left ? m.l + 6 : W - m.r - 4, y: y + (h.below ? 14 : -5), class: "reflabel",
+                   "text-anchor": h.left ? "start" : "end" }, svg).textContent = h.label;
+    }
+    for (const v of spec.vlines || []) {
+      const x = X.f(v.x);
+      el("line", { x1: x, x2: x, y1: m.t, y2: H - m.b, class: v.exact ? "ref exactref" : "ref" }, svg);
+      el("text", { x: x + 5, y: m.t + 12, class: "reflabel" }, svg).textContent = v.label;
+    }
+    for (const r of spec.slopes || []) {
+      const [x0, x1] = r.x, y0 = r.y, y1 = y0 * Math.pow(x1 / x0, r.p);
+      const p = [[X.f(x0), Y.f(y0)], [X.f(x1), Y.f(y1)], [X.f(x1), Y.f(y0)]];
+      el("polygon", { points: p.map(q => q.join(",")).join(" "), class: "slope" }, svg);
+      el("text", { x: p[2][0] + 5, y: (p[1][1] + p[2][1]) / 2 + 4, class: "reflabel" }, svg).textContent = r.label || String(r.p);
+    }
+    const pts = [];
+    spec.series.forEach((s, i) => {
+      const g = el("g", {}, svg), P = s.pts.map(p => [X.f(p[0]), Y.f(p[1])]);
+      if (s.line !== false) el("polyline", { points: P.map(q => q.join(",")).join(" "), class: lineClass(s) }, g);
+      P.forEach((q, k) => {
+        const node = s.marker === false || s.exact ? null : marker(g, s.shape || SHAPES[i], q[0], q[1], s.slot);
+        pts.push({ px: q[0], py: q[1], node, s, x: s.pts[k][0], y: s.pts[k][1], note: s.notes ? s.notes[k] : "" });
+      });
+    });
+    legend(fig, spec.series);
+    tooltip(fig, svg, pts, p => `<b>${p.s.name}</b><br>${spec.x.short || spec.x.label} = ${num(p.x)}<br>` +
+      `${spec.y.short || spec.y.label} = ${num(p.y)}${p.note ? "<br>" + p.note : ""}`);
+  }
+
+  function dots(fig, spec) {
+    const rowH = spec.rowH || 30, m = { l: spec.left || 170, r: 18, t: 10, b: 46 };
+    const H = m.t + m.b + rowH * spec.rows.length;
+    const { svg, W } = frame(fig, H);
+    const X = axis(spec.x, spec.points.map(p => Math.max(p.x, spec.x.min || 0)), m.l, W - m.r);
+    const Y = { f: i => m.t + rowH * (i + 0.5), ticks: [], label: () => "" };
+    grid(svg, X, { ...Y, ticks: [] }, m, W, H, { x: spec.x, y: { label: "" } });
+    spec.rows.forEach((r, i) => {
+      el("line", { x1: m.l, x2: W - m.r, y1: Y.f(i), y2: Y.f(i), class: "grid" }, svg);
+      el("text", { x: m.l - 8, y: Y.f(i) + 4, class: "rowlabel", "text-anchor": "end" }, svg).textContent = r;
+    });
+    const pts = [];
+    spec.points.forEach(p => {
+      const s = spec.series[p.series], x = X.f(Math.max(p.x, X.lo)), y = Y.f(p.row) + (p.jitter || 0) * rowH * 0.32;
+      const node = marker(svg, s.shape || SHAPES[p.series], x, y, s.slot);
+      pts.push({ px: x, py: y, node, s, p });
+    });
+    legend(fig, spec.series.map(s => ({ ...s, line: false })));
+    tooltip(fig, svg, pts, q => `<b>${q.p.name || spec.rows[q.p.row]}</b><br>${q.s.name}: ` +
+      (q.p.x < X.lo ? "&lt; " + num(X.lo) : num(q.p.x)) + (spec.x.unit || ""));
+  }
+
+  function render() {
+    document.querySelectorAll("figure.chart").forEach(fig => {
+      const spec = DATA[fig.dataset.chart];
+      (spec.type === "dots" ? dots : lines)(fig, spec);
+    });
+  }
+  render();
+  let t;
+  window.addEventListener("resize", () => { clearTimeout(t); t = setTimeout(render, 150); });
+})();
+</script><!--/VIZ-->
+</body>
+</html>

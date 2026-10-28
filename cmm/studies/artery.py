@@ -125,7 +125,7 @@ def pressure_step(days=2000.0, n_steps=200, n=(4, 30, 1), name="pressure_step", 
     radii = lambda u: (5.0 + float(radial_u(m, u, -1)), 6.3 + float(radial_u(m, u, 1)))
     w = np.asarray(sysm.wdet)
     hist, rho0, elastic = [], [], {}
-    series = meshlib.VTKSeries(pvd)
+    series = meshlib.VTKSeries(pvd, m)
 
     def record(k, u, states):
         """after the commit of step k; k = 0 also: elastic response at p_gr with the prestressed state"""
@@ -267,7 +267,7 @@ def pressure_buckling(p_max=0.08, eps=0.05, L=60.0, n=(2, 16, 40), n_gr=5, g_ax=
 
     m, sysm, bc, u, states = setup(mode)
     mid = np.flatnonzero(np.abs(m.X[:, 2] - L / 2) < 1e-6)
-    series = meshlib.VTKSeries(pvd)
+    series = meshlib.VTKSeries(pvd, m)
     rows = []
 
     def write(lam, v):
