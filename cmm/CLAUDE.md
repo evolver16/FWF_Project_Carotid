@@ -6,6 +6,7 @@ Constrained mixture G&R models and studies; run from `cmm/`: `python -m studies 
 | `fcmm/` | full CMM with cohort histories (reference, not in the FE code) |
 | `setups.py` | Maes & Famaey models A–E, cases U/S/F, builders (`build_hcmm`, `VARIANTS`) |
 | `wall.py` | generic wall composition (constituent recipes → HCMM states per Gauss point) |
+| `rod.py` | reduced model: 3D rod network (Hermite centerline, rigid junctions), thin rings of material points per section |
 | `studies/` | one file per group; list in `studies/__init__.py`; shared: `common.py`, `model_e.py`; Weiss in `studies/weiss/` |
 | `analysis/` | tortuosity index, videos of .pvd series |
 | `results/` | outputs per group/study; `result.md` (what each folder is), `modeling_history.md` (findings) |

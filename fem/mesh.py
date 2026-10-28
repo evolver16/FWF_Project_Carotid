@@ -718,6 +718,10 @@ class VTKSeries:
             write_inp(self.pvd.with_suffix(".inp"), mesh)
 
     def write(self, t, X, conn, point_data=None, cell_data=None):
+        """point_data with "u": points at the deformed X + u, the reference X as point data X_ref"""
+        if point_data and "u" in point_data:
+            point_data = {"X_ref": np.asarray(X, dtype=float)} | dict(point_data)
+            X = point_data["X_ref"] + np.asarray(point_data["u"]).reshape(point_data["X_ref"].shape)
         name = f"{self.dir.name}/{len(self.entries):04d}.vtu"
         write_vtu(self.pvd.parent / name, X, conn, point_data, cell_data)
         self.entries.append((t, name))

@@ -5,17 +5,19 @@ import pathlib
 import time
 from dataclasses import replace
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 from scipy.ndimage import map_coordinates
 
+import fcmm
 import fem
 import hcmm
 import materials
 import plotting
 from analysis import centerline, tortuosity
 from fem import mesh as meshlib
-from fem.tensor3 import det3, inv3
+from fem.tensor3 import inv3
 from studies.common import Log, hariton_angle, outputs, wall_stress, write_csv
 from studies.model_e import artery_simulate
 from studies.weiss.model import KO, WALL_WEISS, weiss_par
@@ -24,7 +26,8 @@ from studies.weiss.model import KO, WALL_WEISS, weiss_par
 def weiss_tortuosity(ends="isometric", insult="both", local=True, tether=0.0, tether_z=(0.25, 0.75), tether_day=0.0,
                      tether_days=np.inf,
                      insult_day=0.0, orient="prescribed", gamma=1.0, angle_iter=40, angle_tol=1e-3, noise=0.01, full=False, anderson=2, pre_iter=200, tol=1e-10, n=None, L=14.0, n_ramp=200,
-                     n_hold=0, ds=1.0, growth="fixed", stimulus="trace", length=None, record_every=10, name=None, **kw):
+                     n_hold=0, ds=1.0, growth="fixed", stimulus="trace", length=None, record_every=10, model="hcmm",
+                     name=None, **kw):
     """Straight half tube with symmetry plane y = 0 (full=True: full tube, buckling in any direction, end nodes held
     circumferentially, u . e_theta = 0, against twist; default n (2, 16, 120) / (2, 33, 120), odd around: an even
     count on the closed tube admits a Q1/P0 checkerboard pressure mode) (in vivo a, h, length L = 2 l_o ~ 12
@@ -57,6 +60,9 @@ def weiss_tortuosity(ends="isometric", insult="both", local=True, tether=0.0, te
     growth: "fixed" (no part follows F_g, classical CMM: volume from mass, shape from equilibrium and turnover; equal to
     "radial" for this wall, all fibers in the theta-z plane), "isotropic" (fibers lengthen stress-free by J_g^(1/3))
     or "axial" (prescribed lengthening);
+    model "fcmm": full constrained mixture (cohorts over the window of T, each diagonal cohort along its deposition
+    angle, alpha: mass-weighted mean direction) from the HCMM prestress, one FCMM equilibrium (the cohort quadrature
+    leaves a small u; the G&R starts there; not with orient "hariton");
     kw: weiss_par values. Output per step: TI = (L1 - L2) / L2 of the centerline; ParaView: biaxial wall stress
     (Fig. 6), volume change J_g, c_e, diagonal fiber angle."""
     log = Log()
@@ -132,6 +138,33 @@ def weiss_tortuosity(ends="isometric", insult="both", local=True, tether=0.0, te
         if d < angle_tol:
             break
     log(f"  prestress done in {time.time() - t0:.0f}s")
+    fc = model == "fcmm"
+    if fc:
+        T = max(float(v) for k, v in par.items() if k.endswith(".T"))
+        n_max = fcmm.window_for(T, ds) + 2
+        sysm = fem.System(m, fcmm, pressure_faces=m.faces["inner"], element="hybrid")
+        t0 = time.time()
+        _, u, states = artery_simulate(m, sysm, Q, par, n_steps=0, bc=bc_iso, final=True, ds=ds, wall=WALL_WEISS,
+                                       laws="wall", incompressible=True, growth=growth,
+                                       G_e=inv3(states.constituents[0].F_r), fields=fields, anderson=anderson,
+                                       pre_iter=pre_iter, log=log, n_max=n_max)
+        u = jnp.asarray(sysm.last_u)
+        log(f"  FCMM ({n_max} cohorts, T {T:g} d) from the HCMM elastin state: max|u| {float(jnp.abs(u).max()):.2e} mm"
+            f"  ({time.time() - t0:.0f}s)")
+    part = lambda c: c.params if fc else c
+    set_part = lambda c, **f: c.replace(params=c.params.replace(**f)) if fc else c.replace(**f)
+    J_g = lambda st: np.asarray(jax.vmap(jax.vmap(sysm.J_target))(st))
+
+    def fiber(c):
+        """fiber direction; FCMM: mass-weighted mean over the cohorts"""
+        if not fc:
+            return c.material.M
+        h = c.history
+        w = (h.m * jnp.exp(h.K_cumu - jnp.take_along_axis(h.K_cumu, h.n[..., None], -1))
+             * (jnp.arange(h.m.shape[-1]) <= h.n[..., None]))
+        M = jnp.einsum("...k,...ki->...i", w, h.material.M)
+        return M / jnp.linalg.norm(M, axis=-1, keepdims=True)
+
     r_gp = np.linalg.norm(xg[..., :2], axis=-1)
     layers, layer = np.unique(np.round((r_gp - a) / h, 6), return_inverse=True)
     layer = layer.reshape(r_gp.shape)
@@ -153,7 +186,7 @@ def weiss_tortuosity(ends="isometric", insult="both", local=True, tether=0.0, te
     states = states.replace(sigma_w=sw, sigma_w_h=sw)
 
     names = [q.name for q in WALL_WEISS]
-    C10 = states.constituents[0].material.C10
+    C10 = part(states.constituents[0]).material.C10
     alpha = par["diag+.alpha"]
     e_t, e_z = Q[..., :, 1], Q[..., :, 2]
     series = meshlib.VTKSeries(pvd, m)
@@ -172,25 +205,25 @@ def weiss_tortuosity(ends="isometric", insult="both", local=True, tether=0.0, te
         ratio_h = s_tt / s_zz
 
     def record(k, u, states):
-        M = states.constituents[names.index("diag+")].material.M
-        M_dep = getattr(states.constituents[names.index("diag+")].production, "M_dep", M)
+        M = fiber(states.constituents[names.index("diag+")])
+        M_dep = getattr(part(states.constituents[names.index("diag+")]).production, "M_dep", M)
         e = np.asarray(sysm.gauss_F(u) @ Q)
         e = e / np.linalg.norm(e, axis=-2, keepdims=True)
         biaxial = np.einsum("egia,egij,egja->ega", e, sysm.total_stress(u, states), e)
         series.write(ds * k, m.X, m.conn, *sysm.fields(u, states, dict(
             sigma_tt_kPa=1e3 * biaxial[..., 1], sigma_zz_kPa=1e3 * biaxial[..., 2],
-            c_e_rel=states.constituents[0].material.C10 / par["elastin.C10"], insult=jnp.asarray(ramp(k) * shape),
+            c_e_rel=part(states.constituents[0]).material.C10 / par["elastin.C10"], insult=jnp.asarray(ramp(k) * shape),
             alpha_diag_deg=angle(M), alpha_dep_deg=angle(M_dep),
-            wall_stress_rel=states.sigma_w / states.sigma_w_h, J_g=det3(states.F_g))))
+            wall_stress_rel=states.sigma_w / states.sigma_w_h, J_g=J_g(states))))
 
     record(0, u, states)
-    al_0 = np.asarray(angle(states.constituents[names.index("diag+")].material.M))
+    al_0 = np.asarray(angle(fiber(states.constituents[names.index("diag+")])))
     t0 = time.time()
     n_steps = round(insult_day / ds) + n_ramp + n_hold
     for k in range(1, n_steps + 1):
         w = jnp.asarray(ramp(k) * shape)
         cs = list(states.constituents)
-        cs[0] = cs[0].replace(material=materials.NeoHookeanInc(C10 + w * (KO["C10"] * scale - C10)))
+        cs[0] = set_part(cs[0], material=materials.NeoHookeanInc(C10 + w * (KO["C10"] * scale - C10)))
         if orient == "stress":
             s_tt, s_zz = in_plane(u, states)
             al = np.arctan(np.tan(alpha) * (np.maximum(s_tt, 0.0) / np.maximum(s_zz, 1e-12) / ratio_h) ** gamma)
@@ -202,21 +235,21 @@ def weiss_tortuosity(ends="isometric", insult="both", local=True, tether=0.0, te
             al = jnp.asarray(al)[..., None]
             for d, sign in (("diag+", 1.0), ("diag-", -1.0)):
                 c = cs[names.index(d)]
-                cs[names.index(d)] = c.replace(production=c.production.replace(
+                cs[names.index(d)] = set_part(c, production=part(c).production.replace(
                     M_dep=jnp.sin(al) * e_t + sign * jnp.cos(al) * e_z))
         states = states.replace(constituents=cs)
         bc = replace(bc, p=p0 + ramp(k) * (p - p0), f_dead=f_base + (f_t if tether_day < ds * k <= tether_day + tether_days else 0.0))
         u, states, _ = sysm.run(states.replace(sigma_w=wall_stress(sysm, u, states, length, e_r, stimulus == "trace")), [bc],
                                 u0=u, tol=tol)
         c = centerline(m, u)
-        J_g = np.asarray(det3(states.F_g))
+        jg = J_g(states)
         diag = states.constituents[names.index("diag+")]
-        al_fib = np.asarray(angle(diag.material.M))
-        al_dep = np.asarray(angle(getattr(diag.production, "M_dep", diag.material.M)))
+        al_fib = np.asarray(angle(fiber(diag)))
+        al_dep = np.asarray(angle(getattr(part(diag).production, "M_dep", fiber(diag))))
         lam_t = np.linalg.norm(np.einsum("egij,egj->egi", np.asarray(sysm.gauss_F(u)), np.asarray(e_t)), axis=-1)
         rows.append(dict(day=ds * k, ramp=ramp(k), TI=tortuosity(c),
                          L1=np.linalg.norm(np.diff(c, axis=0), axis=1).sum() / L, L2=np.linalg.norm(c[-1] - c[0]) / L,
-                         deflection=np.linalg.norm(c[:, :2], axis=1).max() / a, J_g_mean=J_g.mean(), J_g_max=J_g.max(),
+                         deflection=np.linalg.norm(c[:, :2], axis=1).max() / a, J_g_mean=jg.mean(), J_g_max=jg.max(),
                          circ_mean=lam_t.mean(), circ_max=lam_t.max(), alpha_mean=al_fib.mean(),
                          alpha_min=al_fib.min(), alpha_max=al_fib.max(), alpha_dep_mean=al_dep.mean(),
                          axial_force_mN=1e3 / share * float((sysm.reaction(u, states, bc)
@@ -230,7 +263,7 @@ def weiss_tortuosity(ends="isometric", insult="both", local=True, tether=0.0, te
                 f"  circ. stretch mean {r['circ_mean']:.3f} max {r['circ_max']:.3f}  axial force {r['axial_force_mN']:.2f} mN"
                 f"  alpha mean {r['alpha_mean']:.2f} ({r['alpha_min']:.2f}-{r['alpha_max']:.2f}) dep {r['alpha_dep_mean']:.2f} deg"
                 f"  ({time.time() - t0:.0f}s)")
-    al_end = np.asarray(angle(states.constituents[names.index("diag+")].material.M))
+    al_end = np.asarray(angle(fiber(states.constituents[names.index("diag+")])))
     log(f"  diagonal collagen angle through the wall, (r - a) / h: day 0 mean, day {ds * n_steps:g} mean (min-max over "
         f"the layer) deg")
     for i, x in enumerate(layers):

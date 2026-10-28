@@ -2,7 +2,7 @@
     FEM Model   reader for .inp / .msh: mesh, 0/1 arrays nset_* / elset_* per named set, one block per face set;
                 .inp over the increments of its steps: bc_fixed, bc_u (prescribed u), f_dead (*Cload), p (*Dsload)
     FEM Sets    filter on a result (.pvd / .vtu): the named sets of an .inp / .msh (default: <stem>.inp of the .pvd,
-                written by VTKSeries(pvd, mesh)), face blocks share the result's points and point data (Warp By Vector)
+                written by VTKSeries(pvd, mesh)), face blocks share the result's points and point data (deformed)
 """
 
 import copy

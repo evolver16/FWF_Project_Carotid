@@ -30,7 +30,9 @@ def artery_video(pvd, out=None, field="J_g", angle="alpha_diag_deg", alpha_h=38.
         f.unlink()
     series = read_pvd(pvd)
     frames = [read_vtu(f) for _, f in series]
-    X, conn = frames[0][0], frames[0][1]
+    conn = frames[0][1]
+    X = frames[0][2].get("X_ref", frames[0][0])
+    shape = lambda fr: fr[0] if "X_ref" in fr[2] else X + fr[2]["u"]
 
     faces = np.concatenate([conn[:, f] for f in HEX_FACES.values()])
     _, idx, cnt = np.unique(np.sort(faces, axis=1), axis=0, return_index=True, return_counts=True)
@@ -38,7 +40,7 @@ def artery_video(pvd, out=None, field="J_g", angle="alpha_diag_deg", alpha_h=38.
     faces = faces[np.hypot(*X[faces][..., :2].mean(1).T) > np.median(np.hypot(*X[faces][..., :2].mean(1).T))]
 
     half = X[:, 1].min() > -1e-9 * np.abs(X).max()
-    x_end = X + frames[-1][2]["u"]
+    x_end = shape(frames[-1])
     _, ring = np.unique(np.round(X[:, 2], 9), return_inverse=True)
     c = np.stack([np.bincount(ring, x_end[:, i]) / np.bincount(ring) for i in (0, 1)], -1)
     if half:
@@ -54,7 +56,7 @@ def artery_video(pvd, out=None, field="J_g", angle="alpha_diag_deg", alpha_h=38.
 
     mirror = np.array([1.0, -1.0, 1.0])
     polys = [(np.concatenate([x[faces], x[faces] * mirror]) if half else x[faces])[..., [2, 1, 0]]
-             for x in (X + fr[2]["u"] for fr in frames)]
+             for x in map(shape, frames)]
     vals = [np.tile(fr[2][field][faces].mean(1), 2 if half else 1) for fr in frames]
     lo = np.min([p.reshape(-1, 3).min(0) for p in polys], axis=0)
     hi = np.max([p.reshape(-1, 3).max(0) for p in polys], axis=0)
@@ -82,7 +84,7 @@ def artery_video(pvd, out=None, field="J_g", angle="alpha_diag_deg", alpha_h=38.
         fig = plt.figure(figsize=(12, 4.2))
         ax = fig.add_axes([-0.06, -0.05, 0.74, 1.1], projection="3d", computed_zorder=False)
         ax.add_collection3d(Poly3DCollection(poly, facecolors=cmap(norm(val)), edgecolors="none", zorder=1))
-        x = X + fr[2]["u"]
+        x = shape(fr)
         ring = np.concatenate([x[ring_nodes], (x[ring_nodes] * mirror)[::-1] if half else x[ring_nodes[:1]]])[:, [2, 1, 0]]
         ax.plot(*ring.T, color="k", lw=1.5, zorder=2)
         ax.set_xlim(lo[0], hi[0]); ax.set_ylim(lo[1], hi[1]); ax.set_zlim(lo[2], hi[2])

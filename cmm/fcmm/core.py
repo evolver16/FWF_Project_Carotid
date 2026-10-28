@@ -153,12 +153,12 @@ class mixture_history:
     def n_max(self):
         return self.F.shape[0]
 
-    def advance(self, F_s, Fg_s):
+    def advance(self, F_s, Fg_s, R_s):
         shift = (self.n + 1) >= self.n_max
         k = jnp.minimum(self.n + 1, self.n_max - 1)
         return mixture_history(F=_advance(self.F, F_s, k, shift),
                                Fg=_advance(self.Fg, Fg_s, k, shift),
-                               R=_advance(self.R, polar_rotation(F_s), k, shift), n=k)
+                               R=_advance(self.R, R_s, k, shift), n=k)
 
 
 @pytree(("constituents", "ds", "history", "rho_tot_0", "growth", "sigma_w", "sigma_w_h"))
@@ -315,10 +315,11 @@ def solve_sigma_f_newton(par, hist, mix_hist, J_g, ds, rho_tot, rho_tot_0, dsig,
 def sigma_solver(mix, F):
     """sigma_tot = sum_j phi^j sigma^j at trial F, state untouched   (Eq. 27);
     dsig = sigma_w / sigma_w_h - 1 (0 while sigma_w_h is unset); a reorienting production deposits this step's cohort
-    along M_dep: G^j, material^j turned by material.reorient (deposition stretch kept)"""
+    along M_dep: G^j, material^j turned by material.reorient (deposition stretch kept); the new cohort is deposited
+    with R of the last settled step (R(s) at trial F gives it a spin-only tangent that destabilizes the FE)"""
     J_g = J_g_calc(mix)
     Fg_s = mix.F_g_calc()
-    mix_hist_trial = mix.history.advance(F, Fg_s)
+    mix_hist_trial = mix.history.advance(F, Fg_s, mix.history.R[mix.history.n])
     k = mix_hist_trial.n
     unset = jnp.abs(mix.sigma_w_h) < 1e-12
     dsig = jnp.where(unset, 0.0, mix.sigma_w / jnp.where(unset, 1.0, mix.sigma_w_h) - 1.0)
@@ -359,4 +360,5 @@ def commit(mix, F, aux):
         for c, h, (sf_s, _, rho_s, m_s, K_cumu_s)
         in zip(mix.constituents, rolled, results)
     ]
-    return mix.replace(constituents=constituents, history=mix_hist_trial)
+    return mix.replace(constituents=constituents,
+                       history=mix_hist_trial.replace(R=mix_hist_trial.R.at[k].set(polar_rotation(F))))

@@ -22,15 +22,17 @@ vessel    stenotic_vessel     bent stenotic vessel from an .inp mesh, Laplace wa
           setpoint_patch      lowered collagen set point in a patch: growth-only displacement
 weiss     weiss_tortuosity    Weiss et al. 2020: tortuosity from an Eq. 8 insult (c_e, alpha_0), isometric vs isotonic ends
           free_angle          Hariton 2007 collagen angle from the stresses on the straight tube: homeostasis, elastin loss
+          weiss_rod           weiss_tortuosity as a 3D rod with HCMM ring sections (reduced model)
 carotid   bifurcation         idealized carotid bifurcation: mesh, Laplace wall basis, homeostatic prestress
           bifurcation_tortuosity  Weiss wall on the bifurcation: elastin loss, emergent collagen angle, ICA tortuosity
+          bifurcation_rod     bifurcation_tortuosity as CCA / ICA / ECA rods with HCMM ring sections (reduced model)
 
 Shared by several studies: common (logging, outputs), model_e (model E artery: artery_par, WALL_E, artery_simulate).
 Study-specific walls and parameters live in the study; a study with several files gets its own subfolder.
 """
 
 from studies import artery, carotid, fe_gr, material, vessel
-from studies.weiss import free_angle
+from studies.weiss import free_angle, rod
 from studies.weiss import tortuosity as weiss
 
 STUDIES = {f.__name__: f for f in (
@@ -39,6 +41,6 @@ STUDIES = {f.__name__: f for f in (
     fe_gr.fe_vs_material_point, fe_gr.element_formulations, fe_gr.solution_verification,
     artery.artery_gr, artery.artery_gradients, artery.pressure_step, artery.flow_step, artery.pressure_buckling,
     vessel.stenotic_vessel, vessel.stenosis_wss, vessel.bending_redistribution, vessel.setpoint_patch,
-    weiss.weiss_tortuosity, free_angle.free_angle,
-    carotid.bifurcation, carotid.bifurcation_tortuosity,
+    weiss.weiss_tortuosity, free_angle.free_angle, rod.weiss_rod,
+    carotid.bifurcation, carotid.bifurcation_tortuosity, carotid.bifurcation_rod,
 )}

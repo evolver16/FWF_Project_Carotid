@@ -239,8 +239,9 @@ Adding them to <code>f_dead</code> and releasing the support holds the same stat
 on_step = lambda u, st: series.write(len(series.entries), m.X, m.conn, *sysm.fields(u, st))
 u, states, _ = sysm.run(states, bcs, on_step=on_step)</code></pre>
 <p><code>sysm.fields(u, states, gauss=None)</code> returns <code>(point_data, cell_data)</code> with u, J, σ, von Mises (and \(\rho/\rho_0\), \(J_g\) for mixtures);
-extra Gauss-point fields go in <code>gauss={"name": array (n_el, n_gp, ...)}</code>. In ParaView open the <code>.pvd</code> and use
-<em>Warp By Vector</em> on <code>u</code> (<code>docs/paraview/warp_u.py</code>).</p>
+extra Gauss-point fields go in <code>gauss={"name": array (n_el, n_gp, ...)}</code>. <code>VTKSeries.write</code> puts the points at the
+deformed \(X+u\) when the point data has <code>u</code> and keeps the reference as <code>X_ref</code>: open the <code>.pvd</code> in ParaView,
+no <em>Warp By Vector</em> needed (older series: warp on <code>u</code>, <code>docs/paraview/warp_u.py</code> does it only for those).</p>
 
 <!-- ============================================================ -->
 <h2 id="grad">9. Gradients</h2>
