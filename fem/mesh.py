@@ -437,7 +437,8 @@ def bent_tube(r_i=5.0, t=1.3, R_c=20.0, L_in=10.0, L_out=10.0, stenosis=0.25, wi
 
 def carotid_bifurcation(D=6.3, angles=(25.0, 25.0), sinus=1.11, ica=0.71, eca=0.57, s_sinus=(0.3, 0.8, 1.8),
                         s_cca=0.5, lengths=(3.0, 5.0, 3.0), cuffs=(0.6, 1.5, 1.4), blend=(0.25, 0.08), kappa=0.26,
-                        kappa_junction=None, n_q=6, n_seam=8, n_r=2, n_smooth=20, thickness="curvature", half=False):
+                        kappa_junction=None, n_q=6, n_seam=8, n_r=2, n_smooth=20, thickness="curvature", half=False,
+                        fillet=None):
     """Idealized planar carotid bifurcation, hex8 wall; bifurcation plane y = 0, centerlines meet at the origin,
     CCA along z (z < 0), ICA / ECA at angles (deg) from z towards +x / -x.
 
@@ -448,6 +449,10 @@ def carotid_bifurcation(D=6.3, angles=(25.0, 25.0), sinus=1.11, ica=0.71, eca=0.
     Lumen F = smin(d_cca, smin(d_ica, d_eca; k_0); k_1) < 0, d_j = |x - s_j e_j| - r_j(s_j) (s_j clipped to the
     branch, spherical caps), smin quadratic with (k_0, k_1) = blend D: flow divider radius from k_0, small k_1 since
     the CCA and ICA are nearly tangent at the origin (smin bulges by k / 4 where surfaces coincide).
+    fillet (f_0, f_1): CAD junction instead (no bulge): CCA ending in a half-ball of radius R at the origin, ICA (sinus
+    R, -> ica R on [s2, s3]) and ECA axes from the points that put their outer wall lines on the CCA rim, lumen
+    tube_field with rounds rho = f_0 (R + r_b) / 2 on CCA / half-ball - branch, f_1 (r_i + r_e) / 2 on the flow
+    divider (s from those points; the taper added where the ICA is the nearest tube).
     Wall thickness kappa r_local along the lumen normal (averaged n_smooth times over the surface neighbours, so the
     offset does not fold at the flow divider), n_r layers; thickness "radius": r_local = radius of the nearest tube,
     "curvature": Laplace radius r_local = 1 / div n (mean curvature; = r in a tube), in [0.75, 3] x the tube radius,
@@ -462,26 +467,44 @@ def carotid_bifurcation(D=6.3, angles=(25.0, 25.0), sinus=1.11, ica=0.71, eca=0.
     a, b = np.radians(angles)
     sm = lambda s, lo, hi: (lambda t: t * t * (3 - 2 * t))(np.clip((s - lo) / (hi - lo), 0.0, 1.0))
     s1, s2, s3 = (v * D for v in s_sinus)
-    branches = [  # axis, frame e1 (phi = 0), clip of s, radius
-        (np.array([0.0, 0, 1]), np.array([1.0, 0, 0]), (-np.inf, s_cca * D), lambda s: R + 0 * s),
-        (np.array([np.sin(a), 0, np.cos(a)]), np.array([np.cos(a), 0, -np.sin(a)]), (0.0, np.inf),
-         lambda s: 0.9 * R + (sinus - 0.9) * R * sm(s, 0, s1) + (ica - sinus) * R * sm(s, s2, s3)),
-        (np.array([-np.sin(b), 0, np.cos(b)]), np.array([np.cos(b), 0, np.sin(b)]), (0.0, np.inf),
-         lambda s: eca * R + 0 * s)]
+    cad = fillet is not None
+    e_c, e_i, e_e = np.array([0.0, 0, 1]), np.array([np.sin(a), 0, np.cos(a)]), np.array([-np.sin(b), 0, np.cos(b)])
+    r_ica = (lambda s: sinus * R + (ica - sinus) * R * sm(s, s2, s3)) if cad else \
+        (lambda s: 0.9 * R + (sinus - 0.9) * R * sm(s, 0, s1) + (ica - sinus) * R * sm(s, s2, s3))
+    r_j = np.array([R, sinus * R, eca * R])
+    origin = np.zeros((3, 3))
+    if cad:
+        for j, e, rim in ((1, e_i, np.array([R, 0, 0])), (2, e_e, np.array([-R, 0, 0]))):
+            v = rim - (rim @ e) * e
+            origin[j] = rim - r_j[j] * v / np.linalg.norm(v)
+    branches = [  # axis origin, axis, frame e1 (phi = 0), clip of s, radius
+        (origin[0], e_c, np.array([1.0, 0, 0]), (-np.inf, 0.0 if cad else s_cca * D), lambda s: R + 0 * s),
+        (origin[1], e_i, np.array([np.cos(a), 0, -np.sin(a)]), (0.0, np.inf), r_ica),
+        (origin[2], e_e, np.array([np.cos(b), 0, np.sin(b)]), (0.0, np.inf), lambda s: eca * R + 0 * s)]
     ey = np.array([0.0, 1, 0])
 
     def dist(x):
         out = []
-        for e, _, clip, r in branches:
-            s = np.clip(x @ e, *clip)
-            out.append(np.linalg.norm(x - s[:, None] * e, axis=1) - r(s))
+        for o, e, _, clip, r in branches:
+            s = np.clip((x - o) @ e, *clip)
+            out.append(np.linalg.norm(x - o - s[:, None] * e, axis=1) - r(s))
         return out
 
     def smin(p, q, k):
         h = np.maximum(k - np.abs(p - q), 0.0) / k
         return np.minimum(p, q) - 0.25 * k * h * h
 
-    F = lambda x: (lambda d: smin(d[0], smin(d[1], d[2], k0), k1))(dist(x))
+    if cad:
+        rho = np.zeros((3, 3))
+        rho[0, 1:] = rho[1:, 0] = fillet[0] * (R + r_j[1:]) / 2
+        rho[1, 2] = rho[2, 1] = fillet[1] * r_j[1:].mean()
+        dirs = np.array([-e_c, e_i, e_e])
+        F_cad = tube_field(origin, origin + (np.array(lengths) * D + R + 2 * rho.max())[:, None] * dirs, r_j, rho,
+                           1e-6 * R)[0]
+        F = lambda x: (lambda d: F_cad(x) + np.where(np.argmin(d, 0) == 1, sinus * R - r_ica(
+            np.maximum((x - origin[1]) @ e_i, 0.0)), 0.0))(np.stack(dist(x)))
+    else:
+        F = lambda x: (lambda d: smin(d[0], smin(d[1], d[2], k0), k1))(dist(x))
 
     def grad(x, eps=1e-6 * D):
         return np.stack([(F(x + eps * e) - F(x - eps * e)) / (2 * eps) for e in np.eye(3)], -1)
@@ -494,9 +517,9 @@ def carotid_bifurcation(D=6.3, angles=(25.0, 25.0), sinus=1.11, ica=0.71, eca=0.
         return x
 
     def ring(j, s, n):
-        e, e1, _, r = branches[j]
+        o, e, e1, _, r = branches[j]
         ph = np.linspace(0.0, np.pi, n + 1)
-        return project(s * e + r(np.asarray(s)) * (np.cos(ph)[:, None] * e1 + np.sin(ph)[:, None] * ey))
+        return project(o + s * e + r(np.asarray(s)) * (np.cos(ph)[:, None] * e1 + np.sin(ph)[:, None] * ey))
 
     s_cuff = (-cuffs[0] * D, cuffs[1] * D, cuffs[2] * D)
     s_end = (-lengths[0] * D, lengths[1] * D, lengths[2] * D)
@@ -518,8 +541,7 @@ def carotid_bifurcation(D=6.3, angles=(25.0, 25.0), sinus=1.11, ica=0.71, eca=0.
         out[0], out[-1] = p, q
         return out
 
-    e_c, e_i, e_e = (br[0] for br in branches)
-    seams = [seam(cuff[0][0], cuff[1][0], e_i, e_c),
+    seams =[seam(cuff[0][0], cuff[1][0], e_i, e_c),
              seam(cuff[1][-1], cuff[2][0], e_e, -e_i),
              seam(cuff[2][-1], cuff[0][-1], -e_c, -e_e)]
     mid = [c[n_q] for c in cuff]
@@ -613,7 +635,8 @@ def carotid_bifurcation(D=6.3, angles=(25.0, 25.0), sinus=1.11, ica=0.71, eca=0.
         n[plane, 1] = 0.0
     d = np.stack(dist(X), -1)
     w = np.exp(-(d - d.min(1, keepdims=True)) / (0.1 * D))
-    r_loc = np.sum(w * np.stack([np.abs(br[3](np.clip(X @ br[0], *br[2]))) for br in branches], -1), 1) / w.sum(1)
+    r_loc = np.sum(w * np.stack([np.abs(r(np.clip((X - o) @ e, *clip))) for o, e, _, clip, r in branches], -1),
+                   1) / w.sum(1)
     if thickness == "curvature":
         e_h = 1e-3 * D
         div = sum((unit(grad(X + e_h * e))[:, i] - unit(grad(X - e_h * e))[:, i]) / (2 * e_h)
@@ -648,6 +671,137 @@ def carotid_bifurcation(D=6.3, angles=(25.0, 25.0), sinus=1.11, ica=0.71, eca=0.
     return m
 
 
+def tube_field(A, B, r, rho, tol):
+    """Signed distance-like field of straight tubes (axis A_i -> B_i, radii r_i; rounded at A_i by a half-ball, flat
+    at B_i) with a round of constant radius rho_ij (0: none) on the intersection line of tubes i and j only, as a CAD
+    round on an edge: a ball rolls along tubes i and j, what it cannot reach is filled:
+        d_i: exact distance to tube i
+        H_ij(x) = max_y (rho_ij - |x - y|)   over the ball centres y with min(d_i(y), d_j(y)) >= rho_ij
+        F = min(min_k d_k, min_ij H_ij)
+    The maximum over y is taken over its candidates: x itself, the projections along the gradient onto the offset
+    tubes d_i = rho_ij, d_j = rho_ij and the nearest point on the ball-centre line d_i = d_j = rho_ij (Newton,
+    accepted within tol); only where both tubes are within rho_ij (the round lies there). F = d_i away from the
+    intersection lines, tangent rounds on them, no material anywhere else.
+    Returns F(x), tubes(x) -> (d (n, m), unit gradients (n, m, 3))"""
+    A, B, r = (np.asarray(v, dtype=float) for v in (A, B, r))
+    m = len(r)
+    pairs = np.array(list(itertools.combinations(range(m), 2)))
+    rho_pair = np.broadcast_to(np.asarray(rho, dtype=float), (m, m))[pairs[:, 0], pairs[:, 1]]
+    L = np.linalg.norm(B - A, axis=1)
+    axis_dir = (B - A) / L[:, None]
+    tiny = 1e-9 * r.min()
+
+    def tubes(x):
+        q = x[:, None] - A
+        t = np.einsum("nij,ij->ni", q, axis_dir)
+        v = q - t[..., None] * axis_dir
+        rad = np.maximum(np.linalg.norm(v, axis=2), tiny)
+        u, a, b = v / rad[..., None], rad - r, t - L
+        hyp = np.maximum(np.hypot(np.maximum(a, 0.0), b), tiny)
+        d = np.where(b > 0, hyp, np.maximum(a, b))
+        n = np.where((b > 0)[..., None], (np.maximum(a, 0.0)[..., None] * u + b[..., None] * axis_dir) / hyp[..., None],
+                     np.where((a >= b)[..., None], u, axis_dir))
+        qn = np.maximum(np.linalg.norm(q, axis=2), tiny)
+        cap = t < 0
+        return np.where(cap, qn - r, d), np.where(cap[..., None], q / qn[..., None], n)
+
+    def F(x_all):
+        d_all, n_all = tubes(x_all)
+        out = d_all.min(1)
+        for (i, j), rp in zip(pairs, rho_pair):
+            near = (rp > 0) & (np.maximum(d_all[:, i], d_all[:, j]) < rp)
+            x, d, n = x_all[near], d_all[near], n_all[near]
+            G = np.minimum(d[:, i], d[:, j])
+            best = np.where(G >= rp, rp, -np.inf)
+            for a, b in ((i, j), (j, i)):
+                y = x + (rp - d[:, a])[:, None] * n[:, a]
+                ok = tubes(y)[0][:, b] >= rp - tol
+                best = np.where(ok, np.maximum(best, rp - np.linalg.norm(x - y, axis=1)), best)
+            y = x + (rp - d[:, i])[:, None] * n[:, i] + (rp - d[:, j])[:, None] * n[:, j]
+            for _ in range(12):
+                dy, ny = tubes(y)
+                J = ny[:, [i, j]]
+                Jt = np.swapaxes(J, 1, 2)
+                y = y - (Jt @ np.linalg.solve(J @ Jt + 1e-12 * np.eye(2), (dy[:, [i, j]] - rp)[..., None]))[..., 0]
+                tau = np.cross(J[:, 0], J[:, 1])
+                tau /= np.maximum(np.linalg.norm(tau, axis=1, keepdims=True), 1e-12)
+                y = y + np.sum((x - y) * tau, 1)[:, None] * tau
+            ok = np.abs(tubes(y)[0][:, [i, j]] - rp).max(1) < tol
+            best = np.where(ok, np.maximum(best, rp - np.linalg.norm(x - y, axis=1)), best)
+            out[near] = np.minimum(out[near], np.where(np.isfinite(best), best, G))
+        return out
+
+    return F, tubes
+
+
+def tube_junction(A, B, r, rho, voxel=None, smooth=5):
+    """Watertight triangle surface F = 0 of tube_field (tubes A_i -> B_i, radii r_i, rounds rho_ij).
+    Zero set by marching tetrahedra on the voxel grid over the bounding box (each cell split into 6
+    tetrahedra along its main diagonal, consistent across cells: watertight and manifold), vertices shared per grid
+    edge; smooth relaxation passes (vertex -> mean of its neighbours) against slivers, each followed by a projection
+    onto F = 0 (Newton), so the surface does not shrink.
+    Returns vertices, triangles (outward normals), F"""
+    A, B, r = (np.asarray(v, dtype=float) for v in (A, B, r))
+    voxel = voxel or r.min() / 8
+    rho_max = np.asarray(rho, dtype=float).max()
+    F, tubes = tube_field(A, B, r, rho, 1e-3 * voxel)
+    lo = np.minimum(A, B).min(0) - r.max() - 2 * voxel
+    hi = np.maximum(A, B).max(0) + r.max() + 2 * voxel
+    axes = [np.arange(l, h + voxel, voxel) for l, h in zip(lo, hi)]
+    shape = tuple(len(v) for v in axes)
+    Xg = np.stack(np.meshgrid(*axes, indexing="ij"), -1).reshape(-1, 3)
+    g = tubes(Xg)[0].min(1)
+    near = (g > -2 * voxel) & (g < max(rho_max, 2 * voxel))
+    g[near] = F(Xg[near])
+    g[g == 0] = 1e-12 * voxel
+    idx = np.arange(g.size).reshape(shape)
+    corner = {v: idx[v[0]:shape[0] - 1 + v[0], v[1]:shape[1] - 1 + v[1], v[2]:shape[2] - 1 + v[2]].ravel()
+              for v in itertools.product((0, 1), repeat=3)}
+    vals = np.stack([g[c8] for c8 in corner.values()], 1)
+    cut = (vals.min(1) < 0) & (vals.max(1) > 0)
+    tets = []
+    for perm in itertools.permutations(range(3)):
+        path = [(0, 0, 0)]
+        for ax in perm:
+            path.append(tuple(int(path[-1][i] or i == ax) for i in range(3)))
+        tets.append(np.stack([corner[v][cut] for v in path], 1))
+    tets = np.concatenate(tets)
+    code = (g[tets] < 0) @ np.array([1, 2, 4, 8])
+    P, Q = [], []
+    for mask in range(1, 15):
+        ins = [i for i in range(4) if mask >> i & 1]
+        out = [i for i in range(4) if not mask >> i & 1]
+        if len(ins) == 2:
+            tris = [[(ins[0], out[0]), (ins[0], out[1]), (ins[1], out[1])],
+                    [(ins[0], out[0]), (ins[1], out[1]), (ins[1], out[0])]]
+        else:
+            tris = [[(ins[0], o) for o in out]] if len(ins) == 1 else [[(i, out[0]) for i in ins]]
+        sel = tets[code == mask]
+        for tri in tris:
+            P.append(sel[:, [p for p, _ in tri]])
+            Q.append(sel[:, [q for _, q in tri]])
+    P, Q = np.concatenate(P), np.concatenate(Q)
+    _, first, T = np.unique(P.ravel() * g.size + Q.ravel(), return_index=True, return_inverse=True)
+    p, q = P.ravel()[first], Q.ravel()[first]
+    V = Xg[p] + (g[p] / (g[p] - g[q]))[:, None] * (Xg[q] - Xg[p])
+    T = T.reshape(-1, 3)
+    flip = np.einsum("ij,ij->i", np.cross(V[T[:, 1]] - V[T[:, 0]], V[T[:, 2]] - V[T[:, 0]]),
+                     Xg[Q[:, 0]] - Xg[P[:, 0]]) < 0
+    T[flip] = T[flip][:, ::-1]
+    e = np.concatenate([T[:, [0, 1]], T[:, [1, 2]], T[:, [2, 0]]])
+    Adj = sp.coo_matrix((np.ones(2 * len(e)), (np.r_[e[:, 0], e[:, 1]], np.r_[e[:, 1], e[:, 0]])), (len(V), len(V)))
+    Adj = Adj.tocsr()
+    Adj.data[:] = 1.0
+    Adj = sp.diags(1.0 / np.asarray(Adj.sum(1)).ravel()) @ Adj
+    eps = 1e-4 * voxel
+    for it in range(smooth + 1):
+        V = Adj @ V if it else V
+        for _ in range(3):
+            n = np.stack([(F(V + eps * e) - F(V - eps * e)) / (2 * eps) for e in np.eye(3)], -1)
+            V = V - (F(V) / np.sum(n * n, 1))[:, None] * n
+    return V, T, F
+
+
 def _data_array(name, v, vtk_type="Float64"):
     """Base64 binary DataArray; (n, 3, 3) is written as a 9-component tensor"""
     dtype = {"Float64": np.float64, "Int64": np.int64, "UInt8": np.uint8}[vtk_type]
@@ -660,16 +814,17 @@ def _data_array(name, v, vtk_type="Float64"):
 
 
 def write_vtu(path, X, conn, point_data=None, cell_data=None):
-    """VTK XML unstructured grid (hex8: VTK_HEXAHEDRON, tet10: VTK_QUADRATIC_TETRA, tet4: VTK_TETRA, same node order)"""
-    el = element_for(conn.shape[1])
+    """VTK XML unstructured grid (hex8: VTK_HEXAHEDRON, tet10: VTK_QUADRATIC_TETRA, tet4: VTK_TETRA, same node order;
+    3 nodes: VTK_TRIANGLE surface)"""
+    vtk_type, n_nodes = (5, 3) if conn.shape[1] == 3 else (element_for(conn.shape[1]).vtk, conn.shape[1])
     n, e = len(X), len(conn)
     out = ['<?xml version="1.0"?>',
            '<VTKFile type="UnstructuredGrid" version="1.0" byte_order="LittleEndian" header_type="UInt32">',
            "<UnstructuredGrid>", f'<Piece NumberOfPoints="{n}" NumberOfCells="{e}">',
            "<Points>", _data_array("Points", X), "</Points>",
            "<Cells>", _data_array("connectivity", np.ravel(conn), "Int64"),
-           _data_array("offsets", el.n_nodes * np.arange(1, e + 1), "Int64"),
-           _data_array("types", np.full(e, el.vtk), "UInt8"), "</Cells>"]
+           _data_array("offsets", n_nodes * np.arange(1, e + 1), "Int64"),
+           _data_array("types", np.full(e, vtk_type), "UInt8"), "</Cells>"]
     for tag, data in (("PointData", point_data), ("CellData", cell_data)):
         out += [f"<{tag}>"] + [_data_array(k, v) for k, v in (data or {}).items()] + [f"</{tag}>"]
     out += ["</Piece>", "</UnstructuredGrid>", "</VTKFile>"]

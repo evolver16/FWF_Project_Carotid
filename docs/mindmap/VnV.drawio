@@ -1,0 +1,37 @@
+<mxfile host="65bd71144e">
+    <diagram id="carotid" name="Carotid notes">
+        <mxGraphModel dx="749" dy="635" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1240" pageHeight="980" math="1" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="title" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fontSize=13;arcSize=20;fillColor=#e1d5e7;strokeColor=#9673a6;" value="&lt;b&gt;Verification&lt;/b&gt;" vertex="1">
+                    <mxGeometry height="60" width="730" x="10" y="10" as="geometry"/>
+                </mxCell>
+                <mxCell id="qN5qIUqMAEDkbKxqB1I8-1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fontSize=13;arcSize=20;fillColor=#e1d5e7;strokeColor=#9673a6;" value="&lt;b&gt;Validation&lt;/b&gt;" vertex="1">
+                    <mxGeometry height="60" width="360" x="10" y="360" as="geometry"/>
+                </mxCell>
+                <mxCell id="qN5qIUqMAEDkbKxqB1I8-6" edge="1" parent="1" source="qN5qIUqMAEDkbKxqB1I8-3" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="qN5qIUqMAEDkbKxqB1I8-5">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="qN5qIUqMAEDkbKxqB1I8-3" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;arcSize=20;" value="Code Verification&lt;div&gt;Does the code represented the discretized mathematical model&lt;/div&gt;" vertex="1">
+                    <mxGeometry height="70" width="360" x="10" y="90" as="geometry"/>
+                </mxCell>
+                <mxCell id="qN5qIUqMAEDkbKxqB1I8-8" edge="1" parent="1" source="qN5qIUqMAEDkbKxqB1I8-4" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;" target="qN5qIUqMAEDkbKxqB1I8-7">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="qN5qIUqMAEDkbKxqB1I8-4" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;arcSize=20;" value="Calculation Verification&lt;div&gt;Does the discretized model represent the mathematical model&lt;/div&gt;" vertex="1">
+                    <mxGeometry height="70" width="360" x="380" y="90" as="geometry"/>
+                </mxCell>
+                <mxCell id="qN5qIUqMAEDkbKxqB1I8-5" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f2f8f0;strokeColor=#82b366;fontSize=12;arcSize=20;" value="can be skipped by using commercial software&lt;div&gt;software development activity&lt;/div&gt;&lt;div&gt;no coding errors&lt;/div&gt;&lt;div&gt;code can reproduce known numerical solutions&lt;/div&gt;" vertex="1">
+                    <mxGeometry height="70" width="360" x="10" y="180" as="geometry"/>
+                </mxCell>
+                <mxCell id="qN5qIUqMAEDkbKxqB1I8-7" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f2f8f0;strokeColor=#82b366;fontSize=12;arcSize=20;" value="spatial, temporal, iterative, round-off, coordinate transformation, symmetry error and boundary conditions" vertex="1">
+                    <mxGeometry height="70" width="360" x="380" y="180" as="geometry"/>
+                </mxCell>
+                <mxCell id="qN5qIUqMAEDkbKxqB1I8-12" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;arcSize=20;" value="Method of manufactored Solutions&lt;div&gt;compare against known solution preferably analytical&lt;/div&gt;" vertex="1">
+                    <mxGeometry height="70" width="730" x="10" y="270" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>

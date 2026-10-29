@@ -36,7 +36,7 @@ def weiss_rod(insult_day=10.0, n_ramp=1, n_hold=100, ds=2.0, L=14.0, n_el=60, n_
     conn = np.stack([np.arange(n_el), np.arange(1, n_el + 1)], -1)
     rod = Rod(X, conn, np.zeros(n_el, int), np.full((n_el, 2), a0), np.full((n_el, 3), H), hcmm, clamped=(0, n_el),
               n_ring=n_ring)
-    shp = (3 * n_el, n_ring)
+    shp = (3 * n_el * n_ring, 1)
     zz = rod.X_points[:, 2].reshape(shp)
     tt = np.mod(np.arctan2(rod.X_points[:, 1], rod.X_points[:, 0]), 2 * np.pi).reshape(shp)
     grid = np.load(pathlib.Path(__file__).with_name("elastin_field.npz"))

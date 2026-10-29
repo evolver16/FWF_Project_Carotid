@@ -24,6 +24,7 @@ weiss     weiss_tortuosity    Weiss et al. 2020: tortuosity from an Eq. 8 insult
           free_angle          Hariton 2007 collagen angle from the stresses on the straight tube: homeostasis, elastin loss
           weiss_rod           weiss_tortuosity as a 3D rod with HCMM ring sections (reduced model)
 carotid   bifurcation         idealized carotid bifurcation: mesh, Laplace wall basis, homeostatic prestress
+          junction_surface    bifurcation as in CAD: CCA + half-ball, ICA / ECA from the rim, rolling-ball rounds
           bifurcation_tortuosity  Weiss wall on the bifurcation: elastin loss, emergent collagen angle, ICA tortuosity
           bifurcation_rod     bifurcation_tortuosity as CCA / ICA / ECA rods with HCMM ring sections (reduced model)
 
@@ -42,5 +43,5 @@ STUDIES = {f.__name__: f for f in (
     artery.artery_gr, artery.artery_gradients, artery.pressure_step, artery.flow_step, artery.pressure_buckling,
     vessel.stenotic_vessel, vessel.stenosis_wss, vessel.bending_redistribution, vessel.setpoint_patch,
     weiss.weiss_tortuosity, free_angle.free_angle, rod.weiss_rod,
-    carotid.bifurcation, carotid.bifurcation_tortuosity, carotid.bifurcation_rod,
+    carotid.bifurcation, carotid.junction_surface, carotid.bifurcation_tortuosity, carotid.bifurcation_rod,
 )}
