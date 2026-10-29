@@ -1,6 +1,8 @@
 """Model E (Maes & Famaey 2023) on an artery, shared by the artery, fe_gr and vessel studies: parameters, wall,
 quarter-cylinder mesh, prestress + G&R run."""
 
+from pathlib import Path
+
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -48,7 +50,7 @@ def artery_simulate(m, sysm, Qloc, par, mode="deposition", n_steps=100, bc=None,
                     pre_tol=1e-6, pre_iter=60, anderson=5, tol=1e-10, log=None, final=False,
                     checkpoint=None, record=None, bc_gr=None, insult=None, ds=10.0, wall=WALL_E, lesion=None,
                     laws="fiber", incompressible=False, growth="radial", G_e=None, fields=None, n_max=0, adapt=False, deposit="elastin", beta0=0.0,
-                    momentum=0.0, pre_record=None):
+                    momentum=0.0, pre_record=None, pre_cache=None):
     """Prestress G_elas <- F G_elas at p_hom until u = 0 (Maes UMAT_DEP; Anderson-accelerated, 0 = plain), from G_e
     (per Gauss point; default diag(g_ax^-1/2, g_ax^-1/2, g_ax) in the local basis);
     adapt (HCMM): also homeostatic fibre content in the same fixed point, the geometry stays the reference:
@@ -61,7 +63,8 @@ def artery_simulate(m, sysm, Qloc, par, mode="deposition", n_steps=100, bc=None,
         beta step x min(1, (sigma_c - sigma_a) / (0.1 (|sigma_c| + |sigma_a|)))   (no axis where in-plane isotropic);
     until u = 0 (and beta settled, 1e-3 rad);
     momentum mu: x+ = anderson(x, f) + mu (x - x_prev); pre_record(it, u, states, gauss fields mass_<part>, beta_deg):
-    prestress iterations 1, 5, 10, ... and the last;
+    prestress iterations 1, 5, 10, ... and the last; pre_cache: .npz of the converged (G_e, fibre masses, beta), loaded
+    as the start if it exists (no elastin solve), written otherwise;
     G&R at p_gr, steps of ds days -> measure(u) per step (default lambda_theta(inner), wall area),
     reverse-differentiable in par; final: also (u, states) at the end; record(k, u, states): after prestress (k = 0) and step k (forward only);
     bc_gr: G&R BCs per step instead of bc(p_gr); insult(k, states) -> states: after the prestress (k = 0) and after
@@ -91,7 +94,13 @@ def artery_simulate(m, sysm, Qloc, par, mode="deposition", n_steps=100, bc=None,
         s = lambda a, b: jnp.einsum("...i,...ij,...j->...", a, sig, b)
         return principal_frame(s(e[0], e[0]), s(e[1], e[1]), s(e[0], e[1]))
 
-    if adapt and deposit == "elastin":
+    cached = pre_cache is not None and Path(pre_cache).exists()
+    if cached:
+        z = np.load(pre_cache)
+        G_e, log_m, beta = (jnp.asarray(z[k]) for k in ("G_e", "log_m", "beta"))
+        if log:
+            log(f"  prestress from {Path(pre_cache).name}")
+    if adapt and deposit == "elastin" and not cached:
         st0 = assemble(jnp.broadcast_to(jnp.eye(3), G_e.shape), Qloc, par, wall, mode, ds=ds, lesion=lesion,
                        laws=laws, incompressible=incompressible, growth=growth, n_max=n_max, fields=dict(fields or {}) | {
                            f"{wall[j].name}.rho": 1e-3 * par[f"{wall[j].name}.rho"] for j in fib} | {
@@ -146,6 +155,9 @@ def artery_simulate(m, sysm, Qloc, par, mode="deposition", n_steps=100, bc=None,
             log_m = jnp.clip(y[n_G:n_G + log_m.size].reshape(log_m.shape), np.log(0.05), np.log(20.0))
             if deposit == "iterate":
                 beta = y[n_G + log_m.size:].reshape(shp)
+    if pre_cache is not None and not cached:
+        Path(pre_cache).parent.mkdir(parents=True, exist_ok=True)
+        np.savez(pre_cache, G_e=np.asarray(G_e), log_m=np.asarray(log_m), beta=np.asarray(beta))
 
     if insult:
         states = insult(0, states)

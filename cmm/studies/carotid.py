@@ -302,7 +302,8 @@ def bifurcation_tortuosity(geometry="goubergrits", D=None, angles=None, sinus=No
                            lengths=(3.0, 8.0, 3.0), n_q=4, n_seam=5, n_r=2, noise=0.01,
                            ell=0.88, thickness="radius", kappa_junction=None, insult_day=10.0, n_hold=400, gamma=1.0,
                            ds=1.0, record_every=10, tol=1e-10, length=None, ends="isometric", half=False, model="hcmm",
-                           fcmm_prestress=200, fillet=None, adapt=False, deposit="elastin", beta_junction=0.0, momentum=0.0, name=None,
+                           fcmm_prestress=200, fillet=None, adapt=False, deposit="elastin", beta_junction=0.0, momentum=0.0,
+                           pre_tol=1e-4, name=None,
                            folder="carotid/tortuosity", **kw):
     """Weiss 2020 wall (table S2) on the idealized bifurcation, wall thickness h / a of Weiss times the local radius
     (the mechanics are scale-free, so this is the mouse wall on a scaled carotid); thickness: carotid_bifurcation rule,
@@ -325,7 +326,9 @@ def bifurcation_tortuosity(geometry="goubergrits", D=None, angles=None, sinus=No
     diagonal pair about the in-plane principal direction), and the emergent angle about that principal frame
     (wall.principal_frame: s_tt / s_zz -> sigma_c / sigma_a, diagonals at beta +- alpha_dep); deposit: artery_simulate
     ("elastin": beta from the elastin solve, "iterate": in the fixed point); beta_junction (deg, "iterate"): initial beta
-    uniform in +-beta_junction on the junction elements (seed 1); momentum: prestress heavy-ball term.
+    uniform in +-beta_junction on the junction elements (seed 1); momentum: prestress heavy-ball term; pre_tol: prestress
+    tolerance on max|u| (mm); the converged prestress is cached under the mesh, parameter and prestress options
+    (geometry/cache/prestress_<hash>.npz, not invalidated by code changes).
     Output per step: TI, deflection and axial force of the ICA tube (cuff to the distal end)"""
     g = carotid_geometry(geometry, D=D, angles=angles, sinus=sinus, ica=ica, eca=eca)
     D, angles = g["D"], g["angles"]
@@ -352,6 +355,7 @@ def bifurcation_tortuosity(geometry="goubergrits", D=None, angles=None, sinus=No
         cache.parent.mkdir(parents=True, exist_ok=True)
         np.savez(cache, X=m.X, conn=m.conn, **{f"{s}.{k}": v for s in sets for k, v in getattr(m, s).items()})
     sysm = fem.System(m, hcmm, pressure_faces=m.faces["inner"], element="hybrid")
+    sysm.linear.reuse = False
     Q = jnp.asarray(fem.wall_basis(m.X, m.conn, m.nodes["inner"], m.nodes["outer"], [m.nodes["inlet"]],
                                    [m.nodes["ica"], m.nodes["eca"]]))
     length = length or max(np.sqrt(R * kappa * R), 1.2 * 0.5 * np.pi * R / n_q)
@@ -394,7 +398,11 @@ def bifurcation_tortuosity(geometry="goubergrits", D=None, angles=None, sinus=No
                                    wall=WALL_WEISS, laws="wall", incompressible=True, growth="fixed", G_e=G_e,
                                    measure=lambda u: (jnp.zeros(()),),
                                    fields={"elastin.C10": par["elastin.C10"] * scale} if noise else None,
-                                   anderson=2, pre_iter=200, adapt=adapt, deposit=deposit, momentum=momentum,
+                                   anderson=2, pre_iter=200, pre_tol=pre_tol, pre_cache=cache.with_name(
+                                       "prestress_" + hashlib.sha1(repr((cache.name, sorted(
+                                           (k, np.asarray(v).tolist()) for k, v in par.items()), noise, ell, adapt,
+                                           deposit, beta_junction, momentum, pre_tol)).encode()).hexdigest()[:12] + ".npz"),
+                                   adapt=adapt, deposit=deposit, momentum=momentum,
                                    beta0=np.radians(beta_junction) * np.isin(np.arange(m.n_elem), m.elsets["junction"])[
                                        :, None] * np.random.default_rng(1).uniform(-1, 1, xg.shape[:2]),
                                    pre_record=pre_record)

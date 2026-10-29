@@ -263,15 +263,16 @@ def pardiso_available():
 
 
 class LinearSolver:
-    """K x = b or K^T x = b by GMRES preconditioned with the last LU of K; refactorized when that fails.
+    """K x = b or K^T x = b by GMRES preconditioned with the last LU of K; refactorized when that fails (reuse False:
+    always, for small systems where a factorization costs a few solves).
     backend "pardiso" (MKL, multithreaded) or "superlu" (scipy, serial); default pardiso when installed
     target |Ax - b| <= 10 tol |b|; above accept |b| (e.g. pivoting failure): PARDISO without weighted matching (kept
     from then on; matching can break hybrid saddle points, e.g. 34k unknowns: residual 1e42), SuperLU, then error"""
 
     def __init__(self, tol=1e-12, max_iter=20, refactor_after=5, ordering="MMD_AT_PLUS_A", backend=None,
-                 accept=1e-6):
+                 accept=1e-6, reuse=True):
         self.tol, self.max_iter, self.refactor_after, self.ordering = tol, max_iter, refactor_after, ordering
-        self.accept = accept
+        self.accept, self.reuse = accept, reuse
         self.backend = backend or ("pardiso" if pardiso_available() else "superlu")
         self.lu = None
         self._pardiso = None
@@ -289,7 +290,7 @@ class LinearSolver:
         A = K if trans == "N" else K.T
         res = lambda x: np.inf if x is None else np.linalg.norm(A @ x - b) / max(np.linalg.norm(b), 1e-300)
         ok = lambda x: res(x) <= 10 * self.tol
-        if self.lu is not None and self.lu.shape == K.shape:
+        if self.reuse and self.lu is not None and self.lu.shape == K.shape:
             x, it = gmres(A, b, lambda v: self.lu.solve(v, trans=trans), self.tol, self.max_iter)
             self.iterations += it
             if ok(x):

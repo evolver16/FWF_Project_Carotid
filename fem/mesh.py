@@ -1,14 +1,18 @@
 """Meshes of hex8, tet10 or tet4: structured generators, boundary faces, Abaqus .inp and gmsh .msh I/O, VTK .vtu/.pvd."""
 
 import base64
+import functools
 import itertools
 import pathlib
 import re
 import zlib
 from dataclasses import dataclass, field
 
+import jax
+import jax.numpy as jnp
 import numpy as np
 import scipy.sparse as sp
+from jax.experimental import sparse as jsparse
 from scipy.sparse.csgraph import connected_components
 
 from fem.elements import HEX_CORNERS, ELEMENT_TYPES, element_for, face_for
@@ -437,6 +441,87 @@ def bent_tube(r_i=5.0, t=1.3, R_c=20.0, L_in=10.0, L_out=10.0, stenosis=0.25, wi
     return m
 
 
+def _bucketed(f):
+    """f(x) on the rows of x padded to the next power of two (one compilation per bucket), numpy out"""
+    def call(x):
+        x = np.asarray(x, float)
+        n = len(x)
+        out = f(np.pad(x, ((0, (1 << (n - 1).bit_length()) - n), (0, 0)), mode="edge"))
+        return jax.tree.map(lambda v: np.array(v[:n]), out)
+    return call
+
+
+def _fg(F, x):
+    """F and grad F of a pointwise field (forward mode)"""
+    return jax.vmap(lambda v: jax.jvp(F, (x,), (jnp.broadcast_to(v, x.shape),)), out_axes=(None, 1))(jnp.eye(3))
+
+
+def _carotid_r(p, s):
+    """branch radii (CCA, ICA, ECA) at the axial positions s (..., 3)"""
+    sm = lambda s, lo, hi: (lambda t: t * t * (3 - 2 * t))(jnp.clip((s - lo) / (hi - lo), 0.0, 1.0))
+    r_i = (p["r0"] + (p["sinus"] * p["R"] - p["r0"]) * sm(s[..., 1], 0.0, p["s1"])
+           + (p["ica"] - p["sinus"]) * p["R"] * sm(s[..., 1], p["s2"], p["s3"]))
+    return jnp.stack([jnp.full_like(r_i, p["R"]), r_i, jnp.full_like(r_i, p["eca"] * p["R"])], -1)
+
+
+def _carotid_dist(p, x):
+    s = jnp.clip(jnp.einsum("nkj,kj->nk", x[:, None] - p["o"], p["e"]), p["lo"], p["hi"])
+    return jnp.linalg.norm(x[:, None] - p["o"] - s[..., None] * p["e"], axis=2) - _carotid_r(p, s), s
+
+
+@functools.partial(jax.jit, static_argnames="cad")
+def _carotid_F(p, x, cad):
+    d, s = _carotid_dist(p, x)
+    if cad:
+        return _tube_F(p["tube"], x) + jnp.where(jnp.argmin(d, 1) == 1, p["sinus"] * p["R"] - _carotid_r(p, s)[:, 1], 0.0)
+    smin = lambda a, b, k: jnp.minimum(a, b) - 0.25 * k * (jnp.maximum(k - jnp.abs(a - b), 0.0) / k) ** 2
+    return smin(d[:, 0], smin(d[:, 1], d[:, 2], p["k0"]), p["k1"])
+
+
+@functools.partial(jax.jit, static_argnames="cad")
+def _carotid_grad(p, x, cad):
+    return _fg(lambda x: _carotid_F(p, x, cad), x)[1]
+
+
+@functools.partial(jax.jit, static_argnames=("cad", "it"))
+def _carotid_newton(p, x, cad, it):
+    def step(_, x):
+        f, g = _fg(lambda x: _carotid_F(p, x, cad), x)
+        return x - (f / jnp.sum(g * g, -1))[:, None] * g
+    return jax.lax.fori_loop(0, it, step, x)
+
+
+@functools.partial(jax.jit, static_argnames=("cad", "it"))
+def _carotid_divider(p, x, cad, it=20):
+    """Newton in the plane y = const onto the flow divider crest F = 0, d_ica = d_eca"""
+    def step(_, x):
+        f, g = _fg(lambda x: _carotid_F(p, x, cad), x)
+        b, gb = _fg(lambda x: (lambda d: d[:, 1] - d[:, 2])(_carotid_dist(p, x)[0]), x)
+        J = jnp.stack([g, gb], 1)[..., ::2]
+        return x.at[:, ::2].add(-jnp.linalg.solve(J, jnp.stack([f, b], 1)[..., None])[..., 0])
+    return jax.lax.fori_loop(0, it, step, x)
+
+
+@functools.partial(jax.jit, static_argnames=("cad", "n_max"))
+def _carotid_march(p, a, b, e_stop, t0, cad, n_max=100000):
+    """in-plane lumen outline from a in steps p["step"] until the plane through b normal to e_stop -> count, points"""
+    def body(c):
+        i, pts, t = c
+        g = _carotid_grad(p, pts[i][None], cad)[0]
+        n = jnp.array([g[2], 0.0, -g[0]])
+        t = jnp.sign(n @ t) * n / jnp.linalg.norm(n)
+        return i + 1, pts.at[i + 1].set(_carotid_newton(p, (pts[i] + p["step"] * t)[None], cad, 12)[0]), t
+
+    cond = lambda c: ((c[1][c[0]] - b) @ e_stop < 0) & (c[0] < n_max - 1)
+    return jax.lax.while_loop(cond, body, (0, jnp.zeros((n_max, 3)).at[0].set(a), jnp.asarray(t0, float)))[:2]
+
+
+@functools.partial(jax.jit, static_argnames=("cad", "n"))
+def _carotid_relax(p, X, A, idx, cad, n=300):
+    """n passes: free nodes idx -> neighbour mean (A @ X), 3 Newton steps back onto F = 0"""
+    return jax.lax.fori_loop(0, n, lambda _, X: X.at[idx].set(_carotid_newton(p, (A @ X)[idx], cad, 3)), X)
+
+
 def carotid_bifurcation(D=6.3, angles=(25.0, 25.0), sinus=1.11, ica=0.71, eca=0.57, s_sinus=(0.3, 0.8, 1.8),
                         s_cca=0.5, lengths=(3.0, 5.0, 3.0), cuffs=(0.6, 1.5, 1.4), blend=(0.25, 0.08), kappa=0.26,
                         kappa_junction=None, n_q=6, n_seam=8, n_r=2, n_smooth=20, thickness="curvature", half=False,
@@ -463,96 +548,90 @@ def carotid_bifurcation(D=6.3, angles=(25.0, 25.0), sinus=1.11, ica=0.71, eca=0.
     (smooth transition over n_smooth neighbour averages).
     Surface: three tubes (4 n_q cells around, cuffs at s = cuffs D) joined per side (y > 0, y < 0) by six patches of
     n_q x n_seam quads (corners: one centre point, the side midpoints of the hexagon of the three cuff half-rings and
-    three seams, and its corners); seams along the in-plane lumen outline (lateral walls, flow divider).
+    three seams, and its corners); seams along the in-plane lumen outline (lateral walls, flow divider). fillet: the
+    flow divider crest d_ica = d_eca is a fixed mesh line from the divider seam midpoint (the apex) to the centre, the
+    crest point where d_cca = d_ica = d_eca.
     named nodes/faces: inner, outer, inlet (CCA), ica, eca, sym (half: y >= 0 only); elsets cca, ica, eca, junction
     """
-    R, (k0, k1) = 0.5 * D, (v * D for v in blend)
+    R = 0.5 * D
     a, b = np.radians(angles)
-    sm = lambda s, lo, hi: (lambda t: t * t * (3 - 2 * t))(np.clip((s - lo) / (hi - lo), 0.0, 1.0))
     s1, s2, s3 = (v * D for v in s_sinus)
     cad = fillet is not None
     e_c, e_i, e_e = np.array([0.0, 0, 1]), np.array([np.sin(a), 0, np.cos(a)]), np.array([-np.sin(b), 0, np.cos(b)])
-    r_ica = (lambda s: sinus * R + (ica - sinus) * R * sm(s, s2, s3)) if cad else \
-        (lambda s: 0.9 * R + (sinus - 0.9) * R * sm(s, 0, s1) + (ica - sinus) * R * sm(s, s2, s3))
     r_j = np.array([R, sinus * R, eca * R])
     origin = np.zeros((3, 3))
     if cad:
         for j, e, rim in ((1, e_i, np.array([R, 0, 0])), (2, e_e, np.array([-R, 0, 0]))):
             v = rim - (rim @ e) * e
             origin[j] = rim - r_j[j] * v / np.linalg.norm(v)
-    branches = [  # axis origin, axis, frame e1 (phi = 0), clip of s, radius
-        (origin[0], e_c, np.array([1.0, 0, 0]), (-np.inf, 0.0 if cad else s_cca * D), lambda s: R + 0 * s),
-        (origin[1], e_i, np.array([np.cos(a), 0, -np.sin(a)]), (0.0, np.inf), r_ica),
-        (origin[2], e_e, np.array([np.cos(b), 0, np.sin(b)]), (0.0, np.inf), lambda s: eca * R + 0 * s)]
+    E = np.stack([e_c, e_i, e_e])
+    e1 = np.array([[1.0, 0, 0], [np.cos(a), 0, -np.sin(a)], [np.cos(b), 0, np.sin(b)]])
     ey = np.array([0.0, 1, 0])
-
-    def dist(x):
-        out = []
-        for o, e, _, clip, r in branches:
-            s = np.clip((x - o) @ e, *clip)
-            out.append(np.linalg.norm(x - o - s[:, None] * e, axis=1) - r(s))
-        return out
-
-    def smin(p, q, k):
-        h = np.maximum(k - np.abs(p - q), 0.0) / k
-        return np.minimum(p, q) - 0.25 * k * h * h
-
+    p = dict(o=origin, e=E, lo=np.array([-np.inf, 0.0, 0.0]),
+             hi=np.array([0.0 if cad else s_cca * D, np.inf, np.inf]), R=R, r0=(sinus if cad else 0.9) * R,
+             sinus=sinus, ica=ica, eca=eca, s1=s1, s2=s2, s3=s3, k0=blend[0] * D, k1=blend[1] * D, step=0.004 * D)
     if cad:
         rho = np.zeros((3, 3))
         rho[0, 1:] = rho[1:, 0] = fillet[0] * (R + r_j[1:]) / 2
         rho[1, 2] = rho[2, 1] = fillet[1] * r_j[1:].mean()
         dirs = np.array([-e_c, e_i, e_e])
-        F_cad = tube_field(origin, origin + (np.array(lengths) * D + R + 2 * rho.max())[:, None] * dirs, r_j, rho,
-                           1e-6 * R)[0]
-        F = lambda x: (lambda d: F_cad(x) + np.where(np.argmin(d, 0) == 1, sinus * R - r_ica(
-            np.maximum((x - origin[1]) @ e_i, 0.0)), 0.0))(np.stack(dist(x)))
-    else:
-        F = lambda x: (lambda d: smin(d[0], smin(d[1], d[2], k0), k1))(dist(x))
-
-    def grad(x, eps=1e-6 * D):
-        return np.stack([(F(x + eps * e) - F(x - eps * e)) / (2 * eps) for e in np.eye(3)], -1)
-
-    def project(x, it=12):
-        x = np.array(x, dtype=float).reshape(-1, 3)
-        for _ in range(it):
-            g = grad(x)
-            x = x - (F(x) / np.sum(g * g, -1))[:, None] * g
-        return x
+        p["tube"] = dict(A=origin, B=origin + (np.array(lengths) * D + R + 2 * rho.max())[:, None] * dirs, r=r_j,
+                         rho=rho, tol=1e-6 * R)
+    p = jax.tree.map(lambda v: jnp.asarray(v, float), p)
+    grad = _bucketed(functools.partial(_carotid_grad, p, cad=cad))
+    project = lambda x, it=12: _bucketed(functools.partial(_carotid_newton, p, cad=cad, it=it))(np.reshape(x, (-1, 3)))
 
     def ring(j, s, n):
-        o, e, e1, _, r = branches[j]
         ph = np.linspace(0.0, np.pi, n + 1)
-        return project(o + s * e + r(np.asarray(s)) * (np.cos(ph)[:, None] * e1 + np.sin(ph)[:, None] * ey))
+        r = np.asarray(_carotid_r(p, np.full(3, s)))[j]
+        return project(origin[j] + s * E[j] + r * (np.cos(ph)[:, None] * e1[j] + np.sin(ph)[:, None] * ey))
 
     s_cuff = (-cuffs[0] * D, cuffs[1] * D, cuffs[2] * D)
     s_end = (-lengths[0] * D, lengths[1] * D, lengths[2] * D)
     cuff = [ring(j, s_cuff[j], 2 * n_q) for j in range(3)]
     h_el = 0.5 * np.pi * R / n_q
 
-    def seam(p, q, e_stop, t0, step=0.004 * D):
-        """in-plane lumen outline from p to the plane through q normal to e_stop, 2 n_seam + 1 points"""
-        pts, t = [p], t0
-        while (pts[-1] - q) @ e_stop < 0 and len(pts) < 100000:
-            g = grad(pts[-1][None])[0]
-            n = np.array([g[2], 0.0, -g[0]])
-            t = np.sign(n @ t) * n / np.linalg.norm(n)
-            pts.append(project(pts[-1] + step * t)[0])
-        pts[-1] = q
-        pts = np.array(pts)
+    divider = _bucketed(functools.partial(_carotid_divider, p, cad=cad))
+
+    def seam(x0, x1, e_stop, t0, crest=False):
+        """in-plane lumen outline from x0 to the plane through x1 normal to e_stop, 2 n_seam + 1 points; crest: the
+        middle one on the flow divider crest d_ica = d_eca"""
+        i, pts = _carotid_march(p, x0, x1, e_stop, t0, cad)
+        pts = np.array(pts[:int(i) + 1])
+        pts[-1] = x1
         l = np.concatenate([[0], np.cumsum(np.linalg.norm(np.diff(pts, axis=0), axis=1))])
-        out = project(np.stack([np.interp(np.linspace(0, l[-1], 2 * n_seam + 1), l, pts[:, i]) for i in range(3)], -1))
-        out[0], out[-1] = p, q
+        t = np.linspace(0, l[-1], 2 * n_seam + 1)
+        if crest:
+            g = np.asarray(_carotid_dist(p, jnp.asarray(pts))[0])
+            g = g[:, 1] - g[:, 2]
+            k = np.flatnonzero(np.sign(g[1:]) != np.sign(g[:-1]))[0]
+            l_c = l[k] + g[k] / (g[k] - g[k + 1]) * (l[k + 1] - l[k])
+            t = np.r_[np.linspace(0, l_c, n_seam + 1), np.linspace(l_c, l[-1], n_seam + 1)[1:]]
+        out = project(np.stack([np.interp(t, l, pts[:, i]) for i in range(3)], -1))
+        if crest:
+            out[n_seam] = divider(out[n_seam][None])[0]
+        out[0], out[-1] = x0, x1
         return out
 
-    seams =[seam(cuff[0][0], cuff[1][0], e_i, e_c),
-             seam(cuff[1][-1], cuff[2][0], e_e, -e_i),
+    seams = [seam(cuff[0][0], cuff[1][0], e_i, e_c),
+             seam(cuff[1][-1], cuff[2][0], e_e, -e_i, crest=cad),
              seam(cuff[2][-1], cuff[0][-1], -e_c, -e_e)]
-    mid = [c[n_q] for c in cuff]
-    base = np.mean(mid, 0) * np.array([1.0, 0, 1])
-    lo, hi = 0.0, 2 * D
-    for _ in range(60):
-        lo, hi = ((lo + hi) / 2, hi) if F((base + (lo + hi) / 2 * ey)[None])[0] < 0 else (lo, (lo + hi) / 2)
-    center = base + lo * ey
+    if cad:
+        gap = lambda x: (lambda d: d[0] - d[1])(np.asarray(_carotid_dist(p, jnp.asarray(x[None]))[0])[0])
+        center = seams[1][n_seam]
+        for _ in range(int(2 * R / (0.01 * D))):
+            c = divider((center + 0.01 * D * ey)[None])[0]
+            if gap(c) <= 0:
+                center = divider((center + gap(center) / (gap(center) - gap(c)) * (c - center))[None])[0]
+                break
+            center = c
+    else:
+        F = _bucketed(functools.partial(_carotid_F, p, cad=cad))
+        base = np.mean([c[n_q] for c in cuff], 0) * np.array([1.0, 0, 1])
+        lo, hi = 0.0, 2 * D
+        for _ in range(60):
+            lo, hi = ((lo + hi) / 2, hi) if F((base + (lo + hi) / 2 * ey)[None])[0] < 0 else (lo, (lo + hi) / 2)
+        center = base + lo * ey
 
     def coons(side_a, side_b):
         """corners center, side_a[0], side_a[-1] = side_b[-1], side_b[0]"""
@@ -569,6 +648,10 @@ def carotid_bifurcation(D=6.3, angles=(25.0, 25.0), sinus=1.11, ica=0.71, eca=0.
     patches = [coons(cuff[0][n_q::-1], seams[0][n_seam::-1]), coons(cuff[1][n_q::-1], seams[0][n_seam:]),
                coons(cuff[1][n_q:], seams[1][n_seam::-1]), coons(cuff[2][n_q::-1], seams[1][n_seam:]),
                coons(cuff[2][n_q:], seams[2][n_seam::-1]), coons(cuff[0][n_q:], seams[2][n_seam:])]
+    crest = patches[2][0].copy()
+    if cad:
+        crest[1:-1] = divider(crest[1:-1])
+        patches[2][0] = patches[3][0] = crest
 
     X, quads, region, free = [], [], [], []
 
@@ -604,7 +687,7 @@ def carotid_bifurcation(D=6.3, angles=(25.0, 25.0), sinus=1.11, ica=0.71, eca=0.
     X, quads, free = merge(X, quads, free)
     key = {tuple(v): i for i, v in enumerate(tag(X))}
     lookup = lambda pts: np.array([key[tuple(v)] for v in tag(pts)])
-    for line in seams + cuff:
+    for line in seams + cuff + [crest] * cad:
         free[lookup(line)] = False
     X[free] = project(X[free])
     def average(quads, n):
@@ -614,9 +697,7 @@ def carotid_bifurcation(D=6.3, angles=(25.0, 25.0), sinus=1.11, ica=0.71, eca=0.
         A.data[:] = 1.0
         return sp.diags(1.0 / np.asarray(A.sum(1)).ravel()) @ A
 
-    A = average(quads, len(X))
-    for _ in range(300):
-        X[free] = project(A[free] @ X, it=3)
+    X = np.array(_carotid_relax(p, X, jsparse.BCOO.from_scipy_sparse(average(quads, len(X))), np.flatnonzero(free), cad))
 
     region = np.array(region)
     if not half:
@@ -632,10 +713,9 @@ def carotid_bifurcation(D=6.3, angles=(25.0, 25.0), sinus=1.11, ica=0.71, eca=0.
     for _ in range(n_smooth):
         n = unit(n + A @ n)
         n[plane, 1] = 0.0
-    d = np.stack(dist(X), -1)
+    d, s = (np.asarray(v) for v in _carotid_dist(p, X))
     w = np.exp(-(d - d.min(1, keepdims=True)) / (0.1 * D))
-    r_loc = np.sum(w * np.stack([np.abs(r(np.clip((X - o) @ e, *clip))) for o, e, _, clip, r in branches], -1),
-                   1) / w.sum(1)
+    r_loc = np.sum(w * np.abs(np.asarray(_carotid_r(p, s))), 1) / w.sum(1)
     if thickness == "curvature":
         e_h = 1e-3 * D
         div = sum((unit(grad(X + e_h * e))[:, i] - unit(grad(X - e_h * e))[:, i]) / (2 * e_h)
@@ -670,6 +750,57 @@ def carotid_bifurcation(D=6.3, angles=(25.0, 25.0), sinus=1.11, ica=0.71, eca=0.
     return m
 
 
+@jax.jit
+def _tubes(t, x):
+    A, B, r = t["A"], t["B"], t["r"]
+    L = jnp.linalg.norm(B - A, axis=1)
+    axis_dir = (B - A) / L[:, None]
+    tiny = 1e-9 * r.min()
+    q = x[:, None] - A
+    s = jnp.einsum("nij,ij->ni", q, axis_dir)
+    v = q - s[..., None] * axis_dir
+    rad = jnp.maximum(jnp.linalg.norm(v, axis=2), tiny)
+    u, a, b = v / rad[..., None], rad - r, s - L
+    hyp = jnp.maximum(jnp.hypot(jnp.maximum(a, 0.0), b), tiny)
+    d = jnp.where(b > 0, hyp, jnp.maximum(a, b))
+    n = jnp.where((b > 0)[..., None], (jnp.maximum(a, 0.0)[..., None] * u + b[..., None] * axis_dir) / hyp[..., None],
+                  jnp.where((a >= b)[..., None], u, axis_dir))
+    qn = jnp.maximum(jnp.linalg.norm(q, axis=2), tiny)
+    cap = s < 0
+    return jnp.where(cap, qn - r, d), jnp.where(cap[..., None], q / qn[..., None], n)
+
+
+@jax.jit
+def _tube_F(t, x):
+    """tube_field F; the round candidates at all points, selected by where"""
+    d, n = _tubes(t, x)
+    out = d.min(1)
+    for i, j in itertools.combinations(range(len(t["r"])), 2):
+        rp = t["rho"][i, j]
+        near = (rp > 0) & (jnp.maximum(d[:, i], d[:, j]) < rp)
+        G = jnp.minimum(d[:, i], d[:, j])
+        best = jnp.where(G >= rp, rp, -jnp.inf)
+        for a, b in ((i, j), (j, i)):
+            y = x + (rp - d[:, a])[:, None] * n[:, a]
+            ok = _tubes(t, y)[0][:, b] >= rp - t["tol"]
+            best = jnp.where(ok, jnp.maximum(best, rp - jnp.linalg.norm(x - y, axis=1)), best)
+
+        def newton(_, y):
+            dy, ny = _tubes(t, y)
+            J = ny[:, [i, j]]
+            Jt = jnp.swapaxes(J, 1, 2)
+            y = y - (Jt @ jnp.linalg.solve(J @ Jt + 1e-12 * jnp.eye(2), (dy[:, [i, j]] - rp)[..., None]))[..., 0]
+            tau = jnp.cross(J[:, 0], J[:, 1])
+            tau = tau / jnp.maximum(jnp.linalg.norm(tau, axis=1, keepdims=True), 1e-12)
+            return y + jnp.sum((x - y) * tau, 1)[:, None] * tau
+
+        y = jax.lax.fori_loop(0, 12, newton, x + (rp - d[:, i])[:, None] * n[:, i] + (rp - d[:, j])[:, None] * n[:, j])
+        ok = jnp.abs(_tubes(t, y)[0][:, [i, j]] - rp).max(1) < t["tol"]
+        best = jnp.where(ok, jnp.maximum(best, rp - jnp.linalg.norm(x - y, axis=1)), best)
+        out = jnp.where(near, jnp.minimum(out, jnp.where(jnp.isfinite(best), best, G)), out)
+    return out
+
+
 def tube_field(A, B, r, rho, tol):
     """Signed distance-like field of straight tubes (axis A_i -> B_i, radii r_i; rounded at A_i by a half-ball, flat
     at B_i) with a round of constant radius rho_ij (0: none) on the intersection line of tubes i and j only, as a CAD
@@ -681,56 +812,12 @@ def tube_field(A, B, r, rho, tol):
     tubes d_i = rho_ij, d_j = rho_ij and the nearest point on the ball-centre line d_i = d_j = rho_ij (Newton,
     accepted within tol); only where both tubes are within rho_ij (the round lies there). F = d_i away from the
     intersection lines, tangent rounds on them, no material anywhere else.
-    Returns F(x), tubes(x) -> (d (n, m), unit gradients (n, m, 3))"""
+    Returns F(x), tubes(x) -> (d (n, m), unit gradients (n, m, 3)), numpy in / out (jitted, compiled per
+    power-of-two bucket of the number of points, not per geometry)"""
     A, B, r = (np.asarray(v, dtype=float) for v in (A, B, r))
     m = len(r)
-    pairs = np.array(list(itertools.combinations(range(m), 2)))
-    rho_pair = np.broadcast_to(np.asarray(rho, dtype=float), (m, m))[pairs[:, 0], pairs[:, 1]]
-    L = np.linalg.norm(B - A, axis=1)
-    axis_dir = (B - A) / L[:, None]
-    tiny = 1e-9 * r.min()
-
-    def tubes(x):
-        q = x[:, None] - A
-        t = np.einsum("nij,ij->ni", q, axis_dir)
-        v = q - t[..., None] * axis_dir
-        rad = np.maximum(np.linalg.norm(v, axis=2), tiny)
-        u, a, b = v / rad[..., None], rad - r, t - L
-        hyp = np.maximum(np.hypot(np.maximum(a, 0.0), b), tiny)
-        d = np.where(b > 0, hyp, np.maximum(a, b))
-        n = np.where((b > 0)[..., None], (np.maximum(a, 0.0)[..., None] * u + b[..., None] * axis_dir) / hyp[..., None],
-                     np.where((a >= b)[..., None], u, axis_dir))
-        qn = np.maximum(np.linalg.norm(q, axis=2), tiny)
-        cap = t < 0
-        return np.where(cap, qn - r, d), np.where(cap[..., None], q / qn[..., None], n)
-
-    def F(x_all):
-        d_all, n_all = tubes(x_all)
-        out = d_all.min(1)
-        for (i, j), rp in zip(pairs, rho_pair):
-            near = (rp > 0) & (np.maximum(d_all[:, i], d_all[:, j]) < rp)
-            x, d, n = x_all[near], d_all[near], n_all[near]
-            G = np.minimum(d[:, i], d[:, j])
-            best = np.where(G >= rp, rp, -np.inf)
-            for a, b in ((i, j), (j, i)):
-                y = x + (rp - d[:, a])[:, None] * n[:, a]
-                ok = tubes(y)[0][:, b] >= rp - tol
-                best = np.where(ok, np.maximum(best, rp - np.linalg.norm(x - y, axis=1)), best)
-            y = x + (rp - d[:, i])[:, None] * n[:, i] + (rp - d[:, j])[:, None] * n[:, j]
-            for _ in range(12):
-                dy, ny = tubes(y)
-                J = ny[:, [i, j]]
-                Jt = np.swapaxes(J, 1, 2)
-                y = y - (Jt @ np.linalg.solve(J @ Jt + 1e-12 * np.eye(2), (dy[:, [i, j]] - rp)[..., None]))[..., 0]
-                tau = np.cross(J[:, 0], J[:, 1])
-                tau /= np.maximum(np.linalg.norm(tau, axis=1, keepdims=True), 1e-12)
-                y = y + np.sum((x - y) * tau, 1)[:, None] * tau
-            ok = np.abs(tubes(y)[0][:, [i, j]] - rp).max(1) < tol
-            best = np.where(ok, np.maximum(best, rp - np.linalg.norm(x - y, axis=1)), best)
-            out[near] = np.minimum(out[near], np.where(np.isfinite(best), best, G))
-        return out
-
-    return F, tubes
+    t = jax.tree.map(lambda v: jnp.asarray(v, float), dict(A=A, B=B, r=r, rho=np.broadcast_to(rho, (m, m)), tol=tol))
+    return _bucketed(functools.partial(_tube_F, t)), _bucketed(functools.partial(_tubes, t))
 
 
 def iso_surface(Xg, g, shape, F, eps, smooth=5):
