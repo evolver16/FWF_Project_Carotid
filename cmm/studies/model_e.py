@@ -1,6 +1,7 @@
 """Model E (Maes & Famaey 2023) on an artery, shared by the artery, fe_gr and vessel studies: parameters, wall,
 quarter-cylinder mesh, prestress + G&R run."""
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 
@@ -11,7 +12,7 @@ from fem import mesh as meshlib
 from setups import ALPHA, FIBER, MATRIX_DE
 from studies.common import surface_area
 from verification.fem_tube import cylinder_bc, radial_u
-from wall import Part, assemble, parameters
+from wall import Part, assemble, parameters, principal_frame
 
 
 def artery_par(**kw):
@@ -46,9 +47,21 @@ def wall_area(m, u):
 def artery_simulate(m, sysm, Qloc, par, mode="deposition", n_steps=100, bc=None, measure=None,
                     pre_tol=1e-6, pre_iter=60, anderson=5, tol=1e-10, log=None, final=False,
                     checkpoint=None, record=None, bc_gr=None, insult=None, ds=10.0, wall=WALL_E, lesion=None,
-                    laws="fiber", incompressible=False, growth="radial", G_e=None, fields=None, n_max=0):
+                    laws="fiber", incompressible=False, growth="radial", G_e=None, fields=None, n_max=0, adapt=False, deposit="elastin", beta0=0.0,
+                    momentum=0.0, pre_record=None):
     """Prestress G_elas <- F G_elas at p_hom until u = 0 (Maes UMAT_DEP; Anderson-accelerated, 0 = plain), from G_e
-    (per Gauss point; default diag(g_ax^-1/2, g_ax^-1/2, g_ax) in the local basis),
+    (per Gauss point; default diag(g_ax^-1/2, g_ax^-1/2, g_ax) in the local basis);
+    adapt (HCMM): also homeostatic fibre content in the same fixed point, the geometry stays the reference:
+        rho^j <- rho^j sigma_f^j / sigma_f^j_h          (every fung part, per Gauss point, log step within +-0.3,
+                                                       factor in [0.05, 20])
+        diag+- at alpha +- beta about the in-plane minor principal direction (wall.principal_frame, deformed basis);
+    deposit "elastin": beta once from the equilibrium at p_hom of a stiff stress-free elastin (G = I, C10 x 100, fibre
+    masses x 1e-3: u -> 0, the stress balancing p_hom on the reference geometry), then fixed;
+    "iterate": beta in the fixed point from beta0 (per Gauss point),
+        beta step x min(1, (sigma_c - sigma_a) / (0.1 (|sigma_c| + |sigma_a|)))   (no axis where in-plane isotropic);
+    until u = 0 (and beta settled, 1e-3 rad);
+    momentum mu: x+ = anderson(x, f) + mu (x - x_prev); pre_record(it, u, states, gauss fields mass_<part>, beta_deg):
+    prestress iterations 1, 5, 10, ... and the last;
     G&R at p_gr, steps of ds days -> measure(u) per step (default lambda_theta(inner), wall area),
     reverse-differentiable in par; final: also (u, states) at the end; record(k, u, states): after prestress (k = 0) and step k (forward only);
     bc_gr: G&R BCs per step instead of bc(p_gr); insult(k, states) -> states: after the prestress (k = 0) and after
@@ -65,17 +78,74 @@ def artery_simulate(m, sysm, Qloc, par, mode="deposition", n_steps=100, bc=None,
         G_e = Qloc @ jnp.diag(jnp.stack([g_ax ** -0.5, g_ax ** -0.5, g_ax])) @ jnp.swapaxes(Qloc, -1, -2)
     zero = jnp.zeros(sysm.n_dof)
     xs, fs = [], []
+    fib = [j for j, p in enumerate(wall) if p.material == "fung"] if adapt else []
+    sgn = {j: 1.0 if wall[j].direction == "+diag" else -1.0 for j in fib if wall[j].reorient}
+    shp, n_G = G_e.shape[:2], G_e.size
+    log_m, beta = jnp.zeros((len(fib),) + shp), jnp.broadcast_to(jnp.asarray(beta0, dtype=float), shp)
+    fl, step = fields, 0.0
+
+    def frame(u, states):
+        F, sig = sysm.gauss_F(u), sysm.stress(u, states)
+        e = [F @ Qloc[..., :, i][..., None] for i in (1, 2)]
+        e = [v[..., 0] / jnp.linalg.norm(v[..., 0], axis=-1, keepdims=True) for v in e]
+        s = lambda a, b: jnp.einsum("...i,...ij,...j->...", a, sig, b)
+        return principal_frame(s(e[0], e[0]), s(e[1], e[1]), s(e[0], e[1]))
+
+    if adapt and deposit == "elastin":
+        st0 = assemble(jnp.broadcast_to(jnp.eye(3), G_e.shape), Qloc, par, wall, mode, ds=ds, lesion=lesion,
+                       laws=laws, incompressible=incompressible, growth=growth, n_max=n_max, fields=dict(fields or {}) | {
+                           f"{wall[j].name}.rho": 1e-3 * par[f"{wall[j].name}.rho"] for j in fib} | {
+                           f"{p.name}.C10": 100 * (fields or {}).get(f"{p.name}.C10", par[f"{p.name}.C10"])
+                           for p in wall if p.material == "neo-hooke"})
+        u0 = sysm.equilibrium(st0, bc(par["p_hom"]), zero, tol)
+        beta = frame(u0, st0)[0]
+        if log:
+            log(f"  fibre directions from the elastin solve: max|u| {float(jnp.abs(u0).max()):.2e} mm, max|beta| "
+                f"{np.degrees(float(jnp.abs(beta).max())):.1f} deg")
     for it in range(1, pre_iter + 1):
+        if adapt:
+            fl = dict(fields or {}) | {f"{wall[j].name}.rho": par[f"{wall[j].name}.rho"] * jnp.exp(log_m[i])
+                                       for i, j in enumerate(fib)} \
+                 | {f"{wall[j].name}.alpha": par[f"{wall[j].name}.alpha"] + s * beta for j, s in sgn.items()}
         states = assemble(G_e, Qloc, par, wall, mode, ds=ds, lesion=lesion, laws=laws, incompressible=incompressible,
-                          growth=growth, fields=fields, n_max=n_max)
+                          growth=growth, fields=fl, n_max=n_max)
         u = sysm.equilibrium(states, bc(par["p_hom"]), zero, tol)
         du = float(np.abs(sysm.last_u).max())
+        F = sysm.gauss_F(u)
+        x, f = [G_e.ravel()], [(F @ G_e - G_e).ravel()]
+        db = 0.0
+        if adapt:
+            rel = jax.vmap(jax.vmap(lambda st, F: (lambda tr: jnp.stack(
+                [st.constituents[j].material.sigma_f(tr[j][1]) / st.constituents[j].sigma_f_pre for j in fib]))(
+                hcmm.sigma_solver(st, F)[1])))(states, F)
+            x += [log_m.ravel()]
+            f += [jnp.clip(jnp.log(jnp.maximum(jnp.moveaxis(rel, -1, 0), 1e-6)), -0.3, 0.3).ravel()]
+            if deposit == "iterate":
+                b_new, s_c, s_a = frame(u, states)
+                w = jnp.clip((s_c - s_a) / (0.1 * (jnp.abs(s_c) + jnp.abs(s_a)) + 1e-12), 0.0, 1.0)
+                d_b = w * ((b_new - beta + 0.5 * jnp.pi) % jnp.pi - 0.5 * jnp.pi)
+                db = float(jnp.abs(d_b).max())
+                x += [beta.ravel()]
+                f += [d_b.ravel()]
         if log and (it % 5 == 0 or du < pre_tol):
-            log(f"  prestress iteration {it:2d}  max|u| {du:.2e} mm  (Newton {sysm.last_iterations})")
-        if du < pre_tol:
+            un = np.linalg.norm(np.asarray(sysm.last_u).reshape(-1, 3), axis=1)
+            log(f"  prestress iteration {it:2d}  max|u| {du:.2e} mm, nodal |u| mean {un.mean():.2e} / 99% "
+                f"{np.quantile(un, 0.99):.2e} mm  (Newton {sysm.last_iterations})"
+                + (f"  mass factor {float(jnp.exp(log_m).min()):.2f}-{float(jnp.exp(log_m).max()):.2f}, max|beta| "
+                   f"{np.degrees(float(jnp.abs(beta).max())):.1f} deg (change {np.degrees(db):.2f})" if adapt else ""))
+        if pre_record and (it == 1 or it % 5 == 0 or du < pre_tol):
+            pre_record(it, u, states, {f"mass_{wall[j].name}": jnp.exp(log_m[i]) for i, j in enumerate(fib)}
+                       | ({"beta_deg": jnp.degrees(beta)} if adapt else {}))
+        if du < pre_tol and db < 1e-3:
             break
-        xs, fs = (xs + [G_e.ravel()])[-anderson - 1:], (fs + [(sysm.gauss_F(u) @ G_e - G_e).ravel()])[-anderson - 1:]
-        G_e = fem.anderson(xs, fs).reshape(G_e.shape)
+        xs, fs = (xs + [jnp.concatenate(x)])[-anderson - 1:], (fs + [jnp.concatenate(f)])[-anderson - 1:]
+        y = fem.anderson(xs, fs) + momentum * step
+        step = y - xs[-1]
+        G_e = y[:n_G].reshape(G_e.shape)
+        if adapt:
+            log_m = jnp.clip(y[n_G:n_G + log_m.size].reshape(log_m.shape), np.log(0.05), np.log(20.0))
+            if deposit == "iterate":
+                beta = y[n_G + log_m.size:].reshape(shp)
 
     if insult:
         states = insult(0, states)

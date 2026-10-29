@@ -1,6 +1,7 @@
 """Idealized carotid bifurcation (fem.mesh.carotid_bifurcation): homeostatic prestress of model E, tortuosity after
 elastin loss with the Weiss 2020 wall."""
 
+import hashlib
 import time
 
 import jax
@@ -22,10 +23,10 @@ from analysis import tortuosity as ti
 from fem import mesh as meshlib
 from fem.tensor3 import inv3
 from rod import XG, Rod
-from studies.common import Log, outputs, wall_stress, write_csv
+from studies.common import RESULTS, Log, outputs, wall_stress, write_csv
 from studies.model_e import artery_par, artery_simulate
 from studies.weiss.model import KO, WALL_WEISS, weiss_par
-from wall import assemble
+from wall import assemble, principal_frame
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
@@ -301,7 +302,8 @@ def bifurcation_tortuosity(geometry="goubergrits", D=None, angles=None, sinus=No
                            lengths=(3.0, 8.0, 3.0), n_q=4, n_seam=5, n_r=2, noise=0.01,
                            ell=0.88, thickness="radius", kappa_junction=None, insult_day=10.0, n_hold=400, gamma=1.0,
                            ds=1.0, record_every=10, tol=1e-10, length=None, ends="isometric", half=False, model="hcmm",
-                           fcmm_prestress=200, fillet=None, name=None, folder="carotid/tortuosity", **kw):
+                           fcmm_prestress=200, fillet=None, adapt=False, deposit="elastin", beta_junction=0.0, momentum=0.0, name=None,
+                           folder="carotid/tortuosity", **kw):
     """Weiss 2020 wall (table S2) on the idealized bifurcation, wall thickness h / a of Weiss times the local radius
     (the mechanics are scale-free, so this is the mouse wall on a scaled carotid); thickness: carotid_bifurcation rule,
     "radius" (radius of the nearest tube, no out-of-plane thickening of the junction) or "curvature" (Laplace radius);
@@ -319,21 +321,36 @@ def bifurcation_tortuosity(geometry="goubergrits", D=None, angles=None, sinus=No
     angle, alpha output: mass-weighted mean direction), from the HCMM prestress with fcmm_prestress further prestress
     iterations (1: equilibrium only, the FCMM cohort quadrature leaves a small u; the G&R starts there).
     geometry: carotid_geometry preset, D ... eca override it; fillet: CAD junction (carotid_bifurcation fillet, as
-    bifurcation_rod).
+    bifurcation_rod); adapt: prestress with homeostatic fibre content (model_e.artery_simulate adapt: fibre masses,
+    diagonal pair about the in-plane principal direction), and the emergent angle about that principal frame
+    (wall.principal_frame: s_tt / s_zz -> sigma_c / sigma_a, diagonals at beta +- alpha_dep); deposit: artery_simulate
+    ("elastin": beta from the elastin solve, "iterate": in the fixed point); beta_junction (deg, "iterate"): initial beta
+    uniform in +-beta_junction on the junction elements (seed 1); momentum: prestress heavy-ball term.
     Output per step: TI, deflection and axial force of the ICA tube (cuff to the distal end)"""
     g = carotid_geometry(geometry, D=D, angles=angles, sinus=sinus, ica=ica, eca=eca)
     D, angles = g["D"], g["angles"]
     log = Log()
     name = name or "bifurcation_tortuosity"
-    txt, pvd, csv_path, fig, img = outputs(folder, *(f"{name}{s}" for s in (
-        ".txt", ".pvd", ".csv", ".png", "_end_Jg.png")))
+    txt, pvd, csv_path, fig, img, pvd_pre = outputs(folder, *(f"{name}{s}" for s in (
+        ".txt", ".pvd", ".csv", ".png", "_end_Jg.png", "_prestress.pvd")))
     par = weiss_par(**kw)
     R, p0 = 0.5 * D, float(par["p_hom"])
     kappa = float(par["h"] / par["a"])
     t0 = time.time()
-    m = meshlib.carotid_bifurcation(D=D, angles=angles, sinus=g["sinus"], ica=g["ica"], eca=g["eca"], lengths=lengths,
-                                    n_q=n_q, n_seam=n_seam, n_r=n_r, kappa=kappa, kappa_junction=kappa_junction,
-                                    thickness=thickness, half=half, fillet=fillet)
+    margs = dict(D=D, angles=angles, sinus=g["sinus"], ica=g["ica"], eca=g["eca"], lengths=lengths, n_q=n_q,
+                 n_seam=n_seam, n_r=n_r, kappa=kappa, kappa_junction=kappa_junction, thickness=thickness, half=half,
+                 fillet=fillet)
+    cache = RESULTS / "carotid" / "geometry" / "cache" / (
+        f"mesh_{hashlib.sha1(repr(sorted(margs.items())).encode()).hexdigest()[:12]}.npz")
+    sets = ("nodes", "faces", "elsets")
+    if cache.exists():
+        z = np.load(cache)
+        m = meshlib.Mesh(z["X"], z["conn"], *({k.split(".", 1)[1]: z[k] for k in z.files if k.startswith(s + ".")}
+                                              for s in sets))
+    else:
+        m = meshlib.carotid_bifurcation(**margs)
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        np.savez(cache, X=m.X, conn=m.conn, **{f"{s}.{k}": v for s in sets for k, v in getattr(m, s).items()})
     sysm = fem.System(m, hcmm, pressure_faces=m.faces["inner"], element="hybrid")
     Q = jnp.asarray(fem.wall_basis(m.X, m.conn, m.nodes["inner"], m.nodes["outer"], [m.nodes["inlet"]],
                                    [m.nodes["ica"], m.nodes["eca"]]))
@@ -347,7 +364,11 @@ def bifurcation_tortuosity(geometry="goubergrits", D=None, angles=None, sinus=No
         f"h = {kappa:.3f} r (Weiss, {thickness}), {kappa_junction or kappa:.3f} r in the junction: {m.n_elem} hex8 (hybrid), {sysm.n_dof} dofs; Weiss table S2 wall, tr sigma "
         f"stimulus (nonlocal {length:.2f} mm), growth fixed, emergent collagen angle (gamma {gamma:g}); elastin c_e -> KO "
         f"on day {insult_day:g}, {n_hold} days held; elastin field {noise:g}; {ends} ends; ICA tube {len(s_ica)} rings"
-        + (f"; CAD junction, rounds {fillet}" if fillet else "") + f"; mesh {time.time() - t0:.0f}s")
+        + (f"; CAD junction, rounds {fillet}" if fillet else "")
+        + (f"; adapted prestress (fibre directions {deposit}"
+           + (f", junction beta +-{beta_junction:g} deg" if deposit == "iterate" else "")
+           + f", momentum {momentum:g})" if adapt else "")
+        + f"; mesh {time.time() - t0:.0f}s")
 
     xg = np.asarray(fem.gauss_points(m.X, m.conn))
     rng = np.random.default_rng(0)
@@ -357,13 +378,27 @@ def bifurcation_tortuosity(geometry="goubergrits", D=None, angles=None, sinus=No
     scale = jnp.asarray(1.0 + noise * xi)
     G_t, G_z = float(par["elastin.G_theta"]), float(par["elastin.G_z"])
     G_e = Q @ jnp.diag(jnp.array([1 / (G_t * G_z), G_t, G_z])) @ jnp.swapaxes(Q, -1, -2)
+    series_pre = meshlib.VTKSeries(pvd_pre, m)
+
+    def pre_record(it, u, states, extra):
+        F = np.asarray(sysm.gauss_F(u))
+        fib = {}
+        for j, q in enumerate(WALL_WEISS):
+            if q.material == "fung":
+                v = np.einsum("egij,egj->egi", F, np.asarray(states.constituents[j].material.M))
+                fib[f"fiber_{q.name}"] = v / np.linalg.norm(v, axis=-1, keepdims=True)
+        series_pre.write(it, m.X, m.conn, *sysm.fields(u, states, extra | fib))
+
     t0 = time.time()
     _, u, states = artery_simulate(m, sysm, Q, par, n_steps=0, bc=lambda p: bc, final=True, log=log, ds=ds,
                                    wall=WALL_WEISS, laws="wall", incompressible=True, growth="fixed", G_e=G_e,
                                    measure=lambda u: (jnp.zeros(()),),
                                    fields={"elastin.C10": par["elastin.C10"] * scale} if noise else None,
-                                   anderson=2, pre_iter=200)
-    log(f"  prestress done in {time.time() - t0:.0f}s")
+                                   anderson=2, pre_iter=200, adapt=adapt, deposit=deposit, momentum=momentum,
+                                   beta0=np.radians(beta_junction) * np.isin(np.arange(m.n_elem), m.elsets["junction"])[
+                                       :, None] * np.random.default_rng(1).uniform(-1, 1, xg.shape[:2]),
+                                   pre_record=pre_record)
+    log(f"  prestress done in {time.time() - t0:.0f}s; ParaView: {pvd_pre.name} ({len(series_pre.entries)} iterations)")
     fc = model == "fcmm"
     if fc:
         T = max(float(v) for k, v in par.items() if k.endswith(".T"))
@@ -410,14 +445,18 @@ def bifurcation_tortuosity(geometry="goubergrits", D=None, angles=None, sinus=No
     angle = lambda M: jnp.degrees(jnp.arccos(jnp.abs(jnp.sum(M * e_z, axis=-1))))
 
     def in_plane(u, states):
-        """(s_tt - s_rr, s_zz - s_rr) along the deformed wall directions, nonlocal mean"""
+        """(beta, s_c, s_a): principal frame of (s_tt - s_rr, s_zz - s_rr, s_tz) along the deformed wall directions,
+        nonlocal mean (adapt; else 0, s_tt - s_rr, s_zz - s_rr)"""
         F, sig = sysm.gauss_F(u), sysm.stress(u, states)
-        s = lambda n: jnp.einsum("...i,...ij,...j->...", n, sig, n) / jnp.einsum("...i,...i->...", n, n)
-        rr = s(jnp.linalg.solve(jnp.swapaxes(F, -1, -2), Q[..., :, 0][..., None])[..., 0])
-        return [sysm.nonlocal_mean(s(jnp.einsum("...ij,...j->...i", F, Q[..., :, i])) - rr, length) for i in (1, 2)]
+        s = lambda a, b: jnp.einsum("...i,...ij,...j->...", a, sig, b) / jnp.sqrt(
+            jnp.einsum("...i,...i->...", a, a) * jnp.einsum("...i,...i->...", b, b))
+        rr = (lambda n: s(n, n))(jnp.linalg.solve(jnp.swapaxes(F, -1, -2), Q[..., :, 0][..., None])[..., 0])
+        e = [jnp.einsum("...ij,...j->...i", F, Q[..., :, i]) for i in (1, 2)]
+        tt, zz = (sysm.nonlocal_mean(s(v, v) - rr, length) for v in e)
+        return principal_frame(tt, zz, sysm.nonlocal_mean(s(*e), length)) if adapt else (0.0, tt, zz)
 
-    s_tt, s_zz = in_plane(u, states)
-    ratio_h = s_tt / s_zz
+    _, s_c, s_a = in_plane(u, states)
+    ratio_h = s_c / s_a
     series = meshlib.VTKSeries(pvd, m)
 
     def record(k, u, states):
@@ -440,13 +479,14 @@ def bifurcation_tortuosity(geometry="goubergrits", D=None, angles=None, sinus=No
         cs = list(states.constituents)
         if ds * k >= insult_day:
             cs[0] = set_part(cs[0], material=materials.NeoHookeanInc(KO["C10"] * scale))
-        s_tt, s_zz = in_plane(u, states)
-        al = jnp.asarray(np.arctan(np.tan(alpha) * (np.maximum(s_tt, 0.0) / np.maximum(s_zz, 1e-12) / ratio_h)
+        beta, s_c, s_a = in_plane(u, states)
+        al = jnp.asarray(np.arctan(np.tan(alpha) * (np.maximum(s_c, 0.0) / np.maximum(s_a, 1e-12) / ratio_h)
                                    ** gamma))[..., None]
+        beta = jnp.asarray(beta)[..., None] if adapt else 0.0
         for d, sign in (("diag+", 1.0), ("diag-", -1.0)):
             c = cs[names.index(d)]
-            cs[names.index(d)] = set_part(c, production=part(c).production.replace(M_dep=jnp.sin(al) * e_t
-                                                                                   + sign * jnp.cos(al) * e_z))
+            cs[names.index(d)] = set_part(c, production=part(c).production.replace(
+                M_dep=jnp.sin(al + sign * beta) * e_t + sign * jnp.cos(al + sign * beta) * e_z))
         states = states.replace(constituents=cs, sigma_w=wall_stress(sysm, u, states, length, None, True))
         u, states, _ = sysm.run(states, [bc], u0=u, tol=tol)
         x = m.X + np.asarray(u).reshape(-1, 3)

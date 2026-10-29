@@ -46,6 +46,15 @@ def parameters(groups, other, kw):
     return {k: jnp.asarray(v, dtype=float) for k, v in par.items()}
 
 
+def principal_frame(s_tt, s_zz, s_tz):
+    """in-plane principal frame in the wall basis (theta, z): the minor principal direction at beta from e_z towards
+    e_theta (mod pi), 2 beta = atan2(-2 s_tz, s_tt - s_zz); -> (beta, sigma_c, sigma_a): sigma_a (minor) along it,
+    sigma_c (major) normal to it"""
+    d = s_zz - s_tt
+    m, r = 0.5 * (s_tt + s_zz), jnp.sqrt(0.25 * d ** 2 + s_tz ** 2)
+    return 0.5 * jnp.arctan2(-2 * s_tz, -d), m + r, m - r
+
+
 @partial(jax.jit, static_argnames=("wall", "mode", "laws", "incompressible", "growth", "n_max"))
 def assemble(G_e, Qloc, par, wall, mode="deposition", ds=10.0, lesion=None, laws="fiber", incompressible=False,
              growth="radial", fields=None, n_max=0):

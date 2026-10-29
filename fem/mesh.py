@@ -4,10 +4,12 @@ import base64
 import itertools
 import pathlib
 import re
+import zlib
 from dataclasses import dataclass, field
 
 import numpy as np
 import scipy.sparse as sp
+from scipy.sparse.csgraph import connected_components
 
 from fem.elements import HEX_CORNERS, ELEMENT_TYPES, element_for, face_for
 
@@ -459,8 +461,9 @@ def carotid_bifurcation(D=6.3, angles=(25.0, 25.0), sinus=1.11, ica=0.71, eca=0.
     smoothed: the flat front / back of the junction and the flow divider get a thicker wall, so a membrane at the
     homeostatic stress of the tubes can carry the pressure there; kappa_junction: kappa on the junction patches instead
     (smooth transition over n_smooth neighbour averages).
-    Surface: three tubes (4 n_q cells around, cuffs at s = cuffs D) joined per side (y > 0, y < 0) by three patches of
-    (n_q + n_seam)^2 quads meeting at one point; seams along the in-plane lumen outline (lateral walls, flow divider).
+    Surface: three tubes (4 n_q cells around, cuffs at s = cuffs D) joined per side (y > 0, y < 0) by six patches of
+    n_q x n_seam quads (corners: one centre point, the side midpoints of the hexagon of the three cuff half-rings and
+    three seams, and its corners); seams along the in-plane lumen outline (lateral walls, flow divider).
     named nodes/faces: inner, outer, inlet (CCA), ica, eca, sym (half: y >= 0 only); elsets cca, ica, eca, junction
     """
     R, (k0, k1) = 0.5 * D, (v * D for v in blend)
@@ -550,26 +553,22 @@ def carotid_bifurcation(D=6.3, angles=(25.0, 25.0), sinus=1.11, ica=0.71, eca=0.
     for _ in range(60):
         lo, hi = ((lo + hi) / 2, hi) if F((base + (lo + hi) / 2 * ey)[None])[0] < 0 else (lo, (lo + hi) / 2)
     center = base + lo * ey
-    M = n_q + n_seam
 
     def coons(side_a, side_b):
-        """corners center, side_a[0], side_a[-1] = side_b[-1], side_b[0]; sides of M + 1 points"""
-        u = np.linspace(0, 1, M + 1)
+        """corners center, side_a[0], side_a[-1] = side_b[-1], side_b[0]"""
+        u, v = np.linspace(0, 1, len(side_b)), np.linspace(0, 1, len(side_a))
         B0 = center + u[:, None] * (side_a[0] - center)
-        L0 = center + u[:, None] * (side_b[0] - center)
-        U, V = np.meshgrid(u, u, indexing="ij")
+        L0 = center + v[:, None] * (side_b[0] - center)
+        U, V = np.meshgrid(u, v, indexing="ij")
         P = ((1 - V)[..., None] * B0[:, None] + V[..., None] * side_b[:, None]
              + (1 - U)[..., None] * L0[None] + U[..., None] * side_a[None]
              - ((1 - U) * (1 - V))[..., None] * center - (U * (1 - V))[..., None] * side_a[0]
              - ((1 - U) * V)[..., None] * side_b[0] - (U * V)[..., None] * side_a[-1])
         return P
 
-    patches = [coons(np.concatenate([cuff[0][n_q::-1], seams[0][1:n_seam + 1]]),
-                     np.concatenate([cuff[1][n_q::-1], seams[0][:n_seam - 1:-1][1:]])),
-               coons(np.concatenate([cuff[1][n_q:], seams[1][1:n_seam + 1]]),
-                     np.concatenate([cuff[2][n_q::-1], seams[1][:n_seam - 1:-1][1:]])),
-               coons(np.concatenate([cuff[2][n_q:], seams[2][1:n_seam + 1]]),
-                     np.concatenate([cuff[0][n_q:], seams[2][:n_seam - 1:-1][1:]]))]
+    patches = [coons(cuff[0][n_q::-1], seams[0][n_seam::-1]), coons(cuff[1][n_q::-1], seams[0][n_seam:]),
+               coons(cuff[1][n_q:], seams[1][n_seam::-1]), coons(cuff[2][n_q::-1], seams[1][n_seam:]),
+               coons(cuff[2][n_q:], seams[2][n_seam::-1]), coons(cuff[0][n_q:], seams[2][n_seam:])]
 
     X, quads, region, free = [], [], [], []
 
@@ -734,26 +733,12 @@ def tube_field(A, B, r, rho, tol):
     return F, tubes
 
 
-def tube_junction(A, B, r, rho, voxel=None, smooth=5):
-    """Watertight triangle surface F = 0 of tube_field (tubes A_i -> B_i, radii r_i, rounds rho_ij).
-    Zero set by marching tetrahedra on the voxel grid over the bounding box (each cell split into 6
-    tetrahedra along its main diagonal, consistent across cells: watertight and manifold), vertices shared per grid
-    edge; smooth relaxation passes (vertex -> mean of its neighbours) against slivers, each followed by a projection
-    onto F = 0 (Newton), so the surface does not shrink.
-    Returns vertices, triangles (outward normals), F"""
-    A, B, r = (np.asarray(v, dtype=float) for v in (A, B, r))
-    voxel = voxel or r.min() / 8
-    rho_max = np.asarray(rho, dtype=float).max()
-    F, tubes = tube_field(A, B, r, rho, 1e-3 * voxel)
-    lo = np.minimum(A, B).min(0) - r.max() - 2 * voxel
-    hi = np.maximum(A, B).max(0) + r.max() + 2 * voxel
-    axes = [np.arange(l, h + voxel, voxel) for l, h in zip(lo, hi)]
-    shape = tuple(len(v) for v in axes)
-    Xg = np.stack(np.meshgrid(*axes, indexing="ij"), -1).reshape(-1, 3)
-    g = tubes(Xg)[0].min(1)
-    near = (g > -2 * voxel) & (g < max(rho_max, 2 * voxel))
-    g[near] = F(Xg[near])
-    g[g == 0] = 1e-12 * voxel
+def iso_surface(Xg, g, shape, F, eps, smooth=5):
+    """Triangle surface g = 0 of the field g on the grid points Xg (shape), outward normals (towards g > 0), by
+    marching tetrahedra (each cell split into 6 tetrahedra along its main diagonal, consistent across cells:
+    manifold, watertight inside the grid), vertices shared per grid edge; smooth relaxation passes (vertex -> mean
+    of its neighbours) against slivers, each followed by a projection onto F = 0 (Newton, gradient by central
+    differences eps), so the surface does not shrink. -> vertices, triangles"""
     idx = np.arange(g.size).reshape(shape)
     corner = {v: idx[v[0]:shape[0] - 1 + v[0], v[1]:shape[1] - 1 + v[1], v[2]:shape[2] - 1 + v[2]].ravel()
               for v in itertools.product((0, 1), repeat=3)}
@@ -793,13 +778,239 @@ def tube_junction(A, B, r, rho, voxel=None, smooth=5):
     Adj = Adj.tocsr()
     Adj.data[:] = 1.0
     Adj = sp.diags(1.0 / np.asarray(Adj.sum(1)).ravel()) @ Adj
-    eps = 1e-4 * voxel
     for it in range(smooth + 1):
         V = Adj @ V if it else V
         for _ in range(3):
             n = np.stack([(F(V + eps * e) - F(V - eps * e)) / (2 * eps) for e in np.eye(3)], -1)
             V = V - (F(V) / np.sum(n * n, 1))[:, None] * n
+    return V, T
+
+
+def tube_junction(A, B, r, rho, voxel=None, smooth=5):
+    """Watertight triangle surface F = 0 of tube_field (tubes A_i -> B_i, radii r_i, rounds rho_ij).
+    Zero set by marching tetrahedra on the voxel grid over the bounding box (each cell split into 6
+    tetrahedra along its main diagonal, consistent across cells: watertight and manifold), vertices shared per grid
+    edge; smooth relaxation passes (vertex -> mean of its neighbours) against slivers, each followed by a projection
+    onto F = 0 (Newton), so the surface does not shrink.
+    Returns vertices, triangles (outward normals), F"""
+    A, B, r = (np.asarray(v, dtype=float) for v in (A, B, r))
+    voxel = voxel or r.min() / 8
+    rho_max = np.asarray(rho, dtype=float).max()
+    F, tubes = tube_field(A, B, r, rho, 1e-3 * voxel)
+    lo = np.minimum(A, B).min(0) - r.max() - 2 * voxel
+    hi = np.maximum(A, B).max(0) + r.max() + 2 * voxel
+    axes = [np.arange(l, h + voxel, voxel) for l, h in zip(lo, hi)]
+    shape = tuple(len(v) for v in axes)
+    Xg = np.stack(np.meshgrid(*axes, indexing="ij"), -1).reshape(-1, 3)
+    g = tubes(Xg)[0].min(1)
+    near = (g > -2 * voxel) & (g < max(rho_max, 2 * voxel))
+    g[near] = F(Xg[near])
+    g[g == 0] = 1e-12 * voxel
+    V, T = iso_surface(Xg, g, shape, F, 1e-4 * voxel, smooth)
     return V, T, F
+
+
+def read_stl(path):
+    """ASCII STL -> (vertices, triangles), coincident vertices merged"""
+    v = np.array(re.findall(r"vertex\s+(\S+)\s+(\S+)\s+(\S+)", pathlib.Path(path).read_text()), float).reshape(-1, 3)
+    P, inv = np.unique(np.round(v, 5), axis=0, return_inverse=True)
+    return P, inv.reshape(-1, 3)
+
+
+def read_vtp(path):
+    """(points, MaximumInscribedSphereRadius, [point indices of every line]) of a VMTK centerline file (zlib, base64)"""
+    raw = pathlib.Path(path).read_bytes()
+    i = raw.index(b"<AppendedData")
+    app = raw[raw.index(b"_", i) + 1:raw.index(b"</AppendedData>")].strip()
+    out = {}
+    for typ, name, nc, off in re.findall(
+            r'<DataArray type="(\w+)" Name="(\w+)"(?: NumberOfComponents="(\d+)")?[^>]*?offset="(\d+)"', raw[:i].decode()):
+        off, nc = int(off), int(nc or 1)
+        n = int(np.frombuffer(base64.b64decode(app[off:off + 8])[:4], np.uint32)[0])
+        nb = (12 + 4 * n + 2) // 3 * 4
+        sizes = np.frombuffer(base64.b64decode(app[off:off + nb])[12:], np.uint32)
+        body = base64.b64decode(app[off + nb:off + nb + (int(sizes.sum()) + 2) // 3 * 4])
+        end = np.cumsum(sizes)
+        v = np.frombuffer(b"".join(zlib.decompress(body[a:b]) for a, b in zip(end - sizes, end)),
+                          {"Float32": np.float32, "Float64": np.float64, "Int32": np.int32, "Int64": np.int64}[typ])
+        out.setdefault(name, []).append(v.reshape(-1, nc) if nc > 1 else v)
+    conn = next(c for c in out["connectivity"] if len(c))
+    off = next(c for c in out["offsets"] if len(c))
+    return out["Points"][0].astype(float), out["MaximumInscribedSphereRadius"][0], np.split(conn, off[:-1])
+
+
+def patient_bifurcation(stl, vtp, branches=(0, 1), lengths=(3.0, 6.0, 6.0), edge=1.2, n_r=2, kappa=0.06,
+                        kappa_junction=None, open_radius=0.8, voxel=0.25, smooth=10, n_smooth=20):
+    """Tet10 wall mesh of a patient carotid bifurcation from a lumen surface (STL) and its VMTK centerlines (lines
+    branches = ICA, ECA, all lines share the CCA; the other lines are side branches). R_c = inscribed radius at the
+    bifurcation; the CCA is cut at lengths[0] R_c before it, ICA / ECA at lengths[1:] R_c after it, by planes normal to
+    the centerline.
+    Lumen: signed distance on a voxel grid (point-to-plane of the nearest surface vertex); side branches removed: the
+    voxels nearer to a side-branch line (from its ostium o, its first point outside the ICA / ECA lumen, distance >
+    inscribed radius) than to the CCA / ICA / ECA lines; morphological opening with open_radius; at each ostium the
+    field is the inscribed-sphere tube of the parent, sd_env = min_j (|x - p_j| - r_j), within 2 r_side of o, blended
+    back over 1.5 r_side (smoothstep), so the parent wall runs through; Gaussian smoothing; the cut planes are part
+    of the field max(sd, plane); surface by iso_surface on a grid of edge / 1.2 (spline interpolated field),
+    the cap triangles dropped.
+    Wall: kappa r_loc along the smoothed lumen normal (r_loc: inscribed radius of the nearest centerline point,
+    smoothed; kappa_junction within 1.5 R_c of the bifurcation, blended to kappa over a further R_c), n_r layers;
+    prisms -> 3 tet4 (diagonals by vertex index: conforming) -> tet10.
+    Mesh nodes / faces inner, outer, inlet (CCA), ica, eca; elsets cca, ica, eca, junction (1.5 R_c around the
+    bifurcation). Returns (Mesh, info): info has the end centres and axes (inlet: pointing to the bifurcation; ica, eca
+    away from it), R_c, and the ICA centerline points and radii beyond the bifurcation"""
+    from scipy import ndimage
+    from scipy.spatial import cKDTree
+    unit = lambda v: v / np.linalg.norm(v, axis=-1, keepdims=True)
+    P, T = read_stl(stl)
+    Xc, rad, lines = read_vtp(vtp)
+    ia, ie = lines[branches[0]], lines[branches[1]]
+    n_c = min(len(ia), len(ie))
+    k = int(np.argmin(np.r_[np.linalg.norm(Xc[ia[:n_c]] - Xc[ie[:n_c]], axis=1) < 1e-6, False]))
+    x_bif, R_c = Xc[ia[k - 1]], float(rad[ia[k - 1]])
+    path, cut_c, cut_t, tube_p, rad_p = [], [], [], [], []
+    for t, (ids, L) in enumerate(((ia[:k][::-1], lengths[0]), (ia[k - 1:], lengths[1]), (ie[k - 1:], lengths[2]))):
+        s = np.r_[0.0, np.cumsum(np.linalg.norm(np.diff(Xc[ids], axis=0), axis=1))]
+        c = np.array([np.interp(L * R_c, s, Xc[ids, i]) for i in range(3)])
+        cut_c.append(c)
+        cut_t.append(unit(np.array([np.interp(L * R_c + 0.5, s, Xc[ids, i]) - np.interp(L * R_c - 0.5, s, Xc[ids, i])
+                                    for i in range(3)])))
+        keep = s <= L * R_c + 4 * edge
+        path.append(Xc[ids][keep])
+        tube_p.append(np.full(keep.sum(), t))
+        rad_p.append(rad[ids][keep])
+    cut_c, cut_t = np.array(cut_c), np.array(cut_t)
+    path, tube_p, rad_p = np.concatenate(path), np.concatenate(tube_p), np.concatenate(rad_p)
+    tree_p = cKDTree(path)
+    tube_of = lambda x: tube_p[tree_p.query(x)[1]]
+    plane = lambda x: np.einsum("ij,ij->i", x - cut_c[tube_of(x)], cut_t[tube_of(x)])
+
+    N = np.cross(P[T[:, 1]] - P[T[:, 0]], P[T[:, 2]] - P[T[:, 0]])
+    Nv = unit(np.stack([np.bincount(T.ravel(), np.repeat(N[:, c], 3), len(P)) for c in range(3)], -1))
+    lo = (path - rad_p[:, None]).min(0) - 3.0 - 2 * edge
+    hi = (path + rad_p[:, None]).max(0) + 3.0 + 2 * edge
+    axes = [np.arange(l, h, voxel) for l, h in zip(lo, hi)]
+    shape = tuple(len(v) for v in axes)
+    near = np.all((P > lo - 2) & (P < hi + 2), 1)
+    Pn, Nn = P[near], Nv[near]
+    tree_s = cKDTree(Pn)
+    inside = np.empty(np.prod(shape), bool)
+    for a in range(0, len(inside), 2_000_000):
+        sl = np.unravel_index(np.arange(a, min(a + 2_000_000, len(inside))), shape)
+        q = np.stack([axes[i][sl[i]] for i in range(3)], -1)
+        j = tree_s.query(q, workers=-1)[1]
+        inside[a:a + len(q)] = np.einsum("ij,ij->i", q - Pn[j], Nn[j]) < 0
+    inside = inside.reshape(shape)
+    main = np.r_[ia, ie[k:]]
+    tree_m = cKDTree(Xc[main])
+    side, ost = [], []
+    for i, l in enumerate(lines):
+        if i not in branches:
+            d, j = tree_m.query(Xc[l])
+            out = np.flatnonzero(d > rad[main][j])
+            if len(out):
+                side.append(Xc[l[out[0]:]])
+                ost.append((Xc[l[out[0]]], float(rad[l[out[0]]])))
+    if side:
+        vox = np.argwhere(inside)
+        xv = lo + vox * voxel
+        drop = cKDTree(np.concatenate(side)).query(xv, workers=-1)[0] < tree_m.query(xv, workers=-1)[0]
+        inside[tuple(vox[drop].T)] = False
+    lab = ndimage.label(inside)[0]
+    inside = ndimage.binary_fill_holes(lab == lab[tuple(np.round((x_bif - lo) / voxel).astype(int))])
+    eroded = ndimage.distance_transform_edt(inside) * voxel > open_radius
+    opened = ndimage.distance_transform_edt(~eroded) * voxel <= open_radius
+    sd = (ndimage.distance_transform_edt(~opened) - ndimage.distance_transform_edt(opened)) * voxel
+    if ost:
+        Xv = np.stack(np.meshgrid(*axes, indexing="ij"), -1).reshape(-1, 3)
+        w = np.ones(len(Xv))
+        for o, r_s in ost:
+            t = np.clip((np.linalg.norm(Xv - o, axis=1) - 2 * r_s) / (1.5 * r_s), 0.0, 1.0)
+            w = np.minimum(w, t * t * (3 - 2 * t))
+        z = w < 1
+        dm, jm = tree_m.query(Xv[z], k=16, workers=-1)
+        sd = sd.ravel()
+        sd[z] = w[z] * sd[z] + (1 - w[z]) * (dm - rad[main][jm]).min(1)
+        sd = sd.reshape(shape)
+    sd = ndimage.gaussian_filter(sd, 1.5)
+    coef = ndimage.spline_filter(sd, order=3)
+    sdf = lambda x: ndimage.map_coordinates(coef, ((x - lo) / voxel).T, order=3, prefilter=False, mode="nearest")
+    F = lambda x: np.maximum(sdf(x), plane(x))
+
+    vc = edge / 1.2
+    ax_c = [np.arange(l + 3 * voxel, h - 3 * voxel, vc) for l, h in zip(lo, hi)]
+    shape_c = tuple(len(v) for v in ax_c)
+    Xg = np.stack(np.meshgrid(*ax_c, indexing="ij"), -1).reshape(-1, 3)
+    g = F(Xg)
+    g[g == 0] = 1e-12
+    V, Tr = iso_surface(Xg, g, shape_c, F, 0.02 * voxel, smooth)
+    pl = np.abs(plane(V)) < 1e-6
+    Tr = Tr[~pl[Tr].all(1)]
+    comp = connected_components(sp.coo_matrix((np.ones(3 * len(Tr)), (Tr.ravel(), np.roll(Tr, -1, 1).ravel())),
+                                              (len(V), len(V))), directed=False)[1]
+    Tr = Tr[comp[Tr[:, 0]] == np.bincount(comp[Tr[:, 0]]).argmax()]
+    used = np.unique(Tr)
+    new = np.full(len(V), -1)
+    new[used] = np.arange(len(used))
+    V, Tr = V[used], new[Tr]
+    nv, ne = len(V), len(Tr)
+    e = np.concatenate([Tr[:, [0, 1]], Tr[:, [1, 2]], Tr[:, [2, 0]]])
+    A = sp.coo_matrix((np.ones(2 * len(e)), (np.r_[e[:, 0], e[:, 1]], np.r_[e[:, 1], e[:, 0]])), (nv, nv)).tocsr()
+    A.data[:] = 1.0
+    A = sp.diags(1.0 / np.asarray(A.sum(1)).ravel()) @ A
+    ks = np.sort(e, 1) @ np.array([nv, 1])
+    _, cnt = np.unique(ks, return_counts=True)
+    bnd = e[np.isin(ks, np.unique(ks)[cnt == 1])]
+    ring = np.zeros((3, nv), bool)
+    pl = np.abs(plane(V)) < 1e-6
+    ring[tube_of(V)[np.unique(bnd)], np.unique(bnd)] = True
+    ring &= pl
+    eps = 0.05 * voxel
+    n = unit(np.stack([(sdf(V + eps * d) - sdf(V - eps * d)) / (2 * eps) for d in np.eye(3)], -1))
+    for _ in range(n_smooth):
+        n = unit(n + A @ n)
+    d_bif = np.linalg.norm(V - x_bif, axis=1)
+    r_loc = rad_p[cKDTree(path).query(V)[1]]
+    for _ in range(n_smooth // 4):
+        r_loc = 0.5 * (r_loc + A @ r_loc)
+    k_loc = np.full(nv, kappa)
+    if kappa_junction is not None:
+        w = np.clip((d_bif - 1.5 * R_c) / R_c, 0.0, 1.0)
+        k_loc = kappa_junction + (kappa - kappa_junction) * w * w * (3 - 2 * w)
+    X3 = np.concatenate([V + (j / n_r * k_loc * r_loc)[:, None] * n for j in range(n_r + 1)])
+
+    s0 = np.sort(Tr, 1)
+    a, b, c = s0.T
+    tets = []
+    for j in range(n_r):
+        lo_, up = j * nv, (j + 1) * nv
+        tets += [np.stack([a + lo_, b + lo_, c + lo_, c + up], 1), np.stack([a + lo_, b + lo_, b + up, c + up], 1),
+                 np.stack([a + lo_, a + up, b + up, c + up], 1)]
+    tets = np.concatenate(tets)
+    tri_of = np.tile(np.arange(ne), 3 * n_r)
+    det = np.linalg.det(np.stack([X3[tets[:, i]] - X3[tets[:, 0]] for i in (1, 2, 3)], 1))
+    tets[det < 0] = tets[det < 0][:, [0, 2, 1, 3]]
+    edges = np.sort(tets[:, [[0, 1], [1, 2], [2, 0], [0, 3], [1, 3], [2, 3]]], 2).reshape(-1, 2)
+    uniq, inv = np.unique(edges, axis=0, return_inverse=True)
+    conn = np.concatenate([tets, len(X3) + inv.reshape(-1, 6)], 1)
+    X10 = np.concatenate([X3, 0.5 * (X3[uniq[:, 0]] + X3[uniq[:, 1]])])
+    parents = np.concatenate([np.stack([np.arange(len(X3))] * 2, 1), uniq])
+    layer, sv = parents // nv, parents % nv
+
+    m = Mesh(X=X10, conn=conn)
+    cen = V[Tr].mean(1)
+    tube_t = tube_of(cen)
+    region = np.where(np.linalg.norm(cen - x_bif, axis=1) < 1.5 * R_c, 3, tube_t)
+    m.elsets = {name: np.flatnonzero(region[tri_of] == j) for j, name in enumerate(("cca", "ica", "eca", "junction"))}
+    m.nodes["inner"] = np.flatnonzero((layer == 0).all(1))
+    m.nodes["outer"] = np.flatnonzero((layer == n_r).all(1))
+    for t, name in enumerate(("inlet", "ica", "eca")):
+        m.nodes[name] = np.flatnonzero(ring[t][sv].all(1))
+    _, _, faces = boundary_faces(m)
+    for name in m.nodes:
+        m.faces[name] = faces[np.all(np.isin(faces, m.nodes[name]), 1)]
+    info = dict(centres=cut_c, axes=dict(inlet=-cut_t[0], ica=cut_t[1], eca=cut_t[2]), R_c=R_c, x_bif=x_bif,
+                ica_path=Xc[ia[k - 1:]], ica_radius=rad[ia[k - 1:]], n_surface=(nv, ne))
+    return m, info
 
 
 def _data_array(name, v, vtk_type="Float64"):
